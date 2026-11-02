@@ -13,3 +13,4 @@ desktop/release
 desktop/dist
 desktop/node_modules
 desktop/package-lock.json
+docs/architecture/*.html
