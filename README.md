@@ -2,7 +2,22 @@
 
 A local web app for running Pi agent sessions on Ollama or cloud models, with shared project context, reference RAG, and enforced security checks. Phase 1 is in progress; see the [implementation plan](docs/IMPLEMENTATION_PLAN.md) for status and limits, the [architecture](docs/ARCHITECTURE.md), and the [Phase 1 specification](docs/phase1.md).
 
-## Setup
+## Run it
+
+Pick one. All three end at the same app on `http://localhost:3000` (Docker: the same, unless `PORT` is set).
+
+### 1. Docker (the same for every teammate)
+
+Needs Docker Desktop (or Docker Engine with Compose). On macOS install [Ollama](https://ollama.com/download) on your computer too, so models use your GPU; the container talks to it.
+
+```sh
+cp .env.example .env          # optional: add OPENROUTER_API_KEY to turn on the assistant
+docker compose up --build     # first run downloads the scanner model (about 700 MB)
+```
+
+Open http://localhost:3000, go to Models, and install the model it recommends. Stop with `docker compose down` (your data stays in a volume; `down -v` deletes it). To run Ollama in a container as well (CPU only on macOS and Windows): set `AGENTGATE_OLLAMA_URL=http://ollama:11434` in `.env` and use `docker compose --profile ollama up --build`. Only port 3000 is published, on `127.0.0.1`.
+
+### 2. From source
 
 Requirements: Node.js 24 (`nvm use`) and npm. The setup script installs the rest after asking.
 
@@ -12,7 +27,29 @@ npm run setup    # installs Ollama (Homebrew on macOS) and the security scanner 
 npm start        # starts Ollama, the scanner, and the app, then opens the Models page
 ```
 
-On the Models page, press **Install** on the model marked "Best fit" for your computer's memory. You can then start a project and a session. `npm start` builds the app on first run; use `npm start -- --rebuild` after pulling changes.
+### 3. Mac app
+
+`cd desktop && npm ci && npm run build` creates `desktop/release/AGENTGATE Studio-*/AGENTGATE Studio.app`. It starts only the web app, so Ollama and the scanner must already be running (see [issue tracker](../../issues) for the planned first-run setup).
+
+### First five minutes
+
+1. **Models**: press Install on the model marked Best fit for this computer.
+2. **Projects**: create one, then open References and add a `.md` or `.txt` file.
+3. **Start a session**, pick the model, and ask a question about your document.
+4. **Security & Verification**: see what was blocked, and run the evaluation suite.
+5. **Assistant** (title bar): add an OpenRouter key to get explanations and automatic fixes.
+
+### Troubleshooting
+
+| Symptom                                     | Fix                                                                                                            |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Tasks say "Blocked ... scanner-unavailable" | The scanner is not running. `npm start` or `docker compose up` starts it; the first start downloads its model. |
+| No models in the picker                     | Ollama is not running or has no model. Check Models, then Install.                                             |
+| Port 3000 is in use                         | `PORT=3100 npm start`, or `PORT=3100 docker compose up`.                                                       |
+| Docker: models never appear                 | Ollama must run on your computer (`ollama serve`) or use the `ollama` profile above.                           |
+| Keys                                        | From source: stored in your OS keychain. Docker: set them in `.env` (a container has no keychain).             |
+
+## Settings
 
 | Variable                       | Purpose                                                                                                                                                        |
 | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
