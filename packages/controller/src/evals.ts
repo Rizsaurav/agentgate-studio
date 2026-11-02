@@ -465,6 +465,25 @@ export async function listGithubRuns(
   }
 }
 
+/** The failed-step log of the newest failed GitHub Actions run, or null. Raw text: condense it before use. */
+export async function latestFailedRunLog(
+  repoRoot: string,
+): Promise<{ runId: number; log: string } | null> {
+  const { runs } = await listGithubRuns(repoRoot);
+  const failed = runs.find((entry) => entry.conclusion === 'failure');
+  if (!failed) return null;
+  try {
+    const { stdout } = await run(
+      'gh',
+      ['run', 'view', String(failed.databaseId), '--log-failed'],
+      { cwd: repoRoot, timeout: 15000, maxBuffer: 4 * 1024 * 1024 },
+    );
+    return { runId: failed.databaseId, log: stdout };
+  } catch {
+    return null;
+  }
+}
+
 function childEnvironment(
   source: Record<string, string | undefined>,
   promptfooConfigDir: string,

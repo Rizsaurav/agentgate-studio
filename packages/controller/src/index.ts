@@ -55,8 +55,10 @@ export {
   EvalService,
   SqliteEvals,
   configurationIdentity,
+  latestFailedRunLog,
   listGithubRuns,
 } from './evals';
+export { condenseLog, failureSignature } from './ci-log';
 export { ModelPuller, modelNameSchema } from './local-models';
 export type { PullState } from './local-models';
 export { HuggingFaceCatalog, TRUSTED_PUBLISHERS } from './hf-catalog';

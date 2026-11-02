@@ -4,6 +4,9 @@ import {
   Supervisor,
   Watchdog,
   checkServices,
+  condenseLog,
+  failureSignature,
+  latestFailedRunLog,
   startOllama,
   startScanner,
   type Probe,
@@ -93,6 +96,12 @@ function readActions(
               reason: (result.reason ?? '').slice(0, 120),
             })),
         })),
+    ciFailure: async () => {
+      const failed = await latestFailedRunLog(repoRoot());
+      if (!failed) return null;
+      const summary = condenseLog(failed.log);
+      return { runId: failed.runId, signature: failureSignature(summary), summary };
+    },
     securitySummary: () => {
       const since = Date.now() - DAY_MS;
       const counts = new Map<string, number>();

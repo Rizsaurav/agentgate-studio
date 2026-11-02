@@ -37,6 +37,8 @@ export const DEFAULT_LIMITS: SupervisorLimits = {
 export type SupervisorActions = {
   status(): Promise<unknown>;
   evalRuns(): unknown;
+  /** The newest failed CI run, already condensed; null when none failed. */
+  ciFailure(): Promise<{ runId: number; signature: string; summary: string } | null>;
   securitySummary(): unknown;
   recommendedModel(): Promise<unknown>;
   startOllama(): Promise<string>;
@@ -254,6 +256,23 @@ export class Supervisor {
         'The last evaluation runs with failing cases.',
         () => this.actions.evalRuns(),
       ),
+      {
+        name: 'get_ci_failure',
+        label: 'get_ci_failure',
+        description:
+          'The newest failed CI run, reduced to its error lines. Empty when CI is green.',
+        parameters: NONE,
+        execute: async () => {
+          const failure = await this.actions.ciFailure();
+          if (!failure) return reply('No failed CI run.');
+          // A failure seen before is not sent to the model again: the earlier diagnosis still stands.
+          const id = `ci:${failure.signature}`;
+          if (this.store.lastInvestigation(id))
+            return reply('Same failure as one already diagnosed; nothing new.');
+          this.store.addNote('finding', 'CI failure', id);
+          return reply(`Run ${failure.runId}\n${failure.summary}`);
+        },
+      },
       read(
         'get_security_summary',
         'Counts of blocked or quarantined items by stage and rule in the last 24 hours. No document text.',

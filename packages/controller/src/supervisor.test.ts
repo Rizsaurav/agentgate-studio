@@ -40,6 +40,7 @@ function harness(
   const actions: SupervisorActions = {
     status: async () => ({ findings: ['scanner-down'] }),
     evalRuns: () => [],
+    ciFailure: async () => null,
     securitySummary: () => ({ blocked: 2 }),
     recommendedModel: async () => ({ id: 'x' }),
     startOllama: async () => (calls.push('ollama'), 'Ollama started.'),
