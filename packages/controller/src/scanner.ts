@@ -6,6 +6,12 @@ const SCAN_TIMEOUT_MS = 10_000;
 /** The same text is scanned at ingestion and again on every retrieval; a verdict is reused for this long. */
 const CACHE_TTL_MS = 60 * 60_000;
 const CACHE_MAX_ENTRIES = 4000;
+/**
+ * Text up to this length fits the model's window in one piece and is scanned whole. Splitting it into
+ * windows only adds false positives on ordinary instructional prose; longer text is scanned in windows
+ * so an injection placed after the first window is still seen.
+ */
+const WHOLE_TEXT_MAX_CHARS = 1500;
 const responseSchema = z.object({
   scanner: z.string(),
   results: z.array(
@@ -73,12 +79,35 @@ export class LlmGuardScanner implements InjectionScanner {
   }
 
   private async request(texts: string[]): Promise<ScanVerdict[]> {
+    const verdicts: ScanVerdict[] = new Array(texts.length);
+    for (const mode of ['full', 'chunks'] as const) {
+      const indexes = texts.flatMap((text, index) =>
+        (text.length <= WHOLE_TEXT_MAX_CHARS ? 'full' : 'chunks') === mode
+          ? [index]
+          : [],
+      );
+      if (indexes.length === 0) continue;
+      const results = await this.post(
+        indexes.map((index) => texts[index] as string),
+        mode,
+      );
+      indexes.forEach((index, position) => {
+        verdicts[index] = results[position] as ScanVerdict;
+      });
+    }
+    return verdicts;
+  }
+
+  private async post(
+    texts: string[],
+    mode: 'full' | 'chunks',
+  ): Promise<ScanVerdict[]> {
     let response: Response;
     try {
       response = await fetch(`${this.baseUrl}/scan`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ texts }),
+        body: JSON.stringify({ texts, mode }),
         signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch (error) {

@@ -343,6 +343,44 @@ describe('scanner failures fail closed', () => {
   });
 });
 
+describe('scanner reading mode', () => {
+  it('scans text that fits one window whole and splits only longer text, keeping order', async () => {
+    const modes: string[] = [];
+    const url = await scannerServer((request, response) => {
+      let body = '';
+      request.on('data', (chunk) => (body += chunk));
+      request.on('end', () => {
+        const { texts, mode } = JSON.parse(body) as {
+          texts: string[];
+          mode: string;
+        };
+        modes.push(`${mode}:${texts.length}`);
+        response.end(
+          JSON.stringify({
+            scanner: 'llm-guard',
+            results: texts.map((text) => ({
+              valid: !text.includes('bad'),
+              score: text.includes('bad') ? 1 : 0,
+            })),
+          }),
+        );
+      });
+    });
+    const long = `${'word '.repeat(400)}bad`;
+    const verdicts = await new LlmGuardScanner(url).scan([
+      long,
+      'short',
+      'short bad',
+    ]);
+    expect(verdicts.map((verdict) => verdict.injection)).toEqual([
+      true,
+      false,
+      true,
+    ]);
+    expect(modes.sort()).toEqual(['chunks:1', 'full:2']);
+  });
+});
+
 describe('scanner verdict cache', () => {
   it('asks the service once per distinct text and never caches failures', async () => {
     const asked: string[][] = [];
@@ -418,6 +456,19 @@ describe.runIf(scannerUrl)('live LLM Guard (integration)', () => {
       'refund password attacker email',
     );
     expect(hits.every((p) => p.title !== 'Customer FAQ Update')).toBe(true);
+  }, 120_000);
+
+  it('keeps ordinary instructional documents (game rules, a runbook)', async () => {
+    const t = setup(new LlmGuardScanner(scannerUrl));
+    const benign = join(__dirname, '..', '..', '..', 'fixtures', 'benign');
+    for (const file of ['game-rules.md', 'runbook.md'])
+      writeFileSync(join(t.root, file), readFileSync(join(benign, file)));
+    const result = await t.documents.reference({
+      projectId: t.project.id,
+      path: '.',
+    });
+    expect(result.quarantined).toEqual([]);
+    expect(result.added).toHaveLength(2);
   }, 120_000);
 
   it('blocks a real injection prompt and accepts a normal question', async () => {
