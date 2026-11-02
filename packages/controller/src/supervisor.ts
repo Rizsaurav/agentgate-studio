@@ -38,7 +38,11 @@ export type SupervisorActions = {
   status(): Promise<unknown>;
   evalRuns(): unknown;
   /** The newest failed CI run, already condensed; null when none failed. */
-  ciFailure(): Promise<{ runId: number; signature: string; summary: string } | null>;
+  ciFailure(): Promise<{
+    runId: number;
+    signature: string;
+    summary: string;
+  } | null>;
   securitySummary(): unknown;
   recommendedModel(): Promise<unknown>;
   startOllama(): Promise<string>;

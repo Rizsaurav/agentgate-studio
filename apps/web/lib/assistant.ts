@@ -100,7 +100,11 @@ function readActions(
       const failed = await latestFailedRunLog(repoRoot());
       if (!failed) return null;
       const summary = condenseLog(failed.log);
-      return { runId: failed.runId, signature: failureSignature(summary), summary };
+      return {
+        runId: failed.runId,
+        signature: failureSignature(summary),
+        summary,
+      };
     },
     securitySummary: () => {
       const since = Date.now() - DAY_MS;
