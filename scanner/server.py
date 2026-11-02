@@ -1,6 +1,7 @@
 """Local HTTP boundary around LLM Guard's prompt-injection scanner.
 
-Binds to loopback only and returns scores, never the scanned text. All policy
+Binds to loopback by default (a container sets AGENTGATE_SCANNER_HOST so other containers on
+its private network can reach it) and returns scores, never the scanned text. All policy
 (what to block, quarantine, and log) stays in the Node controller.
 """
 
@@ -12,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from llm_guard.input_scanners import PromptInjection
 from llm_guard.input_scanners.prompt_injection import MatchType
 
-HOST = "127.0.0.1"
+HOST = os.environ.get("AGENTGATE_SCANNER_HOST", "127.0.0.1")
 PORT = int(os.environ.get("AGENTGATE_SCANNER_PORT", "8765"))
 THRESHOLD = float(os.environ.get("AGENTGATE_SCANNER_THRESHOLD", "0.9"))
 MAX_BODY_BYTES = 512 * 1024

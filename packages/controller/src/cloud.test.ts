@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  EnvironmentBackend,
   CloudCatalog,
   KeychainBackend,
   SecretCredentialStore,
@@ -178,3 +179,21 @@ describe.runIf(process.env.AGENTGATE_LIVE_CLOUD === '1')(
     );
   },
 );
+
+describe('environment credentials (containers)', () => {
+  it('reads keys from the environment, treats blanks as unset, and refuses to save', async () => {
+    const backend = new EnvironmentBackend({
+      OPENROUTER_API_KEY: ' sk-or-test ',
+      OPENAI_API_KEY: '  ',
+    });
+    expect(JSON.parse((await backend.get('openrouter')) ?? '{}')).toEqual({
+      type: 'api_key',
+      key: 'sk-or-test',
+    });
+    expect(await backend.get('openai')).toBeNull();
+    expect(await backend.get('anthropic')).toBeNull();
+    expect(await backend.get('unknown')).toBeNull();
+    await expect(backend.set()).rejects.toThrow('environment variables');
+    await expect(backend.delete()).rejects.toThrow('environment variables');
+  });
+});

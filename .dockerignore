@@ -1,0 +1,17 @@
+.git
+.github
+.agentgate
+.env*
+!.env.example
+.vscode
+**/node_modules
+**/.next
+**/*.tsbuildinfo
+**/__pycache__
+scanner/.venv
+desktop
+test-results
+playwright-report
+eval-results
+coverage
+.DS_Store

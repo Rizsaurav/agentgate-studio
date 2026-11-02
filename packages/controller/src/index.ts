@@ -20,7 +20,11 @@ export type { Run, Session } from './sessions';
 export { DEFAULT_OLLAMA_URL, OllamaCatalog } from './ollama';
 export type { AgentModels } from './ollama';
 export { CloudCatalog, apiKeySchema, describeProviderError } from './cloud';
-export { KeychainBackend, SecretCredentialStore } from './credentials';
+export {
+  EnvironmentBackend,
+  KeychainBackend,
+  SecretCredentialStore,
+} from './credentials';
 export type { SecretBackend } from './credentials';
 export { ModelRouter } from './models';
 export { ContextService, SqliteContext } from './context';

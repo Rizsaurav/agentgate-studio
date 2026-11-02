@@ -29,6 +29,37 @@ export class KeychainBackend implements SecretBackend {
   }
 }
 
+const ENVIRONMENT_KEYS: Record<string, string> = {
+  anthropic: 'ANTHROPIC_API_KEY',
+  openai: 'OPENAI_API_KEY',
+  openrouter: 'OPENROUTER_API_KEY',
+};
+
+/**
+ * Read-only keys from environment variables, for containers, which have no operating system
+ * credential store. Keys are set when the container starts, never saved by the app.
+ */
+export class EnvironmentBackend implements SecretBackend {
+  constructor(
+    private readonly env: Record<string, string | undefined> = process.env,
+  ) {}
+  async get(account: string): Promise<string | null> {
+    const name = ENVIRONMENT_KEYS[account];
+    const value = name ? this.env[name]?.trim() : undefined;
+    return value ? JSON.stringify({ type: 'api_key', key: value }) : null;
+  }
+  async set(): Promise<void> {
+    throw new Error(
+      'Keys are set with environment variables in this setup. See .env.example.',
+    );
+  }
+  async delete(): Promise<void> {
+    throw new Error(
+      'Keys are set with environment variables in this setup. See .env.example.',
+    );
+  }
+}
+
 const storedKeySchema = z
   .object({ type: z.literal('api_key'), key: z.string().min(1) })
   .strict();

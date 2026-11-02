@@ -1,0 +1,45 @@
+# One command for every teammate: `docker compose up --build`, then open http://localhost:3000.
+# Local models: by default the app uses Ollama on your computer (fast, uses your GPU on a Mac).
+# To run Ollama in a container instead: `docker compose --profile ollama up --build`
+# with AGENTGATE_OLLAMA_URL=http://ollama:11434 in .env (CPU only on macOS and Windows).
+name: agentgate
+
+services:
+  app:
+    build: .
+    ports:
+      # Loopback only, like the app itself: nothing on your network can reach it.
+      - '127.0.0.1:${PORT:-3000}:3000'
+    environment:
+      AGENTGATE_SCANNER_URL: http://scanner:8765
+      AGENTGATE_OLLAMA_URL: ${AGENTGATE_OLLAMA_URL:-http://host.docker.internal:11434}
+      # Optional keys. A container has no OS keychain, so keys come from the environment.
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    volumes:
+      - data:/data
+    depends_on:
+      scanner:
+        condition: service_healthy
+    restart: unless-stopped
+
+  scanner:
+    build: ./scanner
+    volumes:
+      - model-cache:/home/scanner/.cache/huggingface
+    restart: unless-stopped
+
+  ollama:
+    profiles: ['ollama']
+    image: ollama/ollama:0.40.13
+    volumes:
+      - ollama:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  data:
+  model-cache:
+  ollama:

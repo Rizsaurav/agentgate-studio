@@ -13,6 +13,7 @@ import {
   DocumentService,
   SqliteContext,
   SqliteDocuments,
+  EnvironmentBackend,
   KeychainBackend,
   ModelRouter,
   DEFAULT_OLLAMA_URL,
@@ -66,9 +67,14 @@ function controller(): Controller {
     const db = openDatabase(join(directory, 'agentgate.sqlite'));
     const projectRepository = new SqliteProjects(db);
     const sessionRepository = new SqliteSessions(db);
+    // Containers have no operating system credential store, so they read keys from the environment.
+    const secrets =
+      process.env.AGENTGATE_SECRETS === 'env'
+        ? new EnvironmentBackend()
+        : new KeychainBackend();
     const ollama = new OllamaCatalog(process.env.AGENTGATE_OLLAMA_URL);
     const cloud = new CloudCatalog(
-      new SecretCredentialStore(new KeychainBackend(), CLOUD_PROVIDERS),
+      new SecretCredentialStore(secrets, CLOUD_PROVIDERS),
     );
     // Reference documents are read only from this folder; by default it lives beside the database.
     const docsRoot = resolve(
@@ -130,7 +136,7 @@ function controller(): Controller {
       puller: new ModelPuller(process.env.AGENTGATE_OLLAMA_URL),
       agentStore: new AgentStore(db),
       agentModel: new AgentModel(
-        new SecretCredentialStore(new KeychainBackend(), [AGENT_PROVIDER]),
+        new SecretCredentialStore(secrets, [AGENT_PROVIDER]),
         process.env.AGENTGATE_AGENT_MODEL || undefined,
       ),
       catalog: new HuggingFaceCatalog(process.env.AGENTGATE_HF_URL),
