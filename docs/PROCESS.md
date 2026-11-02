@@ -4,23 +4,23 @@ This mirrors how product teams run a sprint. Use it as written; change it by pul
 
 ## Work items
 
-| Term | Meaning | Where it lives |
-| --- | --- | --- |
-| **Vision** | Why the product exists and where it goes. | Issue #34 |
-| **Epic** | A large outcome that takes several issues and more than one sprint. One epic per product area, A to F. | An issue titled `[EPIC X] name` with a checklist of its children |
-| **Issue** (story, task, bug) | One piece of work a single person can finish in a few days. | An issue titled `[A1] ...` |
-| **Sprint** | A fixed period with a goal. | A milestone: Sprint 1, 2, 3 |
+| Term                         | Meaning                                                                                                | Where it lives                                                   |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| **Vision**                   | Why the product exists and where it goes.                                                              | Issue #34                                                        |
+| **Epic**                     | A large outcome that takes several issues and more than one sprint. One epic per product area, A to F. | An issue titled `[EPIC X] name` with a checklist of its children |
+| **Issue** (story, task, bug) | One piece of work a single person can finish in a few days.                                            | An issue titled `[A1] ...`                                       |
+| **Sprint**                   | A fixed period with a goal.                                                                            | A milestone: Sprint 1, 2, 3                                      |
 
 An issue key is the epic letter plus a number (`B2`). Put it in the issue title, the branch name and the pull request title so work can be traced end to end.
 
-| Epic | Area |
-| --- | --- |
-| A | Onboarding and desktop |
-| B | Security and guardrails |
-| C | RAG and pipeline |
-| D | Assistant |
-| E | Evals and telemetry |
-| F | CI/CD and release |
+| Epic | Area                    |
+| ---- | ----------------------- |
+| A    | Onboarding and desktop  |
+| B    | Security and guardrails |
+| C    | RAG and pipeline        |
+| D    | Assistant               |
+| E    | Evals and telemetry     |
+| F    | CI/CD and release       |
 
 ## Labels (kept small on purpose)
 
