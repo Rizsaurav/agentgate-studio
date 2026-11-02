@@ -1,8 +1,10 @@
 import { createServer, type Server } from 'node:http';
+import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   ModelPuller,
   OllamaCatalog,
+  inspectSystem,
   RECOMMENDED_MODELS,
   modelNameSchema,
   recommendModels,
@@ -42,6 +44,30 @@ describe('hardware recommendations', () => {
     expect(
       RECOMMENDED_MODELS.every((m) => modelNameSchema.safeParse(m.id).success),
     ).toBe(true);
+  });
+});
+
+describe('disk-aware recommendations', () => {
+  it('picks a smaller model when free disk is short and says why', () => {
+    // 16 GB of memory would pick the 8B (4.9 GB); with 6 GB free, anything over a 4 GB download is out.
+    const tight = recommendModels(16 * GIB, 6 * GIB);
+    expect(tight.find((m) => m.best)?.id).toBe('llama3.2:3b');
+    expect(tight.find((m) => m.id === 'llama3.1:8b')).toMatchObject({
+      fits: false,
+      blocker: 'disk',
+    });
+    expect(recommendModels(2 * GIB)[0]?.blocker).toBe('memory');
+    expect(recommendModels(16 * GIB, 1 * GIB).some((m) => m.best)).toBe(false);
+  });
+});
+
+describe('system profile', () => {
+  it('reads real values from the operating system', () => {
+    const profile = inspectSystem(tmpdir());
+    expect(profile.memoryBytes).toBeGreaterThan(0);
+    expect(profile.freeDiskBytes).toBeGreaterThan(0);
+    expect(profile.cores).toBeGreaterThan(0);
+    expect(profile.chip.length).toBeGreaterThan(0);
   });
 });
 

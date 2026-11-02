@@ -18,18 +18,32 @@ export const RECOMMENDED_MODELS = [
 export type RecommendedModel = (typeof RECOMMENDED_MODELS)[number] & {
   fits: boolean;
   best: boolean;
+  /** Why it does not fit, so the screen can say what to free up. */
+  blocker: 'memory' | 'disk' | null;
 };
+/** Room left after the download for the system and the model's working memory. */
+const DISK_HEADROOM = 1.5;
 
-/** Marks which models fit the machine's memory and the largest one that does as the best choice. */
-export function recommendModels(totalMemoryBytes: number): RecommendedModel[] {
-  const ramGb = totalMemoryBytes / GIB;
-  const fitting = RECOMMENDED_MODELS.filter((model) => model.minRamGb <= ramGb);
-  const best = [...fitting].sort((a, b) => b.downloadGb - a.downloadGb)[0];
-  return RECOMMENDED_MODELS.map((model) => ({
-    ...model,
-    fits: model.minRamGb <= ramGb,
-    best: model.id === best?.id,
-  }));
+/** Marks which models fit this computer's memory and free disk, and the largest one that does as the best choice. */
+export function recommendModels(
+  memoryBytes: number,
+  freeDiskBytes: number = Number.POSITIVE_INFINITY,
+): RecommendedModel[] {
+  const memoryGb = memoryBytes / GIB;
+  const diskGb = freeDiskBytes / GIB;
+  const classified = RECOMMENDED_MODELS.map((model) => {
+    const blocker =
+      model.minRamGb > memoryGb
+        ? ('memory' as const)
+        : model.downloadGb * DISK_HEADROOM > diskGb
+          ? ('disk' as const)
+          : null;
+    return { ...model, fits: blocker === null, blocker };
+  });
+  const best = classified
+    .filter((model) => model.fits)
+    .sort((a, b) => b.downloadGb - a.downloadGb)[0];
+  return classified.map((model) => ({ ...model, best: model.id === best?.id }));
 }
 
 /** Ollama model references: optional namespace, name, optional tag. No whitespace or path tricks. */

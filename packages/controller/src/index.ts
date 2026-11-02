@@ -62,3 +62,5 @@ export {
 export type { PullState, RecommendedModel } from './local-models';
 export { checkServices } from './health';
 export type { ServiceCheck } from './health';
+export { inspectSystem } from './system';
+export type { SystemProfile } from './system';

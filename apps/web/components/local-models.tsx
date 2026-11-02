@@ -1,7 +1,6 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { cancelPull, pullModel } from '@/app/actions';
+import { useState } from 'react';
+import { useModelPull } from './use-model-pull';
 import { Button } from '@/components/ui/button';
 
 type Recommended = {
@@ -11,14 +10,8 @@ type Recommended = {
   minRamGb: number;
   fits: boolean;
   best: boolean;
+  blocker: 'memory' | 'disk' | null;
 };
-type Pull = {
-  model: string;
-  status: 'downloading' | 'done' | 'failed' | 'cancelled';
-  message: string;
-  completedBytes: number;
-  totalBytes: number;
-} | null;
 
 export function LocalModels({
   recommended,
@@ -31,48 +24,9 @@ export function LocalModels({
   ollamaReady: boolean;
   ramGb: number;
 }) {
-  const router = useRouter();
-  const [pull, setPull] = useState<Pull>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { pull, error, downloading, percent, install, cancel } = useModelPull();
   const [custom, setCustom] = useState('');
-  const downloading = pull?.status === 'downloading';
   const installedNames = new Set(installed.map((model) => model.name));
-
-  useEffect(() => {
-    let finished = false;
-    async function poll() {
-      const response = await fetch('/api/models/pull', { cache: 'no-store' });
-      if (!response.ok) return;
-      const state = (await response.json()) as Pull;
-      setPull(state);
-      if (state && state.status !== 'downloading' && !finished) {
-        finished = true;
-        router.refresh();
-      }
-    }
-    void poll();
-    const timer = setInterval(() => {
-      if (!finished) void poll();
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [router, downloading]);
-
-  async function install(model: string) {
-    setError(null);
-    const result = await pullModel(model);
-    if (result.error) return setError(result.error);
-    setPull({
-      model,
-      status: 'downloading',
-      message: 'Starting…',
-      completedBytes: 0,
-      totalBytes: 0,
-    });
-  }
-  const percent =
-    pull && pull.totalBytes > 0
-      ? Math.min(100, Math.round((pull.completedBytes / pull.totalBytes) * 100))
-      : 0;
 
   return (
     <div className="space-y-6">
@@ -107,7 +61,7 @@ export function LocalModels({
                 type="button"
                 variant="outline"
                 className="mt-3"
-                onClick={() => void cancelPull()}
+                onClick={() => void cancel()}
               >
                 Cancel download
               </Button>
@@ -145,7 +99,9 @@ export function LocalModels({
                 )}
                 <span className="block text-xs text-stone-600">
                   about {model.downloadGb} GB download
-                  {!model.fits && ` · needs about ${model.minRamGb} GB memory`}
+                  {model.blocker === 'memory' &&
+                    ` · needs about ${model.minRamGb} GB memory`}
+                  {model.blocker === 'disk' && ' · not enough free disk space'}
                 </span>
               </span>
               {installedNames.has(model.id) ? (

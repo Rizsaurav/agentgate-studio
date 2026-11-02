@@ -5,6 +5,7 @@ import { cloud, ollama } from '@/lib/controller';
 import { disconnectProvider } from '@/app/actions';
 import { ConnectProvider } from './connect-provider';
 import { Icon } from './icon';
+import { ModelSetup } from './model-setup';
 import { Button } from './ui/button';
 const PROVIDER_NAMES: Record<string, string> = {
   anthropic: 'Anthropic',
@@ -42,6 +43,7 @@ export async function ProvidersPanel() {
             {local.available ? 'Reachable' : 'Unavailable'}
           </span>
         </div>
+        {local.available && local.models.length === 0 && <ModelSetup />}
         <LocalModels
           recommended={recommendModels(totalmem())}
           installed={local.models}

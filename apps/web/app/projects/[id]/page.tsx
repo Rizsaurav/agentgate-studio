@@ -13,6 +13,7 @@ import { removeContext, removeReference } from '@/app/actions';
 import { AddContext, AddReference } from '@/components/knowledge-forms';
 import { StartSession } from '@/components/start-session';
 import { Panel } from '@/components/panel';
+import { ModelSetup } from '@/components/model-setup';
 import { Icon } from '@/components/icon';
 export const dynamic = 'force-dynamic';
 export default async function ProjectPage({
@@ -214,7 +215,7 @@ export default async function ProjectPage({
           )}
           {groups.length > 0 ? (
             <StartSession projectId={id} groups={groups} />
-          ) : (
+          ) : installed.error ? (
             <p role="alert" className="muted">
               No models are available.{' '}
               <Link href="/models" className="text-teal-800">
@@ -222,6 +223,8 @@ export default async function ProjectPage({
               </Link>
               .
             </p>
+          ) : (
+            <ModelSetup />
           )}
         </section>
       </div>
