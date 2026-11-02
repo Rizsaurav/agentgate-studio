@@ -117,6 +117,26 @@ CREATE TABLE eval_results (
   PRIMARY KEY (run_id, idx)
 ) STRICT;`;
 
+const AGENT = `
+CREATE TABLE agent_usage (
+  day TEXT PRIMARY KEY NOT NULL,
+  tokens INTEGER NOT NULL DEFAULT 0,
+  calls INTEGER NOT NULL DEFAULT 0
+) STRICT;
+CREATE TABLE agent_settings (
+  key TEXT PRIMARY KEY NOT NULL,
+  value TEXT NOT NULL
+) STRICT;
+CREATE TABLE agent_notes (
+  id TEXT PRIMARY KEY NOT NULL,
+  created_at TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK(kind IN ('question','answer','finding','action','proposal')),
+  finding_id TEXT,
+  text TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','approved','dismissed'))
+) STRICT;
+CREATE INDEX agent_notes_created ON agent_notes(created_at);`;
+
 /** Ordered migrations; PRAGMA user_version is the number applied. Never edit an applied entry. */
 const MIGRATIONS = [
   PROJECTS,
@@ -124,6 +144,7 @@ const MIGRATIONS = [
   CONTEXT_AND_DOCUMENTS,
   SECURITY,
   EVALUATIONS,
+  AGENT,
 ];
 
 /** Single owner of the application database file, schema, and migrations. */

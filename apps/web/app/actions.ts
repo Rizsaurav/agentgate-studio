@@ -6,10 +6,13 @@ import {
   createProjectSchema,
   createSessionSchema,
   isLocalMutation,
+  questionSchema,
   runIdSchema,
   sendPromptSchema,
 } from '@agentgate/controller';
 import {
+  agentModel,
+  agentStore,
   cloud,
   context,
   documents,
@@ -19,6 +22,7 @@ import {
   runs,
   sessions,
 } from '@/lib/controller';
+import { assistant } from '@/lib/assistant';
 
 export type CreateProjectState = { error: string | null };
 export async function createProject(
@@ -309,4 +313,79 @@ export async function pullModel(model: string): Promise<PullResult> {
 
 export async function cancelPull(): Promise<void> {
   if (await isLocalRequest()) puller().cancel();
+}
+
+export async function connectAssistant(
+  _previous: ConnectState,
+  form: FormData,
+): Promise<ConnectState> {
+  if (!(await isLocalRequest()))
+    return {
+      error: 'Requests must come from this local workspace.',
+      saved: false,
+    };
+  try {
+    await agentModel().connect(form.get('apiKey'));
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error
+          ? firstLine(error.message)
+          : 'The key could not be saved.',
+      saved: false,
+    };
+  }
+  return { error: null, saved: true };
+}
+
+export async function disconnectAssistant(): Promise<void> {
+  if (await isLocalRequest()) await agentModel().disconnect();
+}
+
+export async function setAssistantEnabled(enabled: boolean): Promise<void> {
+  if (await isLocalRequest()) agentStore().setEnabled(enabled === true);
+}
+
+/** Starts the question in the background; the answer shows up in the assistant's feed. */
+export async function askAssistant(question: string): Promise<PullResult> {
+  if (!(await isLocalRequest()))
+    return { error: 'Requests must come from this local workspace.' };
+  const { supervisor } = assistant();
+  try {
+    const parsed = questionSchema.parse(question);
+    const reason = await supervisor.unavailable();
+    if (reason) return { error: reason };
+    void supervisor.ask(parsed).catch((error: unknown) => {
+      agentStore().addNote(
+        'action',
+        `Could not answer: ${error instanceof Error ? error.message : 'unknown error'}`,
+      );
+    });
+  } catch (error) {
+    return { error: userMessage(error, 'The question could not be sent.') };
+  }
+  return { error: null };
+}
+
+/** Installing a model is never automatic: the assistant proposes, and only this action starts the download. */
+export async function decideProposal(
+  id: string,
+  approve: boolean,
+): Promise<PullResult> {
+  if (!(await isLocalRequest()))
+    return { error: 'Requests must come from this local workspace.' };
+  const note = agentStore().findNote(id);
+  if (note?.kind !== 'proposal' || note.status !== 'open')
+    return { error: 'That suggestion is no longer open.' };
+  if (approve) {
+    try {
+      puller().start(note.text);
+    } catch (error) {
+      return {
+        error: userMessage(error, 'The download could not be started.'),
+      };
+    }
+  }
+  agentStore().setStatus(id, approve ? 'approved' : 'dismissed');
+  return { error: null };
 }

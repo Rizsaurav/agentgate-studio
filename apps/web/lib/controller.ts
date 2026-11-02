@@ -3,6 +3,9 @@ import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
+  AGENT_PROVIDER,
+  AgentModel,
+  AgentStore,
   CloudCatalog,
   EvalService,
   SqliteEvals,
@@ -42,6 +45,8 @@ type Controller = {
   evals: EvalService;
   repoRoot: string;
   puller: ModelPuller;
+  agentStore: AgentStore;
+  agentModel: AgentModel;
   catalog: HuggingFaceCatalog;
   endpoints: { ollamaUrl: string; scannerUrl: string; docsRoot: string | null };
 };
@@ -123,6 +128,11 @@ function controller(): Controller {
       evals,
       repoRoot,
       puller: new ModelPuller(process.env.AGENTGATE_OLLAMA_URL),
+      agentStore: new AgentStore(db),
+      agentModel: new AgentModel(
+        new SecretCredentialStore(new KeychainBackend(), [AGENT_PROVIDER]),
+        process.env.AGENTGATE_AGENT_MODEL || undefined,
+      ),
       catalog: new HuggingFaceCatalog(process.env.AGENTGATE_HF_URL),
       endpoints: {
         ollamaUrl: new URL(
@@ -147,6 +157,8 @@ export const documents = () => controller().documents;
 export const security = () => controller().security;
 export const evals = () => controller().evals;
 export const repoRoot = () => controller().repoRoot;
+export const agentStore = () => controller().agentStore;
+export const agentModel = () => controller().agentModel;
 export const catalog = () => controller().catalog;
 export const puller = () => controller().puller;
 export const endpoints = () => controller().endpoints;

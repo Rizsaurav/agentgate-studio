@@ -5,11 +5,14 @@ export function Panel({
   title,
   trigger,
   icon,
+  badge,
   children,
 }: {
   title: string;
   trigger?: string;
   icon: IconName;
+  /** A short live status shown beside the label, such as a problem count. */
+  badge?: { text: string; tone: 'ok' | 'warn' | 'bad' } | undefined;
   children: ReactNode;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -27,6 +30,13 @@ export function Panel({
       >
         <Icon name={icon} />
         {trigger ?? title}
+        {badge && (
+          <span
+            className={`status-label ${badge.tone === 'ok' ? 'positive' : badge.tone === 'bad' ? 'failure' : ''}`}
+          >
+            {badge.text}
+          </span>
+        )}
       </button>
       <dialog
         ref={dialog}

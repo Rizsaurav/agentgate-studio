@@ -9,7 +9,7 @@ export type ServiceCheck = {
   fix: string;
 };
 
-async function reachable(url: string): Promise<boolean> {
+export async function reachable(url: string): Promise<boolean> {
   try {
     return (await fetch(url, { signal: AbortSignal.timeout(CHECK_TIMEOUT_MS) }))
       .ok;

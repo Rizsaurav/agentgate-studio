@@ -14,16 +14,22 @@ npm start        # starts Ollama, the scanner, and the app, then opens the Model
 
 On the Models page, press **Install** on the model marked "Best fit" for your computer's memory. You can then start a project and a session. `npm start` builds the app on first run; use `npm start -- --rebuild` after pulling changes.
 
-| Variable                | Purpose                                                                                                                                                        |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AGENTGATE_DATA_DIR`    | SQLite location (default `~/.agentgate`)                                                                                                                       |
-| `AGENTGATE_DOCS_ROOT`   | Only folder reference documents may be read from (default `documents/` inside the data folder; files you add in the app are saved to its `uploads/` subfolder) |
-| `AGENTGATE_OLLAMA_URL`  | Ollama endpoint (default `http://127.0.0.1:11434`)                                                                                                             |
-| `AGENTGATE_SCANNER_URL` | Scanner endpoint (default `http://127.0.0.1:8765`)                                                                                                             |
-| `AGENTGATE_REPO_ROOT`   | Repository folder containing `evals/` (default `../..` of the web app)                                                                                         |
-| `PORT`                  | App port for `npm start` (default 3000)                                                                                                                        |
+| Variable                       | Purpose                                                                                                                                                        |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AGENTGATE_DATA_DIR`           | SQLite location (default `~/.agentgate`)                                                                                                                       |
+| `AGENTGATE_DOCS_ROOT`          | Only folder reference documents may be read from (default `documents/` inside the data folder; files you add in the app are saved to its `uploads/` subfolder) |
+| `AGENTGATE_OLLAMA_URL`         | Ollama endpoint (default `http://127.0.0.1:11434`)                                                                                                             |
+| `AGENTGATE_SCANNER_URL`        | Scanner endpoint (default `http://127.0.0.1:8765`)                                                                                                             |
+| `AGENTGATE_REPO_ROOT`          | Repository folder containing `evals/` (default `../..` of the web app)                                                                                         |
+| `AGENTGATE_AGENT_MODEL`        | OpenRouter model for the assistant (default `deepseek/deepseek-v4.1-flash`)                                                                                    |
+| `AGENTGATE_AGENT_DAILY_TOKENS` | Most tokens the assistant may spend per day (default 150000)                                                                                                   |
+| `PORT`                         | App port for `npm start` (default 3000)                                                                                                                        |
 
 Cloud keys (Anthropic, OpenAI) are entered on the Models page, tested with one small request, and stored in the operating system's credential store, never in SQLite or on disk. Try the sample documents by referencing `rag`, and the controlled malicious document by referencing `attack`. The Models page also shows a system check that says what is not running and how to fix it.
+
+## Assistant
+
+The **Assistant** button in the title bar shows live status and opens a panel. A watchdog checks Ollama, the scanner, downloads and the latest evaluation every 30 seconds and restarts Ollama or the scanner for you (at most 3 tries per 10 minutes) without using any model. With an OpenRouter key (entered in the panel and stored in the operating system credential store) an AI assistant can also explain a failed evaluation or download and answer questions. It sees only system state: service status, evaluation case names and counts of blocked items, never documents, conversations or other keys. It can start services and run the evaluation suite; installing a model always waits for your approval. Token guardrails: a daily cap, at most 6 tool calls and 700 output tokens per run, a 60-second limit, each problem investigated at most once per 30 minutes and 6 times per hour, and no model call at all when the assistant is off, has no key, or is out of budget.
 
 ## Security notes
 

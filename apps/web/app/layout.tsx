@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
 import { projects } from '@/lib/controller';
+import { assistant } from '@/lib/assistant';
 import { AppShell } from '@/components/app-shell';
 import { ProvidersPanel } from '@/components/providers-panel';
 import './globals.css';
@@ -13,6 +14,8 @@ export const dynamic = 'force-dynamic';
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  // Starts the always-on watchdog the first time any page is served.
+  assistant();
   return (
     <html lang="en">
       <body>

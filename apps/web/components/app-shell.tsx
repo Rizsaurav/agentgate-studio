@@ -4,6 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Icon, type IconName } from './icon';
 import { Panel } from './panel';
+import { AssistantEntry } from './assistant-entry';
 
 type ProjectLink = { id: string; name: string };
 export function AppShell({
@@ -150,6 +151,7 @@ export function AppShell({
                 : 'Workspace'}
           </span>
           <div className="titlebar-actions">
+            <AssistantEntry />
             <Panel title="Models & Providers" trigger="Models" icon="cube">
               {models}
             </Panel>
