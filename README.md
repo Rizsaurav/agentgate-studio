@@ -24,7 +24,7 @@ Requirements: Node.js 24 (`nvm use`) and npm. The setup script installs the rest
 ```sh
 npm ci
 npm run setup    # installs Ollama (Homebrew on macOS) and the security scanner if missing
-npm start        # starts Ollama, the scanner, and the app, then opens the Models page
+npm start        # starts the scanner and the app (and Ollama if you already have local models), then opens the Models page
 ```
 
 ### 3. Mac app
@@ -44,7 +44,7 @@ npm start        # starts Ollama, the scanner, and the app, then opens the Model
 | Symptom                                     | Fix                                                                                                            |
 | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | Tasks say "Blocked ... scanner-unavailable" | The scanner is not running. `npm start` or `docker compose up` starts it; the first start downloads its model. |
-| No models in the picker                     | Ollama is not running or has no model. Check Models, then Install.                                             |
+| No models in the picker                     | Add an API key on Models, or install a local model there (that starts Ollama).                                 |
 | Port 3000 is in use                         | `PORT=3100 npm start`, or `PORT=3100 docker compose up`.                                                       |
 | Docker: models never appear                 | Ollama must run on your computer (`ollama serve`) or use the `ollama` profile above.                           |
 | Keys                                        | From source: stored in your OS keychain. Docker: set them in `.env` (a container has no keychain).             |
@@ -66,7 +66,7 @@ Cloud keys (Anthropic, OpenAI) are entered on the Models page, tested with one s
 
 ## Assistant
 
-The **Assistant** button in the title bar shows live status and opens a panel. A watchdog checks Ollama, the scanner, downloads and the latest evaluation every 30 seconds and restarts Ollama or the scanner for you (at most 3 tries per 10 minutes) without using any model. With an OpenRouter key (entered in the panel and stored in the operating system credential store) an AI assistant can also explain a failed evaluation or download and answer questions. It sees only system state: service status, evaluation case names and counts of blocked items, never documents, conversations or other keys. It can start services and run the evaluation suite; installing a model always waits for your approval. Token guardrails: a daily cap, at most 6 tool calls and 700 output tokens per run, a 60-second limit, each problem investigated at most once per 30 minutes and 6 times per hour, and no model call at all when the assistant is off, has no key, or is out of budget.
+The **Assistant** button in the title bar shows live status and opens a panel. A watchdog checks the scanner, downloads, the latest evaluation and (once you use local models) Ollama every 30 seconds and restarts Ollama or the scanner for you (at most 3 tries per 10 minutes) without using any model. With an OpenRouter key (entered in the panel and stored in the operating system credential store) an AI assistant can also explain a failed evaluation or download and answer questions. It sees only system state: service status, evaluation case names and counts of blocked items, never documents, conversations or other keys. It can start services and run the evaluation suite; installing a model always waits for your approval. Token guardrails: a daily cap, at most 6 tool calls and 700 output tokens per run, a 60-second limit, each problem investigated at most once per 30 minutes and 6 times per hour, and no model call at all when the assistant is off, has no key, or is out of budget.
 
 ## Security notes
 
@@ -86,7 +86,7 @@ Live-service tests are skipped unless `AGENTGATE_OLLAMA_URL` + `AGENTGATE_OLLAMA
 ## Known limitations
 
 - Single user, loopback only, no authentication. SQLite is not encrypted.
-- Local models: Ollama only. Cloud: Anthropic and OpenAI through Pi. A successful cloud connection and cloud run were not exercised (no paid key was available); invalid-key rejection was verified live.
+- Models: any of OpenRouter, Anthropic, OpenAI, Google Gemini, Groq, DeepSeek, Mistral or xAI with an API key, and Ollama for local models. You need only one. A full chat through OpenRouter was verified; the other providers use the same Pi SDK path but were not run with real keys.
 - Agents have no tools: no filesystem or shell access is granted.
 - Reference documents: `.md`/`.txt` files up to 200 KB from one folder (`AGENTGATE_DOCS_ROOT`), non-recursive.
 - Answers appear after generation finishes, because model text is held until it has been inspected.
@@ -95,4 +95,4 @@ Live-service tests are skipped unless `AGENTGATE_OLLAMA_URL` + `AGENTGATE_OLLAMA
 - The required evaluation suite uses a scripted model fixture. It proves the application stops unsafe content whatever a model says, not that any real model behaves safely. No live-model evaluation suite exists.
 - Browser E2E needs Ollama and the scanner, so it is run locally, not in CI.
 - `npm run setup` installs Ollama automatically only on macOS with Homebrew; on other systems it links to the download. Model downloads are tracked in memory (Ollama resumes a partial download after a restart). Local model sizes and memory needs on the Models page are approximate.
-- Ollama and the scanner are separate local processes. `npm start` runs them, and the app reports when they are unreachable.
+- Ollama and the scanner are separate local processes. Ollama starts only when you install or use a local model; `npm start` starts the scanner, and the app reports when either is unreachable.

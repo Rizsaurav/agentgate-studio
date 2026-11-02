@@ -19,7 +19,12 @@ export {
 export type { Run, Session } from './sessions';
 export { DEFAULT_OLLAMA_URL, OllamaCatalog } from './ollama';
 export type { AgentModels } from './ollama';
-export { CloudCatalog, apiKeySchema, describeProviderError } from './cloud';
+export {
+  CloudCatalog,
+  PROVIDER_INFO,
+  apiKeySchema,
+  describeProviderError,
+} from './cloud';
 export {
   EnvironmentBackend,
   KeychainBackend,

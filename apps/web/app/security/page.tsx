@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { checkServices } from '@agentgate/controller';
-import { endpoints, projects, security } from '@/lib/controller';
+import { agentStore, endpoints, projects, security } from '@/lib/controller';
 import { EvaluationsPanel } from '@/components/evaluations-panel';
 import { Icon } from '@/components/icon';
 export const dynamic = 'force-dynamic';
@@ -18,7 +18,10 @@ export default async function SecurityPage({
   const view =
     (await searchParams).view === 'evaluations' ? 'evaluations' : 'findings';
   const events = security().recent(100),
-    checks = await checkServices(endpoints());
+    checks = await checkServices({
+      ...endpoints(),
+      usesLocalModels: agentStore().usesLocalModels(),
+    });
   const scanner = checks.find((check) => check.name.includes('scanner'));
   const names = new Map(
     projects()

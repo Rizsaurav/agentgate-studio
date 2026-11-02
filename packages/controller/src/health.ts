@@ -23,6 +23,8 @@ export async function checkServices(options: {
   ollamaUrl: string;
   scannerUrl: string;
   docsRoot: string | null;
+  /** False for someone using only API keys: then a stopped Ollama is expected, not a problem. */
+  usesLocalModels?: boolean;
 }): Promise<ServiceCheck[]> {
   const [ollama, scanner] = await Promise.all([
     reachable(`${options.ollamaUrl}/api/version`),
@@ -31,9 +33,13 @@ export async function checkServices(options: {
   return [
     {
       name: 'Ollama (local models)',
-      ok: ollama,
-      detail: ollama ? 'Running.' : 'Not reachable.',
-      fix: 'Start the app with `npm start`, which starts Ollama for you, or run `ollama serve`. Not installed? Run `npm run setup`.',
+      ok: ollama || options.usesLocalModels === false,
+      detail: ollama
+        ? 'Running.'
+        : options.usesLocalModels === false
+          ? 'Not started. It starts when you install a local model; API keys work without it.'
+          : 'Not reachable.',
+      fix: 'Install or pick a local model in the app, which starts Ollama, or run `ollama serve`. Not installed? Run `npm run setup`.',
     },
     {
       name: 'Security scanner (LLM Guard)',

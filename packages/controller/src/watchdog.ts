@@ -20,6 +20,8 @@ export type Finding = {
 /** Facts the rules judge; gathered from the real services and database by the caller. */
 export type Probe = {
   services: ServiceCheck[];
+  /** False until the user installs or picks a local model; cloud-only users never need Ollama. */
+  usesLocalModels: boolean;
   installedModels: number | null;
   lastEval: {
     id: string;
@@ -39,7 +41,7 @@ export function assess(probe: Probe): Finding[] {
   const ollama = service('ollama');
   const scanner = service('scanner');
   const docs = service('reference');
-  if (ollama && !ollama.ok)
+  if (probe.usesLocalModels && ollama && !ollama.ok)
     findings.push({
       id: 'ollama-down',
       severity: 'critical',
@@ -67,7 +69,7 @@ export function assess(probe: Probe): Finding[] {
       remedy: null,
       needsAgent: false,
     });
-  if (ollama?.ok && probe.installedModels === 0)
+  if (probe.usesLocalModels && ollama?.ok && probe.installedModels === 0)
     findings.push({
       id: 'no-local-model',
       severity: 'info',

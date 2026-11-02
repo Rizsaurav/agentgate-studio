@@ -2,7 +2,8 @@
 // Starts everything the app needs, waits until it is ready, and opens the Models page.
 // Ctrl+C stops what this script started. Flags: --rebuild, --no-open.
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -53,9 +54,20 @@ function shutdown() {
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
-// 1. Local models.
+// 1. Local models. Ollama is optional: it starts here only if models are already installed;
+// otherwise the app starts it when someone installs a local model. API keys work without it.
+const ollamaModels = join(
+  process.env.OLLAMA_MODELS ?? join(homedir(), '.ollama', 'models'),
+  'manifests',
+);
+const hasLocalModels =
+  existsSync(ollamaModels) && readdirSync(ollamaModels).length > 0;
 if (await up(`${ollamaUrl}/api/version`)) {
   say('Ollama is already running.');
+} else if (!hasLocalModels) {
+  say(
+    'No local models yet. Use an API key, or install a local model in the app (Ollama starts then).',
+  );
 } else if (
   spawnSync('ollama', ['--version'], { stdio: 'ignore' }).status === 0
 ) {

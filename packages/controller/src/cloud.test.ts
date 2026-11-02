@@ -4,6 +4,8 @@ import {
   EnvironmentBackend,
   CloudCatalog,
   KeychainBackend,
+  CLOUD_PROVIDERS,
+  PROVIDER_INFO,
   SecretCredentialStore,
   apiKeySchema,
   describeProviderError,
@@ -130,14 +132,15 @@ describe('provider errors and key validation', () => {
 
 describe('CloudCatalog', () => {
   const catalog = () =>
-    new CloudCatalog(new SecretCredentialStore(new MemoryBackend(), PROVIDERS));
+    new CloudCatalog(
+      new SecretCredentialStore(new MemoryBackend(), CLOUD_PROVIDERS),
+    );
 
-  it('lists Pi built-in models and reports missing keys', async () => {
+  it('lists every connectable provider with its built-in models', async () => {
     const status = await catalog().status();
-    expect(status.map((entry) => entry.provider)).toEqual([
-      'anthropic',
-      'openai',
-    ]);
+    expect(status.map((entry) => entry.provider)).toEqual([...CLOUD_PROVIDERS]);
+    for (const provider of CLOUD_PROVIDERS)
+      expect(PROVIDER_INFO[provider].name).toBeTruthy();
     for (const entry of status) expect(entry.models.length).toBeGreaterThan(0);
   });
 

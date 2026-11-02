@@ -32,6 +32,7 @@ import {
   SqliteProjects,
   SqliteSessions,
   openDatabase,
+  startOllama,
 } from '@agentgate/controller';
 
 type Controller = {
@@ -72,7 +73,11 @@ function controller(): Controller {
       process.env.AGENTGATE_SECRETS === 'env'
         ? new EnvironmentBackend()
         : new KeychainBackend();
-    const ollama = new OllamaCatalog(process.env.AGENTGATE_OLLAMA_URL);
+    const ollamaUrl = new URL(
+      process.env.AGENTGATE_OLLAMA_URL ?? DEFAULT_OLLAMA_URL,
+    ).origin;
+    const ollama = new OllamaCatalog(ollamaUrl);
+    const agentStore = new AgentStore(db);
     const cloud = new CloudCatalog(
       new SecretCredentialStore(secrets, CLOUD_PROVIDERS),
     );
@@ -112,7 +117,11 @@ function controller(): Controller {
     evals.start();
     const runs = new RunService(
       sessionRepository,
-      new ModelRouter(ollama, cloud),
+      // Ollama is started the first time a local model is used, not when the app opens.
+      new ModelRouter(ollama, cloud, async () => {
+        agentStore.setUsesLocalModels();
+        return startOllama(ollamaUrl);
+      }),
       {
         guard,
         knowledge: {
@@ -134,16 +143,14 @@ function controller(): Controller {
       evals,
       repoRoot,
       puller: new ModelPuller(process.env.AGENTGATE_OLLAMA_URL),
-      agentStore: new AgentStore(db),
+      agentStore,
       agentModel: new AgentModel(
         new SecretCredentialStore(secrets, [AGENT_PROVIDER]),
         process.env.AGENTGATE_AGENT_MODEL || undefined,
       ),
       catalog: new HuggingFaceCatalog(process.env.AGENTGATE_HF_URL),
       endpoints: {
-        ollamaUrl: new URL(
-          process.env.AGENTGATE_OLLAMA_URL ?? DEFAULT_OLLAMA_URL,
-        ).origin,
+        ollamaUrl,
         scannerUrl: new URL(
           process.env.AGENTGATE_SCANNER_URL ?? DEFAULT_SCANNER_URL,
         ).origin,

@@ -7,7 +7,13 @@ import {
   type MutableModels,
 } from '@earendil-works/pi-ai';
 import { anthropicProvider } from '@earendil-works/pi-ai/providers/anthropic';
+import { deepseekProvider } from '@earendil-works/pi-ai/providers/deepseek';
+import { googleProvider } from '@earendil-works/pi-ai/providers/google';
+import { groqProvider } from '@earendil-works/pi-ai/providers/groq';
+import { mistralProvider } from '@earendil-works/pi-ai/providers/mistral';
 import { openaiProvider } from '@earendil-works/pi-ai/providers/openai';
+import { openrouterProvider } from '@earendil-works/pi-ai/providers/openrouter';
+import { xaiProvider } from '@earendil-works/pi-ai/providers/xai';
 import { z } from 'zod';
 import type { OpenedModel } from './ollama';
 import {
@@ -17,6 +23,44 @@ import {
 } from './sessions';
 
 const VERIFY_TIMEOUT_MS = 20_000;
+
+/** Display name and where a user gets a key, for each provider that can be connected. */
+export const PROVIDER_INFO: Record<
+  CloudProvider,
+  { name: string; keyUrl: string }
+> = {
+  openrouter: {
+    name: 'OpenRouter',
+    keyUrl: 'https://openrouter.ai/keys',
+  },
+  anthropic: {
+    name: 'Anthropic',
+    keyUrl: 'https://console.anthropic.com/settings/keys',
+  },
+  openai: { name: 'OpenAI', keyUrl: 'https://platform.openai.com/api-keys' },
+  google: {
+    name: 'Google Gemini',
+    keyUrl: 'https://aistudio.google.com/apikey',
+  },
+  groq: { name: 'Groq', keyUrl: 'https://console.groq.com/keys' },
+  deepseek: {
+    name: 'DeepSeek',
+    keyUrl: 'https://platform.deepseek.com/api_keys',
+  },
+  mistral: { name: 'Mistral', keyUrl: 'https://console.mistral.ai/api-keys' },
+  xai: { name: 'xAI', keyUrl: 'https://console.x.ai' },
+};
+
+const PROVIDERS = {
+  openrouter: openrouterProvider,
+  anthropic: anthropicProvider,
+  openai: openaiProvider,
+  google: googleProvider,
+  groq: groqProvider,
+  deepseek: deepseekProvider,
+  mistral: mistralProvider,
+  xai: xaiProvider,
+} satisfies Record<CloudProvider, unknown>;
 export const apiKeySchema = z
   .string()
   .trim()
@@ -137,14 +181,18 @@ export class CloudCatalog {
           }
         : {}),
     });
-    registry.setProvider(anthropicProvider());
-    registry.setProvider(openaiProvider());
+    for (const create of Object.values(PROVIDERS))
+      registry.setProvider(create());
     return registry;
   }
 }
 
 function cheapest(models: readonly Model<Api>[]): Model<Api> {
-  const sorted = [...models].sort((a, b) => a.cost.output - b.cost.output);
+  // Free models are often rate limited, which would make a good key look rejected.
+  const paid = models.filter((model) => model.cost.output > 0);
+  const sorted = [...(paid.length ? paid : models)].sort(
+    (a, b) => a.cost.output - b.cost.output,
+  );
   const model = sorted[0];
   if (!model) throw new Error('The provider offers no models.');
   return model;

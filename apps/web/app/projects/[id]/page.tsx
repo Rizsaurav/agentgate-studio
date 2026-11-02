@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { projectIdSchema } from '@agentgate/controller';
+import { PROVIDER_INFO, projectIdSchema } from '@agentgate/controller';
 import {
+  agentStore,
   cloud,
   context,
   documents,
@@ -49,7 +50,7 @@ export default async function ProjectPage({
     ...(cloudStatus ?? [])
       .filter((entry) => entry.configured)
       .map((entry) => ({
-        label: `${entry.provider} (cloud)`,
+        label: PROVIDER_INFO[entry.provider].name,
         provider: entry.provider,
         models: entry.models,
       })),
@@ -201,10 +202,9 @@ export default async function ProjectPage({
           <h2 id="new-session-title" className="mb-5">
             New conversation
           </h2>
-          {installed.error && (
+          {installed.error && agentStore().usesLocalModels() && (
             <p className="muted mb-5">
-              Ollama is not reachable. Start it with <code>ollama serve</code>{' '}
-              to use local models.
+              Local models are starting. They appear here within a minute.
             </p>
           )}
           {cloudStatus === null && (
@@ -215,16 +215,29 @@ export default async function ProjectPage({
           )}
           {groups.length > 0 ? (
             <StartSession projectId={id} groups={groups} />
-          ) : installed.error ? (
-            <p role="alert" className="muted">
-              No models are available.{' '}
-              <Link href="/models" className="text-teal-800">
-                Install a local model or connect a cloud provider
-              </Link>
-              .
-            </p>
           ) : (
-            <ModelSetup />
+            <div className="space-y-6">
+              <p className="muted">
+                Pick how this project gets a model. You can add the other later.
+              </p>
+              <div>
+                <h3 className="mb-2 font-medium">Use an API key</h3>
+                <p className="muted mb-3">
+                  OpenRouter, Anthropic, OpenAI, Google, Groq, DeepSeek, Mistral
+                  or xAI. Nothing to install.
+                </p>
+                <Link href="/models" className="subtle-button">
+                  <Icon name="spark" />
+                  Add an API key
+                </Link>
+              </div>
+              <div>
+                <h3 className="mb-2 font-medium">
+                  Run a model on this computer
+                </h3>
+                <ModelSetup />
+              </div>
+            </div>
           )}
         </section>
       </div>

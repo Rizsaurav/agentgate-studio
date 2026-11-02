@@ -1,9 +1,12 @@
 import { checkServices } from '@agentgate/controller';
-import { endpoints } from '@/lib/controller';
+import { agentStore, endpoints } from '@/lib/controller';
 import { ProvidersPanel } from '@/components/providers-panel';
 export const dynamic = 'force-dynamic';
 export default async function ModelsPage() {
-  const checks = await checkServices(endpoints());
+  const checks = await checkServices({
+    ...endpoints(),
+    usesLocalModels: agentStore().usesLocalModels(),
+  });
   return (
     <div className="narrow-page">
       <header className="page-heading">

@@ -9,6 +9,7 @@ import {
   questionSchema,
   runIdSchema,
   sendPromptSchema,
+  startOllama,
 } from '@agentgate/controller';
 import {
   agentModel,
@@ -16,6 +17,7 @@ import {
   cloud,
   context,
   documents,
+  endpoints,
   evals,
   projects,
   puller,
@@ -303,7 +305,14 @@ export type PullResult = { error: string | null };
 export async function pullModel(model: string): Promise<PullResult> {
   if (!(await isLocalRequest()))
     return { error: 'Requests must come from this local workspace.' };
+  return installLocalModel(model);
+}
+
+/** Starts Ollama in the background if needed, then the download. Local models are opt-in. */
+async function installLocalModel(model: unknown): Promise<PullResult> {
   try {
+    await startOllama(endpoints().ollamaUrl);
+    agentStore().setUsesLocalModels();
     puller().start(model);
   } catch (error) {
     return { error: userMessage(error, 'The download could not be started.') };
@@ -378,13 +387,8 @@ export async function decideProposal(
   if (note?.kind !== 'proposal' || note.status !== 'open')
     return { error: 'That suggestion is no longer open.' };
   if (approve) {
-    try {
-      puller().start(note.text);
-    } catch (error) {
-      return {
-        error: userMessage(error, 'The download could not be started.'),
-      };
-    }
+    const started = await installLocalModel(note.text);
+    if (started.error) return started;
   }
   agentStore().setStatus(id, approve ? 'approved' : 'dismissed');
   return { error: null };
