@@ -6,6 +6,10 @@ import { disconnectProvider } from '@/app/actions';
 import { ConnectProvider } from './connect-provider';
 import { Icon } from './icon';
 import { Button } from './ui/button';
+const PROVIDER_NAMES: Record<string, string> = {
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+};
 export async function ProvidersPanel() {
   const local = await ollama()
     .listDetailed()
@@ -57,8 +61,8 @@ export async function ProvidersPanel() {
             <span className="provider-icon">
               <Icon name="spark" />
             </span>
-            <h3 className="capitalize">
-              {provider.provider}
+            <h3>
+              {PROVIDER_NAMES[provider.provider] ?? provider.provider}
               <span>
                 {provider.configured ? provider.source : 'API key required'}
               </span>

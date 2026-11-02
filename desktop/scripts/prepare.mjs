@@ -51,9 +51,6 @@ await cp(
 );
 for (const file of ['server.mjs', 'access.mjs'])
   await cp(join(desktop, 'scripts', file), join(stage, file));
-await cp(join(root, 'fixtures', 'rag'), join(stage, 'reference-documents'), {
-  recursive: true,
-});
 await writeFile(
   join(stage, 'BUILD.json'),
   JSON.stringify(

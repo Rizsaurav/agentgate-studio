@@ -10,6 +10,8 @@ const config: NextConfig = {
     '@earendil-works/pi-ai',
     '@earendil-works/pi-agent-core',
   ],
+  // Ten documents of up to 200 KB each can be added at once.
+  experimental: { serverActions: { bodySizeLimit: '4mb' } },
   poweredByHeader: false,
 };
 export default config;

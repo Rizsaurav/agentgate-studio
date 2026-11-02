@@ -1,4 +1,5 @@
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   rmSync,
@@ -253,6 +254,50 @@ describe('reference documents and retrieval', () => {
     );
   });
 
+  it('stores uploads safely inside the folder and they are then retrievable', async () => {
+    const { root, projects, documents } = setup();
+    const project = projects.create({ name: 'P' });
+    const text = (value: string) => new TextEncoder().encode(value);
+    const stored = documents.store([
+      {
+        name: '../../evil name!.md',
+        bytes: text('# Rules\n\nBikes ship in boxes.'),
+      },
+      {
+        name: '../../evil name!.md',
+        bytes: text('# Again\n\nSecond copy of the rules.'),
+      },
+      { name: 'photo.png', bytes: text('x') },
+      { name: 'empty.txt', bytes: text('') },
+      { name: 'big.txt', bytes: new Uint8Array(200_001).fill(97) },
+    ]);
+    expect(stored.rejected.map((r) => r.name).sort()).toEqual([
+      'big.txt',
+      'empty.txt',
+      'photo.png',
+    ]);
+    expect(stored.paths).toHaveLength(2);
+    expect(new Set(stored.paths).size).toBe(2);
+    for (const path of stored.paths) {
+      expect(path).toMatch(
+        /^uploads\/evil name_\.md$|^uploads\/evil name_-[0-9a-f]{8}\.md$/,
+      );
+      expect(existsSync(join(root, path))).toBe(true);
+      await documents.reference({ projectId: project.id, path });
+    }
+    expect(documents.retrieve(project.id, 'bikes boxes')[0]?.text).toContain(
+      'Bikes ship',
+    );
+    expect(
+      documents.store(
+        Array.from({ length: 12 }, (_, i) => ({
+          name: `n${i}.md`,
+          bytes: text('# T\n\nhello world'),
+        })),
+      ).rejected,
+    ).toHaveLength(2);
+  });
+
   it('refuses to reference anything when no folder is configured', async () => {
     const { projects, documents } = setup(false);
     const project = projects.create({ name: 'P' });
@@ -260,6 +305,7 @@ describe('reference documents and retrieval', () => {
     await expect(
       documents.reference({ projectId: project.id, path: '.' }),
     ).rejects.toThrow('No reference');
+    expect(() => documents.store([])).toThrow('No reference');
   });
 
   it('neutralizes FTS operators and chunks long text within bounds', () => {

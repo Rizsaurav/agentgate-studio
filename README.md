@@ -14,14 +14,14 @@ npm start        # starts Ollama, the scanner, and the app, then opens the Model
 
 On the Models page, press **Install** on the model marked "Best fit" for your computer's memory. You can then start a project and a session. `npm start` builds the app on first run; use `npm start -- --rebuild` after pulling changes.
 
-| Variable                | Purpose                                                                |
-| ----------------------- | ---------------------------------------------------------------------- |
-| `AGENTGATE_DATA_DIR`    | SQLite location (default `~/.agentgate`)                               |
-| `AGENTGATE_DOCS_ROOT`   | Only folder reference documents may be read from (default `fixtures/`) |
-| `AGENTGATE_OLLAMA_URL`  | Ollama endpoint (default `http://127.0.0.1:11434`)                     |
-| `AGENTGATE_SCANNER_URL` | Scanner endpoint (default `http://127.0.0.1:8765`)                     |
-| `AGENTGATE_REPO_ROOT`   | Repository folder containing `evals/` (default `../..` of the web app) |
-| `PORT`                  | App port for `npm start` (default 3000)                                |
+| Variable                | Purpose                                                                                                                                                        |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AGENTGATE_DATA_DIR`    | SQLite location (default `~/.agentgate`)                                                                                                                       |
+| `AGENTGATE_DOCS_ROOT`   | Only folder reference documents may be read from (default `documents/` inside the data folder; files you add in the app are saved to its `uploads/` subfolder) |
+| `AGENTGATE_OLLAMA_URL`  | Ollama endpoint (default `http://127.0.0.1:11434`)                                                                                                             |
+| `AGENTGATE_SCANNER_URL` | Scanner endpoint (default `http://127.0.0.1:8765`)                                                                                                             |
+| `AGENTGATE_REPO_ROOT`   | Repository folder containing `evals/` (default `../..` of the web app)                                                                                         |
+| `PORT`                  | App port for `npm start` (default 3000)                                                                                                                        |
 
 Cloud keys (Anthropic, OpenAI) are entered on the Models page, tested with one small request, and stored in the operating system's credential store, never in SQLite or on disk. Try the sample documents by referencing `rag`, and the controlled malicious document by referencing `attack`. The Models page also shows a system check that says what is not running and how to fix it.
 

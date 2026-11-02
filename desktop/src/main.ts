@@ -48,8 +48,6 @@ async function start() {
     ].join(':'),
     AGENTGATE_REPO_ROOT:
       process.env.AGENTGATE_REPO_ROOT || join(resources, 'evaluation'),
-    AGENTGATE_DOCS_ROOT:
-      process.env.AGENTGATE_DOCS_ROOT || join(resources, 'reference-documents'),
   };
   delete environment.NODE_OPTIONS;
   delete environment.ELECTRON_RUN_AS_NODE;

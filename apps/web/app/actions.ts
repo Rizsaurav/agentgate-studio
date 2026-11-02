@@ -210,6 +210,31 @@ export async function removeContext(form: FormData): Promise<void> {
   revalidatePath(`/projects/${form.get('projectId')}`);
 }
 
+type ReferenceResult = Awaited<
+  ReturnType<ReturnType<typeof documents>['reference']>
+>;
+
+/** One message for the whole batch: an error only when nothing could be added. */
+function referenceFeedback(
+  results: ReferenceResult[],
+  rejected: { name: string; reason: string }[] = [],
+): FormState {
+  const added = results.reduce((sum, result) => sum + result.added.length, 0);
+  const problems = [
+    ...rejected.map((r) => `${r.name}: ${r.reason}`),
+    ...results.flatMap((result) => [
+      ...result.quarantined.map(
+        (q) => `${q.document.path}: quarantined (${q.reason})`,
+      ),
+      ...result.skipped.map((skip) => `${skip.path}: ${skip.reason}`),
+    ]),
+  ].join(' ');
+  return {
+    error: added === 0 && problems ? problems : null,
+    notice: `Added ${added} document(s).${added > 0 && problems ? ` Not used: ${problems}` : ''}`,
+  };
+}
+
 export async function addReference(
   _previous: FormState,
   form: FormData,
@@ -220,21 +245,26 @@ export async function addReference(
       notice: null,
     };
   try {
-    const result = await documents().reference({
-      projectId: form.get('projectId'),
-      path: form.get('path'),
-    });
-    revalidatePath(`/projects/${form.get('projectId')}`);
-    const problems = [
-      ...result.quarantined.map(
-        (q) => `${q.document.path}: quarantined (${q.reason})`,
-      ),
-      ...result.skipped.map((s) => `${s.path}: ${s.reason}`),
-    ].join(' ');
-    return {
-      error: result.added.length === 0 && problems ? problems : null,
-      notice: `Added ${result.added.length} document(s).${result.added.length > 0 && problems ? ` Not used: ${problems}` : ''}`,
-    };
+    const projectId = form.get('projectId');
+    const uploads = await Promise.all(
+      form
+        .getAll('files')
+        .filter(
+          (entry): entry is File => entry instanceof File && entry.size > 0,
+        )
+        .map(async (file) => ({
+          name: file.name,
+          bytes: new Uint8Array(await file.arrayBuffer()),
+        })),
+    );
+    // Chosen files take priority; the typed path is for files already in the reference folder.
+    const stored = uploads.length > 0 ? documents().store(uploads) : null;
+    const paths = stored ? stored.paths : [form.get('path')];
+    const results: ReferenceResult[] = [];
+    for (const path of paths)
+      results.push(await documents().reference({ projectId, path }));
+    revalidatePath(`/projects/${projectId}`);
+    return referenceFeedback(results, stored?.rejected);
   } catch (error) {
     return {
       error: userMessage(error, 'The documents could not be added.'),

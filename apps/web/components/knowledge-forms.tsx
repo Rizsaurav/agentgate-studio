@@ -63,18 +63,36 @@ export function AddReference({ projectId }: { projectId: string }) {
   return (
     <form action={action} className="space-y-3">
       <input type="hidden" name="projectId" value={projectId} />
-      <label htmlFor="reference-path" className="block text-sm font-medium">
-        File or folder in the reference folder
+      <label htmlFor="reference-files" className="block text-sm font-medium">
+        Add your documents (.md or .txt, up to 200 KB each)
       </label>
       <input
-        id="reference-path"
-        name="path"
-        required
-        maxLength={300}
-        defaultValue="."
-        autoComplete="off"
-        className="w-full rounded-md border border-stone-300 bg-white px-3 py-3 font-mono text-sm outline-teal-700"
+        id="reference-files"
+        name="files"
+        type="file"
+        multiple
+        accept=".md,.txt,text/plain,text/markdown"
+        className="w-full text-sm"
       />
+      <details>
+        <summary className="cursor-pointer text-sm">
+          Or use a file already in the reference folder
+        </summary>
+        <label
+          htmlFor="reference-path"
+          className="mt-3 block text-sm font-medium"
+        >
+          File or folder in the reference folder
+        </label>
+        <input
+          id="reference-path"
+          name="path"
+          maxLength={300}
+          defaultValue="."
+          autoComplete="off"
+          className="mt-2 w-full rounded-md border border-stone-300 bg-white px-3 py-3 font-mono text-sm outline-teal-700"
+        />
+      </details>
       <Feedback state={state} />
       <Button type="submit" disabled={pending}>
         {pending ? 'Adding…' : 'Add reference'}

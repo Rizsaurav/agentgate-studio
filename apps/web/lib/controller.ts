@@ -1,4 +1,5 @@
 import 'server-only';
+import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
@@ -62,8 +63,12 @@ function controller(): Controller {
     const cloud = new CloudCatalog(
       new SecretCredentialStore(new KeychainBackend(), CLOUD_PROVIDERS),
     );
-    // Reference documents are read only from this folder.
-    const docsRoot = process.env.AGENTGATE_DOCS_ROOT;
+    // Reference documents are read only from this folder; by default it lives beside the database.
+    const docsRoot = resolve(
+      /* turbopackIgnore: true */
+      process.env.AGENTGATE_DOCS_ROOT || join(directory, 'documents'),
+    );
+    mkdirSync(docsRoot, { recursive: true });
     const projectService = new ProjectService(projectRepository);
     const context = new ContextService(
       new SqliteContext(db),
@@ -81,7 +86,7 @@ function controller(): Controller {
     const documents = new DocumentService(
       documentRepository,
       projectRepository,
-      docsRoot ? resolve(docsRoot) : null,
+      docsRoot,
       (document, chunks) => guard.screenDocument(document, chunks),
     );
     // The evaluation suite is version-controlled in the repository, not in the data directory.
@@ -123,7 +128,7 @@ function controller(): Controller {
         scannerUrl: new URL(
           process.env.AGENTGATE_SCANNER_URL ?? DEFAULT_SCANNER_URL,
         ).origin,
-        docsRoot: docsRoot ? resolve(docsRoot) : null,
+        docsRoot: docsRoot,
       },
     };
   }

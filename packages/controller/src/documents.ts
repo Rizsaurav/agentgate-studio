@@ -1,5 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
+import {
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import {
   basename,
   extname,
@@ -15,6 +22,8 @@ import { projectIdSchema, type ProjectRepository } from './projects';
 
 const MAX_FILE_BYTES = 200_000;
 const MAX_FILES = 50;
+const MAX_UPLOADS = 10;
+const UPLOAD_FOLDER = 'uploads';
 const MAX_CHUNK_CHARS = 800;
 const ALLOWED_EXTENSIONS = ['.md', '.txt'];
 export const DEFAULT_PASSAGES = 4;
@@ -199,6 +208,17 @@ export class SqliteDocuments implements DocumentRepository {
   }
 }
 
+/** Writes a file only if it does not exist yet; returns whether it was written. */
+function writeNew(path: string, bytes: Uint8Array): boolean {
+  try {
+    writeFileSync(path, bytes, { flag: 'wx' });
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
+    throw error;
+  }
+}
+
 /** Reference documents confined to one approved root directory. */
 export class DocumentService {
   private readonly root: string | null;
@@ -214,6 +234,54 @@ export class DocumentService {
 
   get configured(): boolean {
     return this.root !== null;
+  }
+
+  /**
+   * Saves uploaded files inside the reference folder and returns their paths for `reference`.
+   * Names are reduced to a safe basename; content is judged later by the same checks as any file.
+   */
+  store(files: { name: string; bytes: Uint8Array }[]): {
+    paths: string[];
+    rejected: { name: string; reason: string }[];
+  } {
+    if (this.root === null)
+      throw new Error('No reference document folder is configured.');
+    const folder = join(this.root, UPLOAD_FOLDER);
+    mkdirSync(folder, { recursive: true });
+    const paths: string[] = [];
+    const rejected: { name: string; reason: string }[] = [];
+    for (const file of files.slice(0, MAX_UPLOADS)) {
+      const name = basename(file.name)
+        .replace(/[^A-Za-z0-9._ -]/g, '_')
+        .replace(/^\.+/, '_');
+      if (!ALLOWED_EXTENSIONS.includes(extname(name)))
+        rejected.push({
+          name,
+          reason: 'Only .md and .txt files are supported.',
+        });
+      else if (file.bytes.length === 0)
+        rejected.push({ name, reason: 'The file is empty.' });
+      else if (file.bytes.length > MAX_FILE_BYTES)
+        rejected.push({ name, reason: 'The file is too large.' });
+      else {
+        // "wx" never overwrites: a name already used by an earlier upload gets a unique suffix.
+        const extension = extname(name);
+        const stem = name.slice(0, name.length - extension.length);
+        let saved = name;
+        if (!writeNew(join(folder, saved), file.bytes)) {
+          saved = `${stem}-${randomUUID().slice(0, 8)}${extension}`;
+          if (!writeNew(join(folder, saved), file.bytes))
+            throw new Error('The file could not be saved.');
+        }
+        paths.push(`${UPLOAD_FOLDER}/${saved}`);
+      }
+    }
+    for (const file of files.slice(MAX_UPLOADS))
+      rejected.push({
+        name: basename(file.name),
+        reason: `Only ${MAX_UPLOADS} files can be added at once.`,
+      });
+    return { paths, rejected };
   }
 
   async reference(input: unknown): Promise<ReferenceResult> {

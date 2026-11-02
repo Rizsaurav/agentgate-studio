@@ -114,8 +114,6 @@ launch(
     String(port),
   ],
   {
-    AGENTGATE_DOCS_ROOT:
-      process.env.AGENTGATE_DOCS_ROOT ?? join(root, 'fixtures'),
     AGENTGATE_SCANNER_URL: scannerUrl,
   },
 );

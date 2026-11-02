@@ -34,7 +34,6 @@ const paths = await packager({
     'runtime',
     'server.mjs',
     'access.mjs',
-    'reference-documents',
     'BUILD.json',
     'evaluation',
   ].map((path) => join(desktop, 'stage', path)),
