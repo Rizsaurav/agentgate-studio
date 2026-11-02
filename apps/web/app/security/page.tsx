@@ -71,7 +71,7 @@ export default async function SecurityPage({
           aria-current={view === 'evaluations' ? 'page' : undefined}
         >
           <Icon name="activity" />
-          Evaluations & CI
+          Evaluations
         </Link>
       </nav>
       {view === 'evaluations' ? (

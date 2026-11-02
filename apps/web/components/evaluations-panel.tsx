@@ -1,5 +1,6 @@
-import { listGithubRuns } from '@agentgate/controller';
+import { Suspense } from 'react';
 import { evals, repoRoot } from '@/lib/controller';
+import { githubRuns } from '@/lib/github';
 import { startEvaluation } from '@/app/actions';
 import { AutoRefresh } from '@/components/auto-refresh';
 import { Button } from '@/components/ui/button';
@@ -15,8 +16,6 @@ const STATUS_STYLE: Record<string, string> = {
 export async function EvaluationsPanel() {
   const service = evals();
   const runs = service.recent(15);
-  const github = await listGithubRuns(repoRoot());
-  const bySha = new Map(github.runs.map((run) => [run.headSha, run]));
   const active = runs.some(
     (r) => r.status === 'queued' || r.status === 'running',
   );
@@ -70,7 +69,6 @@ export async function EvaluationsPanel() {
         <ul className="space-y-4">
           {runs.map((run) => {
             const results = service.results(run.id);
-            const ci = run.gitSha ? bySha.get(run.gitSha) : undefined;
             return (
               <li
                 key={run.id}
@@ -116,17 +114,10 @@ export async function EvaluationsPanel() {
                       {run.gitDirty ? ' (uncommitted changes)' : ''}
                     </dd>
                   </div>
-                  {ci && (
-                    <div className="sm:col-span-2">
-                      <dt className="inline text-stone-600">
-                        GitHub run for this commit:{' '}
-                      </dt>
-                      <dd className="inline">
-                        <a href={ci.url} className="underline">
-                          {ci.workflowName} · {ci.conclusion ?? ci.status}
-                        </a>
-                      </dd>
-                    </div>
+                  {run.gitSha && (
+                    <Suspense fallback={null}>
+                      <HostedRun sha={run.gitSha} />
+                    </Suspense>
                   )}
                 </dl>
                 {results.some((r) => !r.passed) && (
@@ -152,6 +143,38 @@ export async function EvaluationsPanel() {
         </ul>
       )}
 
+      <Suspense
+        fallback={
+          <p className="mt-12 text-sm text-stone-600">Checking GitHub…</p>
+        }
+      >
+        <GithubSection />
+      </Suspense>
+    </>
+  );
+}
+
+/** The GitHub Actions run for the same commit, when the GitHub CLI can see one. */
+async function HostedRun({ sha }: { sha: string }) {
+  const run = (await githubRuns()).runs.find((r) => r.headSha === sha);
+  if (!run) return null;
+  return (
+    <div className="sm:col-span-2">
+      <dt className="inline text-stone-600">GitHub run for this commit: </dt>
+      <dd className="inline">
+        <a href={run.url} className="underline">
+          {run.workflowName} · {run.conclusion ?? run.status}
+        </a>
+      </dd>
+    </div>
+  );
+}
+
+/** Optional: only developers with the GitHub CLI signed in have hosted runs to show. */
+async function GithubSection() {
+  const github = await githubRuns();
+  return (
+    <>
       <h2 className="mb-4 mt-12 text-xl font-semibold">GitHub Actions</h2>
       {github.unavailable ? (
         <p className="text-sm text-stone-700">{github.unavailable}</p>

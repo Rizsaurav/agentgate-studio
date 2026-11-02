@@ -453,7 +453,7 @@ export async function listGithubRuns(
         '--json',
         'databaseId,status,conclusion,headSha,url,workflowName,createdAt',
       ],
-      { cwd: repoRoot, timeout: 10_000 },
+      { cwd: repoRoot, timeout: 5000 },
     );
     return { runs: ghRunSchema.parse(JSON.parse(stdout)), unavailable: null };
   } catch {
