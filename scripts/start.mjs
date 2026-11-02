@@ -60,7 +60,9 @@ if (await up(`${ollamaUrl}/api/version`)) {
   spawnSync('ollama', ['--version'], { stdio: 'ignore' }).status === 0
 ) {
   say('Starting Ollama…');
-  launch('Ollama', 'ollama', ['serve']);
+  launch('Ollama', 'ollama', ['serve'], {
+    OLLAMA_KEEP_ALIVE: process.env.OLLAMA_KEEP_ALIVE ?? '30m',
+  });
   if (!(await waitFor(`${ollamaUrl}/api/version`, 30)))
     say('Ollama did not start; local models will be unavailable.');
 } else {

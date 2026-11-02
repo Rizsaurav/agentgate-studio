@@ -343,6 +343,44 @@ describe('scanner failures fail closed', () => {
   });
 });
 
+describe('scanner verdict cache', () => {
+  it('asks the service once per distinct text and never caches failures', async () => {
+    const asked: string[][] = [];
+    const url = await scannerServer((request, response) => {
+      let body = '';
+      request.on('data', (chunk) => (body += chunk));
+      request.on('end', () => {
+        const { texts } = JSON.parse(body) as { texts: string[] };
+        asked.push(texts);
+        response.end(
+          JSON.stringify({
+            scanner: 'llm-guard',
+            results: texts.map((text) => ({
+              valid: !text.includes('bad'),
+              score: text.includes('bad') ? 1 : 0,
+            })),
+          }),
+        );
+      });
+    });
+    const scanner = new LlmGuardScanner(url);
+    expect(await scanner.scan(['a', 'bad', 'a'])).toEqual([
+      { injection: false, score: 0 },
+      { injection: true, score: 1 },
+      { injection: false, score: 0 },
+    ]);
+    expect(asked).toEqual([['a', 'bad']]);
+    await scanner.scan(['bad', 'b']);
+    expect(asked[1]).toEqual(['b']);
+    await scanner.scan(['a', 'b']);
+    expect(asked).toHaveLength(2);
+    const down = new LlmGuardScanner('http://127.0.0.1:1');
+    await expect(down.scan(['a'])).rejects.toBeInstanceOf(
+      ScannerUnavailableError,
+    );
+  });
+});
+
 // Real LLM Guard service (npm run scanner). Needs AGENTGATE_SCANNER_URL.
 const scannerUrl = process.env.AGENTGATE_SCANNER_URL;
 describe.runIf(scannerUrl)('live LLM Guard (integration)', () => {

@@ -42,7 +42,10 @@ export async function startOllama(
   if (await reachable(`${ollamaUrl}/api/version`))
     return 'Ollama is already running.';
   try {
-    await launch(command, ['serve']);
+    // A loaded model is kept for half an hour (Ollama's default is five minutes) so a pause does not cost a reload.
+    await launch(command, ['serve'], {
+      env: { OLLAMA_KEEP_ALIVE: process.env.OLLAMA_KEEP_ALIVE ?? '30m' },
+    });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT')
       throw new Error('Ollama is not installed. Run `npm run setup`.');
