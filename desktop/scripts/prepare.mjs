@@ -26,8 +26,12 @@ const build = spawnSync(
 if (build.status !== 0) process.exit(build.status ?? 1);
 await rm(stage, { recursive: true, force: true });
 await mkdir(stage, { recursive: true });
+// Turbopack links native modules into .next/node_modules with absolute symlinks to this machine's
+// build folder. Copying them as links leaves the packaged app pointing at paths that do not exist
+// anywhere else, and every page then fails with a missing module. Copy their contents instead.
 await cp(join(root, 'apps', 'web', '.next', 'standalone'), join(stage, 'web'), {
   recursive: true,
+  dereference: true,
 });
 await cp(
   join(root, 'apps', 'web', '.next', 'static'),
