@@ -53,13 +53,10 @@ export {
   configurationIdentity,
   listGithubRuns,
 } from './evals';
-export {
-  ModelPuller,
-  RECOMMENDED_MODELS,
-  modelNameSchema,
-  recommendModels,
-} from './local-models';
-export type { PullState, RecommendedModel } from './local-models';
+export { ModelPuller, modelNameSchema } from './local-models';
+export type { PullState } from './local-models';
+export { HuggingFaceCatalog, TRUSTED_PUBLISHERS } from './hf-catalog';
+export type { CatalogModel } from './hf-catalog';
 export { checkServices } from './health';
 export type { ServiceCheck } from './health';
 export { inspectSystem } from './system';

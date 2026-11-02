@@ -3,29 +3,30 @@ import { useState } from 'react';
 import { useModelPull } from './use-model-pull';
 import { Button } from '@/components/ui/button';
 
-type Recommended = {
-  id: string;
-  label: string;
-  downloadGb: number;
-  minRamGb: number;
-  fits: boolean;
-  best: boolean;
-  blocker: 'memory' | 'disk' | null;
-};
+import type { CatalogModel } from '@agentgate/controller';
 
 export function LocalModels({
   recommended,
   installed,
   ollamaReady,
-  ramGb,
+  summary,
+  recommendedError,
 }: {
-  recommended: Recommended[];
+  recommended: CatalogModel[];
   installed: { name: string; sizeBytes: number }[];
   ollamaReady: boolean;
-  ramGb: number;
+  summary: string;
+  recommendedError: string | null;
 }) {
   const { pull, error, downloading, percent, install, cancel } = useModelPull();
   const [custom, setCustom] = useState('');
+  // Largest models that fit first, then a few that do not, so the reason is visible.
+  const shown = [...recommended]
+    .sort(
+      (a, b) =>
+        Number(b.fits) - Number(a.fits) || b.parametersB - a.parametersB,
+    )
+    .slice(0, 8);
   const installedNames = new Set(installed.map((model) => model.name));
 
   return (
@@ -79,10 +80,15 @@ export function LocalModels({
       )}
       <div>
         <h3 className="text-sm font-medium">
-          Recommended for this computer ({ramGb} GB memory)
+          Recommended for this computer ({summary})
         </h3>
+        {recommendedError && (
+          <p role="alert" className="mt-3 text-sm text-red-800">
+            {recommendedError}
+          </p>
+        )}
         <ul className="mt-3 space-y-3">
-          {recommended.map((model) => (
+          {shown.map((model) => (
             <li
               key={model.id}
               className="flex flex-wrap items-center justify-between gap-3 text-sm"
@@ -90,7 +96,7 @@ export function LocalModels({
               <span>
                 <span className="font-medium">{model.label}</span>{' '}
                 <span className="font-mono text-xs text-stone-600">
-                  {model.id}
+                  {model.quantization}
                 </span>
                 {model.best && (
                   <span className="ml-2 rounded bg-teal-100 px-2 py-0.5 text-xs text-teal-900">
@@ -98,9 +104,9 @@ export function LocalModels({
                   </span>
                 )}
                 <span className="block text-xs text-stone-600">
-                  about {model.downloadGb} GB download
+                  {model.downloadGb} GB download
                   {model.blocker === 'memory' &&
-                    ` · needs about ${model.minRamGb} GB memory`}
+                    ' · too large for this computer’s memory'}
                   {model.blocker === 'disk' && ' · not enough free disk space'}
                 </span>
               </span>

@@ -5,9 +5,7 @@ import {
   ModelPuller,
   OllamaCatalog,
   inspectSystem,
-  RECOMMENDED_MODELS,
   modelNameSchema,
-  recommendModels,
 } from './index';
 
 const GIB = 1024 ** 3;
@@ -26,44 +24,9 @@ async function fakeOllama(handler: Parameters<typeof createServer>[1]) {
   return `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}`;
 }
 
-describe('hardware recommendations', () => {
-  it.each([
-    [4, 'llama3.2:1b'],
-    [8, 'llama3.2:3b'],
-    [16, 'llama3.1:8b'],
-    [32, 'qwen2.5:14b'],
-    [64, 'qwen2.5:14b'],
-  ])('%i GB of memory recommends %s', (gb, expected) => {
-    const best = recommendModels(gb * GIB).filter((model) => model.best);
-    expect(best.map((model) => model.id)).toEqual([expected]);
-  });
-  it('marks models that do not fit and recommends nothing on tiny machines', () => {
-    const small = recommendModels(2 * GIB);
-    expect(small.some((model) => model.fits)).toBe(false);
-    expect(small.some((model) => model.best)).toBe(false);
-    expect(
-      RECOMMENDED_MODELS.every((m) => modelNameSchema.safeParse(m.id).success),
-    ).toBe(true);
-  });
-});
-
-describe('disk-aware recommendations', () => {
-  it('picks a smaller model when free disk is short and says why', () => {
-    // 16 GB of memory would pick the 8B (4.9 GB); with 6 GB free, anything over a 4 GB download is out.
-    const tight = recommendModels(16 * GIB, 6 * GIB);
-    expect(tight.find((m) => m.best)?.id).toBe('llama3.2:3b');
-    expect(tight.find((m) => m.id === 'llama3.1:8b')).toMatchObject({
-      fits: false,
-      blocker: 'disk',
-    });
-    expect(recommendModels(2 * GIB)[0]?.blocker).toBe('memory');
-    expect(recommendModels(16 * GIB, 1 * GIB).some((m) => m.best)).toBe(false);
-  });
-});
-
 describe('system profile', () => {
-  it('reads real values from the operating system', () => {
-    const profile = inspectSystem(tmpdir());
+  it('reads real values from the operating system', async () => {
+    const profile = await inspectSystem(tmpdir());
     expect(profile.memoryBytes).toBeGreaterThan(0);
     expect(profile.freeDiskBytes).toBeGreaterThan(0);
     expect(profile.cores).toBeGreaterThan(0);
@@ -77,6 +40,8 @@ describe('model names', () => {
     'llama3.2',
     'library/qwen2.5:7b-instruct-q4_K_M',
     'smollm2:135m',
+    'hf.co/bartowski/Llama-3.2-3B-Instruct-GGUF:Q4_K_M',
+    'hf.co/unsloth/Qwen3-8B-GGUF',
   ])('accepts %s', (name) => {
     expect(modelNameSchema.safeParse(name).success).toBe(true);
   });
@@ -84,6 +49,9 @@ describe('model names', () => {
     '',
     ' ',
     '../etc/passwd',
+    'hf.co/../../etc/passwd',
+    'hf.co/owner',
+    'evil.com/owner/repo:Q4_K_M',
     'a b',
     'qwen;rm -rf /',
     'http://evil.example/x',

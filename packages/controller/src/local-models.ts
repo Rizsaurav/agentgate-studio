@@ -1,59 +1,25 @@
 import { z } from 'zod';
 import { DEFAULT_OLLAMA_URL } from './ollama';
 
-const GIB = 1024 ** 3;
 export const PULL_TIMEOUT_MS = 60 * 60_000;
 const START_TIMEOUT_MS = 10_000;
 
-/** Curated Ollama models that follow instructions well at each size. Sizes are approximate downloads. */
-export const RECOMMENDED_MODELS = [
-  { id: 'llama3.2:1b', label: 'Llama 3.2 1B', downloadGb: 1.3, minRamGb: 4 },
-  { id: 'qwen2.5:1.5b', label: 'Qwen 2.5 1.5B', downloadGb: 1.0, minRamGb: 4 },
-  { id: 'llama3.2:3b', label: 'Llama 3.2 3B', downloadGb: 2.0, minRamGb: 8 },
-  { id: 'qwen2.5:3b', label: 'Qwen 2.5 3B', downloadGb: 1.9, minRamGb: 8 },
-  { id: 'qwen2.5:7b', label: 'Qwen 2.5 7B', downloadGb: 4.7, minRamGb: 16 },
-  { id: 'llama3.1:8b', label: 'Llama 3.1 8B', downloadGb: 4.9, minRamGb: 16 },
-  { id: 'qwen2.5:14b', label: 'Qwen 2.5 14B', downloadGb: 9.0, minRamGb: 32 },
-] as const;
-export type RecommendedModel = (typeof RECOMMENDED_MODELS)[number] & {
-  fits: boolean;
-  best: boolean;
-  /** Why it does not fit, so the screen can say what to free up. */
-  blocker: 'memory' | 'disk' | null;
-};
-/** Room left after the download for the system and the model's working memory. */
-const DISK_HEADROOM = 1.5;
-
-/** Marks which models fit this computer's memory and free disk, and the largest one that does as the best choice. */
-export function recommendModels(
-  memoryBytes: number,
-  freeDiskBytes: number = Number.POSITIVE_INFINITY,
-): RecommendedModel[] {
-  const memoryGb = memoryBytes / GIB;
-  const diskGb = freeDiskBytes / GIB;
-  const classified = RECOMMENDED_MODELS.map((model) => {
-    const blocker =
-      model.minRamGb > memoryGb
-        ? ('memory' as const)
-        : model.downloadGb * DISK_HEADROOM > diskGb
-          ? ('disk' as const)
-          : null;
-    return { ...model, fits: blocker === null, blocker };
-  });
-  const best = classified
-    .filter((model) => model.fits)
-    .sort((a, b) => b.downloadGb - a.downloadGb)[0];
-  return classified.map((model) => ({ ...model, best: model.id === best?.id }));
-}
-
-/** Ollama model references: optional namespace, name, optional tag. No whitespace or path tricks. */
+/**
+ * Ollama model references: a library name such as qwen2.5:3b, or a Hugging Face repository
+ * as hf.co/owner/repo:quantization. No whitespace or path tricks.
+ */
+const LIBRARY_MODEL =
+  /^([a-z0-9][a-z0-9_-]*\/)?[a-z0-9][a-z0-9._-]*(:[a-zA-Z0-9._-]+)?$/;
+const HUGGING_FACE_MODEL =
+  /^hf\.co\/[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*(:[A-Za-z0-9._-]+)?$/;
 export const modelNameSchema = z
   .string()
   .trim()
   .min(1, 'Enter a model name.')
-  .max(100)
-  .regex(
-    /^[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*)?(:[a-zA-Z0-9._-]+)?$/,
+  .refine(
+    (name) =>
+      (name.length <= 100 && LIBRARY_MODEL.test(name)) ||
+      (name.length <= 150 && HUGGING_FACE_MODEL.test(name)),
     'Use an Ollama model name such as qwen2.5:3b.',
   );
 

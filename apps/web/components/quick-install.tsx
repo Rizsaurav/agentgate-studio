@@ -6,11 +6,19 @@ import { useModelPull } from './use-model-pull';
 export function QuickInstall({
   best,
   summary,
+  error: loadError,
 }: {
   best: { id: string; label: string; downloadGb: number } | null;
   summary: string;
+  error: string | null;
 }) {
   const { pull, error, downloading, percent, install, cancel } = useModelPull();
+  if (loadError)
+    return (
+      <p role="alert" className="error-message">
+        {loadError}
+      </p>
+    );
   if (!best)
     return (
       <p role="alert" className="muted">

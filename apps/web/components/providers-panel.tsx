@@ -1,5 +1,3 @@
-import { totalmem } from 'node:os';
-import { recommendModels } from '@agentgate/controller';
 import { LocalModels } from './local-models';
 import { cloud, ollama } from '@/lib/controller';
 import { disconnectProvider } from '@/app/actions';
@@ -7,11 +5,13 @@ import { ConnectProvider } from './connect-provider';
 import { Icon } from './icon';
 import { ModelSetup } from './model-setup';
 import { Button } from './ui/button';
+import { loadRecommendations } from '@/lib/recommendations';
 const PROVIDER_NAMES: Record<string, string> = {
   anthropic: 'Anthropic',
   openai: 'OpenAI',
 };
 export async function ProvidersPanel() {
+  const recommendations = await loadRecommendations();
   const local = await ollama()
     .listDetailed()
     .then((models) => ({ models, available: true }))
@@ -45,10 +45,11 @@ export async function ProvidersPanel() {
         </div>
         {local.available && local.models.length === 0 && <ModelSetup />}
         <LocalModels
-          recommended={recommendModels(totalmem())}
+          recommended={recommendations.models}
+          recommendedError={recommendations.error}
           installed={local.models}
           ollamaReady={local.available}
-          ramGb={Math.round(totalmem() / 1024 ** 3)}
+          summary={recommendations.summary}
         />
       </section>
       {remote.error && (

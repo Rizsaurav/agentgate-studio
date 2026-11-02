@@ -13,6 +13,7 @@ import {
   KeychainBackend,
   ModelRouter,
   DEFAULT_OLLAMA_URL,
+  HuggingFaceCatalog,
   DEFAULT_SCANNER_URL,
   LlmGuardScanner,
   ModelPuller,
@@ -41,6 +42,7 @@ type Controller = {
   evals: EvalService;
   repoRoot: string;
   puller: ModelPuller;
+  catalog: HuggingFaceCatalog;
   endpoints: { ollamaUrl: string; scannerUrl: string; docsRoot: string | null };
 };
 const globalController = globalThis as typeof globalThis & {
@@ -121,6 +123,7 @@ function controller(): Controller {
       evals,
       repoRoot,
       puller: new ModelPuller(process.env.AGENTGATE_OLLAMA_URL),
+      catalog: new HuggingFaceCatalog(process.env.AGENTGATE_HF_URL),
       endpoints: {
         ollamaUrl: new URL(
           process.env.AGENTGATE_OLLAMA_URL ?? DEFAULT_OLLAMA_URL,
@@ -144,5 +147,6 @@ export const documents = () => controller().documents;
 export const security = () => controller().security;
 export const evals = () => controller().evals;
 export const repoRoot = () => controller().repoRoot;
+export const catalog = () => controller().catalog;
 export const puller = () => controller().puller;
 export const endpoints = () => controller().endpoints;
