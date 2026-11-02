@@ -14,11 +14,20 @@ afterEach(() => {
   for (const task of cleanup.splice(0)) task();
 });
 
-/** A repository root whose `eval` script is a real process we control. */
+/** A repository with a CLI fixture, launched with the production process boundary. */
 function fakeRepo(evalScript: string) {
   const root = mkdtempSync(join(tmpdir(), 'agentgate-evalrepo-'));
   mkdirSync(join(root, 'evals'));
   mkdirSync(join(root, 'scanner'));
+  mkdirSync(join(root, 'node_modules', 'promptfoo', 'dist', 'src'), {
+    recursive: true,
+  });
+  mkdirSync(join(root, 'node_modules', 'tsx', 'dist'), { recursive: true });
+  writeFileSync(join(root, 'node_modules', 'tsx', 'dist', 'loader.mjs'), '');
+  writeFileSync(
+    join(root, 'node_modules', 'promptfoo', 'dist', 'src', 'entrypoint.js'),
+    evalScript,
+  );
   writeFileSync(
     join(root, 'evals', 'promptfooconfig.yaml'),
     'description: x\n',
@@ -40,8 +49,8 @@ function fakeRepo(evalScript: string) {
   });
   return { root, db, repository: new SqliteEvals(db) };
 }
-// The trailing `--` makes node pass the worker's `-o <file>` to the script instead of parsing it.
-const node = (code: string) => `node -e ${JSON.stringify(code)} --`;
+// CLI fixture source; no shell interpolation is involved.
+const node = (code: string) => code;
 const WRITES_RESULT = (exit: number) =>
   node(
     `const o=process.argv[process.argv.indexOf('-o')+1];require('fs').writeFileSync(o,JSON.stringify({results:{results:[{success:true,testCase:{description:'ok case'}},{success:false,testCase:{description:'bad case'},gradingResult:{reason:'r',componentResults:[{pass:false,reason:'Custom function returned false\\nsecret detail'}]}}]}}));process.exit(${exit})`,

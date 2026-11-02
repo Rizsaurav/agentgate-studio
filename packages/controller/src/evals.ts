@@ -19,9 +19,9 @@ const MAX_REASON = 300;
 
 export const evalProfileSchema = z.enum(['enforced', 'weak-demo']);
 export type EvalProfile = z.infer<typeof evalProfileSchema>;
-const SCRIPTS: Record<EvalProfile, string> = {
-  enforced: 'eval',
-  'weak-demo': 'eval:weak',
+const CONFIGURATIONS: Record<EvalProfile, string> = {
+  enforced: 'promptfooconfig.yaml',
+  'weak-demo': 'weak.promptfooconfig.yaml',
 };
 
 export const evalRunSchema = z
@@ -331,7 +331,11 @@ export class EvalService {
     const directory = mkdtempSync(join(tmpdir(), 'agentgate-eval-run-'));
     const output = join(directory, 'result.json');
     try {
-      const code = await this.spawnSuite(SCRIPTS[profile], output, directory);
+      const code = await this.spawnSuite(
+        CONFIGURATIONS[profile],
+        output,
+        directory,
+      );
       // Promptfoo exits 100 when assertions fail; anything else non-zero is an infrastructure error.
       if (code !== 0 && code !== 100)
         throw new Error(`The evaluation process exited with code ${code}.`);
@@ -366,18 +370,41 @@ export class EvalService {
   }
 
   private spawnSuite(
-    script: string,
+    configuration: string,
     output: string,
     directory: string,
   ): Promise<number | null> {
     return new Promise((resolve, reject) => {
-      const child = spawn('npm', ['run', script, '--', '-o', output], {
-        cwd: this.repoRoot,
-        detached: true,
-        stdio: 'ignore',
-        // Only what the suite needs: no cloud keys or other secrets are inherited.
-        env: childEnvironment(this.env, join(directory, 'promptfoo')),
-      });
+      const child = spawn(
+        process.execPath,
+        [
+          '--import',
+          join(this.repoRoot, 'node_modules', 'tsx', 'dist', 'loader.mjs'),
+          join(
+            this.repoRoot,
+            'node_modules',
+            'promptfoo',
+            'dist',
+            'src',
+            'entrypoint.js',
+          ),
+          'eval',
+          '--no-cache',
+          '--no-write',
+          '--no-progress-bar',
+          '-c',
+          configuration,
+          '-o',
+          output,
+        ],
+        {
+          cwd: join(this.repoRoot, 'evals'),
+          detached: true,
+          stdio: 'ignore',
+          // Only what the suite needs: no cloud keys or other secrets are inherited.
+          env: childEnvironment(this.env, join(directory, 'promptfoo')),
+        },
+      );
       const timer = setTimeout(() => {
         if (child.pid !== undefined) process.kill(-child.pid, 'SIGKILL');
         reject(new Error('The evaluation timed out.'));
@@ -447,6 +474,8 @@ function childEnvironment(
     HOME: source.HOME,
     AGENTGATE_SCANNER_URL: source.AGENTGATE_SCANNER_URL,
     PROMPTFOO_CONFIG_DIR: promptfooConfigDir,
+    PROMPTFOO_DISABLE_TELEMETRY: '1',
+    PROMPTFOO_DISABLE_UPDATE: '1',
   };
   // Cast: Next's types make NODE_ENV mandatory on ProcessEnv, but the child needs no such value.
   return Object.fromEntries(

@@ -2,13 +2,32 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { cancelRun, saveOutcome, sendPrompt } from '@/app/actions';
-import { Button } from '@/components/ui/button';
+import { Button } from './ui/button';
+import { Icon } from './icon';
 
 type Turn = { role: 'user' | 'assistant'; text: string };
-type StreamEvent = { seq: number; type: string; text: string };
-
 type Source = { documentId: string; title: string; seq: number };
-
+type StreamEvent = { seq: number; type: string; text: string };
+function parseEvent(data: string): StreamEvent | null {
+  try {
+    const event: unknown = JSON.parse(data);
+    if (
+      typeof event === 'object' &&
+      event !== null &&
+      'seq' in event &&
+      typeof event.seq === 'number' &&
+      Number.isInteger(event.seq) &&
+      'type' in event &&
+      typeof event.type === 'string' &&
+      'text' in event &&
+      typeof event.text === 'string'
+    )
+      return { seq: event.seq, type: event.type, text: event.text };
+    return null;
+  } catch {
+    return null;
+  }
+}
 export function SessionChat({
   projectId,
   sources,
@@ -25,133 +44,201 @@ export function SessionChat({
   activePrompt: string | null;
 }) {
   const router = useRouter();
-  const [runId, setRunId] = useState(activeRunId);
-  const [prompt, setPrompt] = useState('');
-  const [live, setLive] = useState('');
-  const [status, setStatus] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-  const pendingPrompt = useRef(activePrompt);
-
+  const [runId, setRunId] = useState(activeRunId),
+    [prompt, setPrompt] = useState(''),
+    [live, setLive] = useState(''),
+    [status, setStatus] = useState(''),
+    [error, setError] = useState<string | null>(null),
+    [pending, setPending] = useState(false),
+    [cancelling, setCancelling] = useState(false);
+  const pendingPrompt = useRef(activePrompt),
+    cursor = useRef(0);
   useEffect(() => {
     if (!runId) return;
+    cursor.current = 0;
     setLive('');
     setStatus('Generating and checking the answer…');
     const source = new EventSource(`/api/runs/${runId}/events`);
+    source.onopen = () => setStatus('Generating and checking the answer…');
+    source.onerror = () => setStatus('Connection interrupted · reconnecting…');
     source.onmessage = (message: MessageEvent<string>) => {
-      const event = JSON.parse(message.data) as StreamEvent;
+      const event = parseEvent(message.data);
+      if (!event) {
+        source.close();
+        setError(
+          'The execution stream could not be read. Reload to restore the saved session.',
+        );
+        return;
+      }
+      if (event.seq <= cursor.current) return;
+      cursor.current = event.seq;
       if (event.type === 'text_delta') {
         setStatus('Delivering checked answer…');
         setLive((current) => current + event.text);
-      } else if (event.type === 'cancelled') {
-        // Failed and blocked runs are shown by the page itself after the refresh below.
-        setError('Run cancelled.');
       }
+      if (event.type === 'cancelled') setError('Run cancelled.');
       if (
         ['completed', 'failed', 'cancelled', 'blocked'].includes(event.type)
       ) {
         source.close();
         setRunId(null);
-        setStatus(null);
+        setStatus('');
+        setCancelling(false);
         pendingPrompt.current = null;
         router.refresh();
       }
     };
-    // EventSource reconnects with Last-Event-ID on its own; the run keeps going server-side.
     return () => source.close();
   }, [runId, router]);
-
-  async function submit(formEvent: React.FormEvent) {
-    formEvent.preventDefault();
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (pending || runId || !prompt.trim()) return;
     setPending(true);
     setError(null);
-    const result = await sendPrompt(sessionId, prompt);
-    setPending(false);
-    if (result.error !== null) return setError(result.error);
-    pendingPrompt.current = prompt;
-    setPrompt('');
-    setRunId(result.runId);
+    try {
+      const result = await sendPrompt(sessionId, prompt);
+      if (result.error !== null) {
+        setError(result.error);
+        return;
+      }
+      pendingPrompt.current = prompt;
+      setPrompt('');
+      setRunId(result.runId);
+    } catch {
+      setError(
+        'The task could not be submitted. Check the connection and try again.',
+      );
+    } finally {
+      setPending(false);
+    }
   }
-
+  async function cancel() {
+    if (!runId) return;
+    setCancelling(true);
+    try {
+      await cancelRun(runId);
+      setStatus('Cancellation requested…');
+    } catch {
+      setError('Cancellation could not be confirmed. Reconnect and try again.');
+      setCancelling(false);
+    }
+  }
   return (
-    <div className="space-y-6">
-      <ol className="space-y-4" aria-label="Conversation">
-        {turns.map((turn, index) => (
-          <li
-            key={index}
-            className={`whitespace-pre-wrap break-words rounded-xl border p-4 text-sm leading-6 ${turn.role === 'user' ? 'border-stone-300 bg-white' : 'border-teal-900/20 bg-teal-50'}`}
-          >
-            <span className="mb-1 block text-xs font-semibold uppercase tracking-widest text-stone-600">
-              {turn.role === 'user' ? 'You' : 'Model'}
+    <div className="conversation-surface">
+      <ol className="conversation" aria-label="Conversation">
+        {turns.length === 0 && !runId && (
+          <li className="empty-state">
+            <span className="empty-icon">
+              <Icon name="spark" width={26} height={26} />
             </span>
-            {turn.text}
-            {turn.role === 'assistant' && (
-              <AnswerDetails
-                projectId={projectId}
-                text={turn.text}
-                sources={sources[Math.floor(index / 2)] ?? []}
+            <h3>What would you like to work on?</h3>
+            <p>
+              Your project context is included. Retrieved sources appear with
+              the answer.
+            </p>
+          </li>
+        )}
+        {turns.map((turn, index) => (
+          <li key={`${index}-${turn.role}`} className={`turn ${turn.role}`}>
+            <span className="turn-avatar">
+              <Icon
+                name={turn.role === 'user' ? 'message' : 'spark'}
+                width={16}
               />
-            )}
+            </span>
+            <div className="turn-body">
+              <span className="turn-label">
+                {turn.role === 'user' ? 'You' : 'Model'}
+              </span>
+              <div className="turn-text">{turn.text}</div>
+              {turn.role === 'assistant' && (
+                <AnswerDetails
+                  projectId={projectId}
+                  text={turn.text}
+                  sources={sources[Math.floor(index / 2)] ?? []}
+                />
+              )}
+            </div>
           </li>
         ))}
         {runId && pendingPrompt.current && (
-          <li className="whitespace-pre-wrap break-words rounded-xl border border-stone-300 bg-white p-4 text-sm leading-6">
-            <span className="mb-1 block text-xs font-semibold uppercase tracking-widest text-stone-600">
-              You
+          <li className="turn user">
+            <span className="turn-avatar">
+              <Icon name="message" width={16} />
             </span>
-            {pendingPrompt.current}
+            <div className="turn-body">
+              <span className="turn-label">You</span>
+              <div className="turn-text">{pendingPrompt.current}</div>
+            </div>
           </li>
         )}
         {runId && (
-          <li
-            aria-live="polite"
-            className="whitespace-pre-wrap break-words rounded-xl border border-teal-900/20 bg-teal-50 p-4 text-sm leading-6"
-          >
-            <span className="mb-1 block text-xs font-semibold uppercase tracking-widest text-stone-600">
-              Model · {status}
+          <li className="turn assistant">
+            <span className="turn-avatar state-pulse">
+              <Icon name="spark" width={16} />
             </span>
-            {live}
+            <div className="turn-body">
+              <span className="turn-label" role="status">
+                Model · {status}
+              </span>
+              <div className="turn-text">{live}</div>
+            </div>
           </li>
         )}
       </ol>
       {error && (
-        <p role="alert" className="text-sm text-red-800">
+        <p role="alert" className="error-message px-6 pb-4">
           {error}
         </p>
       )}
-      <form onSubmit={submit} className="space-y-3">
-        <label htmlFor="prompt" className="block text-sm font-medium">
+      <form onSubmit={submit} className="composer">
+        <label htmlFor="prompt" className="sr-only">
           Task
         </label>
         <textarea
           id="prompt"
           required
           maxLength={8000}
-          rows={3}
+          rows={2}
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
-          disabled={runId !== null}
-          className="w-full rounded-md border border-stone-300 bg-white px-3 py-3 outline-teal-700"
+          disabled={runId !== null || pending}
+          placeholder="Ask anything about your project…"
+          onKeyDown={(event) => {
+            if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+              event.preventDefault();
+              event.currentTarget.form?.requestSubmit();
+            }
+          }}
         />
-        <div className="flex gap-3">
-          <Button type="submit" disabled={pending || runId !== null}>
-            {pending ? 'Sending…' : 'Run task'}
-          </Button>
-          {runId && (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => void cancelRun(runId)}
-            >
-              Cancel
-            </Button>
-          )}
+        <div className="composer-footer">
+          <span className="composer-hint">
+            Context shared · Tools disabled
+            <span className="hidden sm:inline"> · ⌘ Return</span>
+          </span>
+          <div className="composer-actions">
+            {runId ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={cancelling}
+                onClick={() => void cancel()}
+              >
+                <Icon name="stop" width={14} className="mr-2" />
+                {cancelling ? 'Cancelling…' : 'Cancel'}
+              </Button>
+            ) : (
+              <Button type="submit" disabled={pending || !prompt.trim()}>
+                <Icon name="send" width={15} className="mr-2" />
+                {pending ? 'Sending…' : 'Run task'}
+              </Button>
+            )}
+          </div>
         </div>
       </form>
     </div>
   );
 }
-
 function AnswerDetails({
   projectId,
   text,
@@ -163,20 +250,25 @@ function AnswerDetails({
 }) {
   const titles = [...new Set(sources.map((source) => source.title))];
   return (
-    <div className="mt-3 space-y-2 border-t border-teal-900/20 pt-3 text-xs text-stone-700">
+    <div className="answer-details">
       {titles.length > 0 && (
         <p>
-          Retrieved context:{' '}
-          <span className="font-medium">{titles.join(', ')}</span>
+          Retrieved context: <span>{titles.join(', ')}</span>
         </p>
       )}
-      <form action={saveOutcome}>
-        <input type="hidden" name="projectId" value={projectId} />
-        <input type="hidden" name="text" value={text.slice(0, 500)} />
-        <button type="submit" className="text-teal-800 underline">
-          Save as verified outcome
-        </button>
-      </form>
+      <details className="mt-2">
+        <summary>Answer details</summary>
+        <p className="mt-2">
+          Verify the answer before adding it to shared project context.
+        </p>
+        <form action={saveOutcome}>
+          <input type="hidden" name="projectId" value={projectId} />
+          <input type="hidden" name="text" value={text.slice(0, 500)} />
+          <button type="submit" className="text-button">
+            Save as verified outcome
+          </button>
+        </form>
+      </details>
     </div>
   );
 }

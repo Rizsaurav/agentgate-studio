@@ -1,69 +1,77 @@
 import Link from 'next/link';
-import { projects } from '@/lib/controller';
+import { projects, sessions } from '@/lib/controller';
 import { CreateProject } from '@/components/create-project';
+import { Icon } from '@/components/icon';
 export const dynamic = 'force-dynamic';
 export default function Workspace() {
   const items = projects().list();
   return (
     <>
-      <p className="mb-4 text-xs font-semibold uppercase tracking-widest text-teal-800">
-        01 / Workspace
-      </p>
-      <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
-        Your work, kept local.
-      </h1>
-      <p className="mt-4 max-w-xl text-base leading-7 text-stone-600">
-        Create a project and return to it whenever you need. Project records are
-        saved in SQLite on this computer.
-      </p>
-      <div className="mt-12 grid gap-8 lg:grid-cols-[1.5fr_1fr]">
+      <header className="page-heading">
+        <span className="eyebrow">Your local workspace</span>
+        <h1>A place for your next idea.</h1>
+        <p>
+          Continue a conversation, bring your context, and put your models to
+          work.
+        </p>
+      </header>
+      <div className="project-grid">
         <section aria-labelledby="projects-title">
-          <div className="mb-5 flex items-center justify-between">
-            <h2 id="projects-title" className="text-xl font-semibold">
-              Projects
-            </h2>
-            <span className="text-sm text-stone-600">{items.length} saved</span>
+          <div className="section-heading">
+            <h2 id="projects-title">Projects</h2>
+            <span className="muted">{items.length} saved locally</span>
           </div>
           {items.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-stone-300 p-8">
-              <h3 className="font-medium">Start with a project</h3>
-              <p className="mt-2 text-sm leading-6 text-stone-600">
-                Your saved projects will appear here. Create your first
-                workspace using the form.
+            <div className="empty-state">
+              <span className="empty-icon">
+                <Icon name="workspace" width={28} height={28} />
+              </span>
+              <h3>Start with a project</h3>
+              <p>
+                A persistent home for conversations, models, and shared context.
               </p>
             </div>
           ) : (
-            <ul className="space-y-3">
-              {items.map((project) => (
-                <li key={project.id}>
-                  <Link
-                    href={`/projects/${project.id}`}
-                    className="flex items-center justify-between gap-4 rounded-xl border border-stone-300 bg-white p-5 transition-colors hover:border-teal-700 focus-visible:outline-2 focus-visible:outline-teal-700"
-                  >
-                    <div className="min-w-0">
-                      <h3 className="break-words font-semibold">
-                        {project.name}
-                      </h3>
-                      <p className="mt-2 text-xs text-stone-600">
-                        Created {project.createdAt.slice(0, 10)} · Saved locally
-                      </p>
-                    </div>
-                    <span aria-hidden="true">↗</span>
-                  </Link>
-                </li>
-              ))}
+            <ul className="project-list">
+              {items.map((project) => {
+                const count = sessions().listSessions(project.id).length;
+                return (
+                  <li key={project.id}>
+                    <Link href={`/projects/${project.id}`}>
+                      <span className="project-symbol">
+                        <Icon name="cube" width={22} height={22} />
+                      </span>
+                      <div>
+                        <h3>{project.name}</h3>
+                        <p>
+                          {count} {count === 1 ? 'session' : 'sessions'}
+                          <span>·</span>Created {project.createdAt.slice(0, 10)}
+                        </p>
+                      </div>
+                      <Icon name="arrow" />
+                    </Link>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>
         <section
+          id="new-project"
+          className="create-project-panel"
           aria-labelledby="create-title"
-          className="self-start rounded-xl border border-stone-300 bg-white p-6"
         >
-          <h2 id="create-title" className="mb-6 text-xl font-semibold">
-            New project
-          </h2>
+          <span className="eyebrow">Make room for something new</span>
+          <h2 id="create-title">New project</h2>
           <CreateProject />
         </section>
+      </div>
+      <div className="workspace-note">
+        <Icon name="key" />
+        <p>
+          Saved locally. Cloud models receive the context you send. Agent tools
+          are disabled.
+        </p>
       </div>
     </>
   );

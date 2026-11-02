@@ -1,5 +1,8 @@
 import type { NextConfig } from 'next';
 const config: NextConfig = {
+  ...(process.env.AGENTGATE_DESKTOP_BUILD === '1'
+    ? { output: 'standalone' as const }
+    : {}),
   transpilePackages: ['@agentgate/controller'],
   serverExternalPackages: [
     'better-sqlite3',

@@ -1,45 +1,34 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
+import { Suspense } from 'react';
+import { projects } from '@/lib/controller';
+import { AppShell } from '@/components/app-shell';
+import { ProvidersPanel } from '@/components/providers-panel';
 import './globals.css';
 export const metadata: Metadata = {
   title: 'AGENTGATE Studio',
-  description: 'Local project workspaces for AGENTGATE Studio.',
+  description:
+    'A local workspace for agents, shared context, and security verification.',
 };
+export const dynamic = 'force-dynamic';
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
       <body>
-        <header className="border-b border-stone-300 bg-white px-5 sm:px-10">
-          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 py-5">
-            <Link href="/" className="text-lg font-bold tracking-tight">
-              AGENTGATE{' '}
-              <span className="font-normal text-stone-500">/ Studio</span>
-            </Link>
-            <nav className="flex items-center gap-4 text-sm">
-              <Link href="/models" className="hover:underline">
-                Models
-              </Link>
-              <Link href="/security" className="hover:underline">
-                Security
-              </Link>
-              <Link href="/evaluations" className="hover:underline">
-                Evaluations
-              </Link>
-              <span className="rounded-full border border-stone-300 px-3 py-1 text-xs font-medium">
-                Local workspace
-              </span>
-            </nav>
-          </div>
-        </header>
-        <main className="mx-auto max-w-6xl px-5 py-10 sm:px-10 sm:py-16">
+        <a href="#main-content" className="skip-link">
+          Skip to workspace
+        </a>
+        <AppShell
+          projects={projects().list()}
+          models={
+            <Suspense fallback={<p role="status">Checking providers…</p>}>
+              <ProvidersPanel />
+            </Suspense>
+          }
+        >
           {children}
-        </main>
-        <footer className="mx-auto max-w-6xl px-5 py-8 text-xs text-stone-600 sm:px-10">
-          Phase 1 · In progress · Security checks reduce risk; they are not a
-          guarantee.
-        </footer>
+        </AppShell>
       </body>
     </html>
   );

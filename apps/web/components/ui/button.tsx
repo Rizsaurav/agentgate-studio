@@ -5,12 +5,13 @@ import { cn } from '@/lib/utils';
 
 // shadcn/ui composition pattern; adapted to the local workspace theme.
 const buttonVariants = cva(
-  'inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-teal-700 disabled:pointer-events-none disabled:opacity-50 h-11 px-5',
+  'inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-violet-300 disabled:pointer-events-none disabled:opacity-50 h-10 px-4',
   {
     variants: {
       variant: {
-        default: 'bg-teal-800 text-white hover:bg-teal-900',
-        outline: 'border border-stone-300 bg-white hover:bg-stone-100',
+        default: 'bg-[#9874d3] text-[#110b1b] hover:bg-[#b594ea]',
+        outline:
+          'border border-[#383340] bg-[#24212d] text-[#ddd3eb] hover:bg-[#302a3a]',
       },
     },
     defaultVariants: { variant: 'default' },
