@@ -2,7 +2,7 @@
 // Starts everything the app needs, waits until it is ready, and opens the Models page.
 // Ctrl+C stops what this script started. Flags: --rebuild, --no-open.
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -32,11 +32,11 @@ async function waitFor(url, seconds) {
   }
   return false;
 }
-function launch(name, command, args, env = {}) {
+function launch(name, command, args, env = {}, quiet = false) {
   const child = spawn(command, args, {
     cwd: root,
     env: { ...process.env, ...env },
-    stdio: ['ignore', 'ignore', 'inherit'],
+    stdio: ['ignore', 'ignore', quiet ? 'ignore' : 'inherit'],
   });
   child.on('exit', (code, signal) => {
     if (!shuttingDown)
@@ -72,9 +72,14 @@ if (await up(`${ollamaUrl}/api/version`)) {
   spawnSync('ollama', ['--version'], { stdio: 'ignore' }).status === 0
 ) {
   say('Starting Ollama…');
-  launch('Ollama', 'ollama', ['serve'], {
-    OLLAMA_KEEP_ALIVE: process.env.OLLAMA_KEEP_ALIVE ?? '30m',
-  });
+  // Ollama logs every request to stderr; keep the terminal for our own messages.
+  launch(
+    'Ollama',
+    'ollama',
+    ['serve'],
+    { OLLAMA_KEEP_ALIVE: process.env.OLLAMA_KEEP_ALIVE ?? '30m' },
+    true,
+  );
   if (!(await waitFor(`${ollamaUrl}/api/version`, 30)))
     say('Ollama did not start; local models will be unavailable.');
 } else {
@@ -102,10 +107,28 @@ if (await up(`${scannerUrl}/health`)) {
   );
 }
 
-// 3. The app.
+// 3. The app. Rebuild when the source changed since the last build (for example after git pull).
 const build = join(root, 'apps', 'web', '.next', 'BUILD_ID');
-if (!existsSync(build) || process.argv.includes('--rebuild')) {
-  say('Building the app (one time)…');
+function newestChange(dir) {
+  let newest = 0;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (['node_modules', '.next'].includes(entry.name)) continue;
+    const path = join(dir, entry.name);
+    newest = Math.max(
+      newest,
+      entry.isDirectory() ? newestChange(path) : statSync(path).mtimeMs,
+    );
+  }
+  return newest;
+}
+const stale =
+  !existsSync(build) ||
+  Math.max(
+    newestChange(join(root, 'apps', 'web')),
+    newestChange(join(root, 'packages', 'controller', 'src')),
+  ) > statSync(build).mtimeMs;
+if (stale || process.argv.includes('--rebuild')) {
+  say('Building the app…');
   const built = spawnSync('npm', ['run', 'build'], {
     cwd: root,
     stdio: 'inherit',
