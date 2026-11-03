@@ -9,21 +9,9 @@ import {
   SecretCredentialStore,
   apiKeySchema,
   describeProviderError,
-  type SecretBackend,
 } from './index';
+import { MemoryBackend } from './test-support';
 
-class MemoryBackend implements SecretBackend {
-  readonly values = new Map<string, string>();
-  async get(account: string) {
-    return this.values.get(account) ?? null;
-  }
-  async set(account: string, secret: string) {
-    this.values.set(account, secret);
-  }
-  async delete(account: string) {
-    this.values.delete(account);
-  }
-}
 const PROVIDERS = ['anthropic', 'openai'];
 
 describe('SecretCredentialStore', () => {

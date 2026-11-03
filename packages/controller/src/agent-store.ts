@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { z } from 'zod';
+import { SqliteSettings } from './settings';
 
 const MAX_NOTE_CHARS = 2000;
 const KEEP_NOTES = 200;
@@ -26,41 +27,30 @@ const day = (now: Date) => now.toISOString().slice(0, 10);
 
 /** What the assistant has said and done, its on/off switch, and the tokens it has spent today. */
 export class AgentStore {
+  private readonly settings: SqliteSettings;
+
   constructor(
     private readonly db: Database.Database,
     private readonly now: () => Date = () => new Date(),
-  ) {}
+  ) {
+    this.settings = new SqliteSettings(db);
+  }
 
   enabled(): boolean {
-    return this.setting('enabled') !== 'off';
+    return this.settings.get('enabled') !== 'off';
   }
 
   setEnabled(enabled: boolean): void {
-    this.saveSetting('enabled', enabled ? 'on' : 'off');
+    this.settings.set('enabled', enabled ? 'on' : 'off');
   }
 
   /** Whether the user has chosen local models. Until then Ollama is not started or watched. */
   usesLocalModels(): boolean {
-    return this.setting('local-models') === 'on';
+    return this.settings.get('local-models') === 'on';
   }
 
   setUsesLocalModels(): void {
-    this.saveSetting('local-models', 'on');
-  }
-
-  private setting(key: string): string | undefined {
-    const row = this.db
-      .prepare('SELECT value FROM agent_settings WHERE key = ?')
-      .get(key) as { value: string } | undefined;
-    return row?.value;
-  }
-
-  private saveSetting(key: string, value: string): void {
-    this.db
-      .prepare(
-        'INSERT INTO agent_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
-      )
-      .run(key, value);
+    this.settings.set('local-models', 'on');
   }
 
   tokensToday(): number {

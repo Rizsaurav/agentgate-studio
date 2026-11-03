@@ -16,6 +16,7 @@ import {
   agentStore,
   cloud,
   context,
+  customEndpoint,
   documents,
   endpoints,
   evals,
@@ -153,6 +154,51 @@ export async function connectProvider(
   }
   revalidatePath('/models');
   return { error: null, saved: true };
+}
+
+/** The form is reset after every submission, so the non-secret fields come back to refill it. The key never does. */
+export type CustomEndpointState = ConnectState & {
+  values: { name: string; baseUrl: string; models: string } | null;
+};
+export async function connectCustomEndpoint(
+  _previous: CustomEndpointState,
+  form: FormData,
+): Promise<CustomEndpointState> {
+  const values = {
+    name: String(form.get('name') ?? ''),
+    baseUrl: String(form.get('baseUrl') ?? ''),
+    models: String(form.get('models') ?? ''),
+  };
+  if (!(await isLocalRequest()))
+    return {
+      error: 'Requests must come from this local workspace.',
+      saved: false,
+      values,
+    };
+  try {
+    await customEndpoint().connect({
+      ...values,
+      apiKey: String(form.get('apiKey') ?? ''),
+    });
+  } catch (error) {
+    // Validation text or fixed provider-failure text; the server's own reply is never shown.
+    return {
+      error:
+        error instanceof Error
+          ? firstLine(error.message)
+          : 'The endpoint could not be saved.',
+      saved: false,
+      values,
+    };
+  }
+  revalidatePath('/models');
+  return { error: null, saved: true, values };
+}
+
+export async function disconnectCustomEndpoint(): Promise<void> {
+  if (!(await isLocalRequest())) return;
+  await customEndpoint().disconnect();
+  revalidatePath('/models');
 }
 
 export async function disconnectProvider(form: FormData): Promise<void> {
