@@ -38,16 +38,17 @@ Context, current state (with measurements), tasks as a checklist, acceptance cri
 
 ## Branches and releases
 
-- `main` is released code. It only receives merges from `dev`.
-- `dev` is staging: everything lands here first and is tested here.
-- Work branches come from `dev`, named `type/key-short-name`, for example `fix/b2-benign-documents`.
+- `main` is the shared branch. Pull requests may target `main` directly.
+- `dev` is an optional staging branch for larger changes that need testing together first.
+- Work branches come from `main` (or `dev`), named `type/key-short-name`, for example `fix/b2-benign-documents`.
 - No direct pushes to `main`. Never force-push a shared branch.
 
 ## Commits and pull requests
 
 - One short subject line in the imperative with a type prefix: `fix:`, `feat:`, `perf:`, `docs:`, `chore:`, `test:`.
 - Pull request title follows the same form. Link the issue with `Closes #n`.
-- A pull request needs green CI and one review, and is small enough to read in one sitting.
+- A pull request needs green CI and one review from a teammate, and is small enough to read in one sitting.
+- Do not request a Copilot review. It uses the requester's own Copilot quota and fails when that quota runs out. Turn off automatic Copilot reviews in your GitHub settings (Settings, Copilot, Features: "Automatic Copilot code review").
 - Keep detail in the issue, not in the commit message.
 
 ## Sprint rhythm
