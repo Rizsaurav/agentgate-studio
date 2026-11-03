@@ -228,6 +228,27 @@ test('a local model can be installed from the Models page with visible progress'
     await expect(
       page.getByRole('list', { name: 'Installed local models' }),
     ).toContainText(tiny, { timeout: 180_000 });
+
+    // Installed means ready: it is offered in the chat and answers, with no other setup.
+    await page.goto('/');
+    await page.getByLabel('Project name').fill('Fresh local model');
+    await page.getByRole('button', { name: /Create project/ }).click();
+    await page
+      .getByLabel('Model', { exact: true })
+      .selectOption(`ollama/${tiny}`);
+    await page.getByRole('button', { name: 'Start session' }).click();
+    await page.getByLabel('Task').fill('Say hello.');
+    await page.getByRole('button', { name: 'Run task' }).click();
+    await expect(page.getByRole('button', { name: 'Cancel' })).toBeHidden({
+      timeout: 90_000,
+    });
+    const answer = page
+      .getByRole('list', { name: 'Conversation' })
+      .getByRole('listitem')
+      .nth(1);
+    expect(
+      (await answer.innerText()).replace('MODEL', '').trim().length,
+    ).toBeGreaterThan(0);
   } finally {
     await fetch(`${ollamaUrl}/api/delete`, {
       method: 'DELETE',

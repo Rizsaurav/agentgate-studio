@@ -36,9 +36,9 @@ export function useModelPull() {
     return () => clearInterval(timer);
   }, [router, downloading]);
 
-  async function install(model: string) {
+  async function install(model: string, fallbacks: string[] = []) {
     setError(null);
-    const result = await pullModel(model);
+    const result = await pullModel(model, fallbacks);
     if (result.error) return setError(result.error);
     setPull({
       model,

@@ -21,6 +21,7 @@ import {
   DEFAULT_SCANNER_URL,
   LlmGuardScanner,
   ModelPuller,
+  ensureOllama,
   OllamaCatalog,
   ProtectionPipeline,
   SqliteSecurityEvents,
@@ -151,7 +152,10 @@ function controller(): Controller {
       security,
       evals,
       repoRoot,
-      puller: new ModelPuller(process.env.AGENTGATE_OLLAMA_URL),
+      // Installing a model also installs and starts Ollama when this computer has none.
+      puller: new ModelPuller(ollamaUrl, {
+        prepare: (report, signal) => ensureOllama(ollamaUrl, report, signal),
+      }),
       agentStore,
       agentModel: new AgentModel(
         new SecretCredentialStore(secrets, [AGENT_PROVIDER]),

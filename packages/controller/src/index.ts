@@ -73,7 +73,7 @@ export {
 } from './evals';
 export { condenseLog, failureSignature } from './ci-log';
 export { ModelPuller, modelNameSchema } from './local-models';
-export type { PullState } from './local-models';
+export type { PullOptions, PullState } from './local-models';
 export { HuggingFaceCatalog, TRUSTED_PUBLISHERS } from './hf-catalog';
 export type { CatalogModel } from './hf-catalog';
 export { checkServices } from './health';
@@ -87,4 +87,5 @@ export { DEFAULT_LIMITS, Supervisor, questionSchema } from './supervisor';
 export type { SupervisorActions, SupervisorLimits } from './supervisor';
 export { Watchdog, assess } from './watchdog';
 export type { Finding, Probe, Remedy } from './watchdog';
-export { startOllama, startScanner } from './service-control';
+export { ensureOllama, startOllama, startScanner } from './service-control';
+export { findOllama, installOllama } from './ollama-install';
