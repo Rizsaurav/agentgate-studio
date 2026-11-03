@@ -1003,6 +1003,10 @@ select {
   .titlebar-breadcrumb {
     display: none;
   }
+  /* A keyboard shortcut is no use on a phone, and the bar is wider than the screen with it. */
+  .titlebar .command-trigger {
+    display: none;
+  }
   .workspace-content {
     padding: 28px 20px;
   }

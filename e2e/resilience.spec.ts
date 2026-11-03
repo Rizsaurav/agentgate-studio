@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
+import { addReference } from './panels';
 
 const model = process.env.AGENTGATE_E2E_MODEL;
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -24,7 +25,8 @@ async function startServer(port: number, env: Record<string, string>) {
     ],
     {
       cwd: repoRoot,
-      env: { ...process.env, ...env },
+      // Never the developer's keychain: tests must not read or change real keys.
+      env: { ...process.env, AGENTGATE_SECRETS: 'env', ...env },
       stdio: 'ignore',
       detached: true,
     },
@@ -66,7 +68,11 @@ test('a session and its conversation survive an application restart', async ({
 }) => {
   test.skip(!model, 'Set AGENTGATE_E2E_MODEL.');
   const data = mkdtempSync(join(tmpdir(), 'agentgate-restart-'));
-  const env = { AGENTGATE_DATA_DIR: data };
+  const env = {
+    AGENTGATE_DATA_DIR: data,
+    // The scanner Playwright starts (playwright.config.ts); without it every task is blocked.
+    AGENTGATE_SCANNER_URL: 'http://127.0.0.1:8766',
+  };
   const first = await startServer(3201, env);
   await page.goto(first.url);
   await page.getByLabel('Project name').fill('Restart me');
@@ -79,10 +85,11 @@ test('a session and its conversation survive an application restart', async ({
     .getByLabel('Task')
     .fill('Reply with one short sentence about rivers.');
   await page.getByRole('button', { name: 'Run task' }).click();
-  // This button exists only on a completed, saved answer; the in-progress panel has none.
+  // These details exist only on a completed, saved answer; the in-progress panel has none.
+  await page.getByText('Answer details').click({ timeout: 90_000 });
   await expect(
     page.getByRole('button', { name: 'Save as verified outcome' }),
-  ).toBeVisible({ timeout: 90_000 });
+  ).toBeVisible();
   const turns = page
     .getByRole('list', { name: 'Conversation' })
     .getByRole('listitem');
@@ -103,9 +110,10 @@ test('a session and its conversation survive an application restart', async ({
   await page.goto(second.url + sessionUrl);
   await expect(turns).toHaveCount(2);
   await expect(turns.nth(0)).toContainText('rivers');
+  await page.getByText('Answer details').click();
   expect(await turns.nth(1).innerText()).toBe(answer);
   await page.goto(second.url);
-  await expect(page.getByText('Restart me')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Restart me' })).toBeVisible();
 });
 
 test('scanner outage fails closed in the browser: ingestion and tasks are refused with a reason', async ({
@@ -120,12 +128,12 @@ test('scanner outage fails closed in the browser: ingestion and tasks are refuse
   await page.goto(server.url);
   await page.getByLabel('Project name').fill('Scanner down');
   await page.getByRole('button', { name: /Create project/ }).click();
-  await page.getByLabel('File or folder in the reference folder').fill('rag');
-  await page.getByRole('button', { name: 'Add reference' }).click();
+  const references = await addReference(page, 'rag');
   await expect(
-    page.getByText(/security scanner is unavailable/i),
+    references.getByText(/security scanner is unavailable/i),
   ).toBeVisible();
-  await expect(page.getByText('Returns Policy')).toHaveCount(0);
+  await expect(references.getByText('Returns Policy')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Close Reference documents' }).click();
 
   await page
     .getByLabel('Model', { exact: true })
