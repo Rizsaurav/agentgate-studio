@@ -26,6 +26,7 @@ import {
   SqliteSessions,
   chunkText,
   detectSecrets,
+  normalizeText,
   openDatabase,
   toFtsQuery,
   type AgentModels,
@@ -321,6 +322,15 @@ describe('reference documents and retrieval', () => {
     const { projects, documents } = setup();
     const project = projects.create({ name: 'P' });
     expect(documents.retrieve(project.id, 'refund" OR (x')).toEqual([]);
+  });
+  it('normalizes layout whitespace and removes invisible characters before chunking', () => {
+    const hidden = `Return within 30 days.\u200b\u{e0049}\u{e0067}`;
+    expect(
+      normalizeText(`  Place   your\ttoken\r\n\n\n\n${hidden}`, '.txt'),
+    ).toBe('Place your token\n\nReturn within 30 days.');
+    expect(normalizeText('# Code\n\n    npm   start  \n', '.md')).toBe(
+      '# Code\n\n    npm start',
+    );
   });
 });
 

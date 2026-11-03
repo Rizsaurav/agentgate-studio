@@ -23,7 +23,7 @@ export const securityEventSchema = z
     stage: z.enum(['input', 'ingestion', 'retrieval', 'output']),
     rule: z.string().min(1),
     source: z.string().min(1),
-    outcome: z.enum(['blocked', 'quarantined', 'excluded']),
+    outcome: z.enum(['blocked', 'quarantined', 'excluded', 'released']),
     detail: z.string().min(1),
     evidence: z.string().nullable(),
     score: z.number().nullable(),
@@ -113,9 +113,10 @@ export class ProtectionPipeline implements RunGuard {
   constructor(
     private readonly scanner: InjectionScanner,
     private readonly events: SecurityEventRepository,
-    private readonly quarantine: (
+    private readonly withhold: (
       projectId: string,
       documentId: string,
+      seqs: number[],
     ) => void,
   ) {}
 
@@ -157,11 +158,13 @@ export class ProtectionPipeline implements RunGuard {
     ctx: RunContext,
     passages: Passage[],
   ): Promise<PassageScreening> {
-    if (passages.length === 0) return { passages, blocked: null };
+    // Passages the user released after review are not scanned again; everything else is.
+    const unreviewed = passages.filter((passage) => !passage.released);
+    if (unreviewed.length === 0) return { passages, blocked: null };
     let verdicts: ScanVerdict[];
     try {
       verdicts = await this.scanner.scan(
-        passages.map((passage) => passage.text),
+        unreviewed.map((passage) => passage.text),
       );
     } catch (error) {
       this.requireScannerError(error);
@@ -176,66 +179,64 @@ export class ProtectionPipeline implements RunGuard {
         }),
       };
     }
-    const kept: Passage[] = [];
-    const flagged = new Set<string>();
-    passages.forEach((passage, index) => {
+    const flagged = new Set<Passage>();
+    unreviewed.forEach((passage, index) => {
       const verdict = verdicts[index];
-      if (verdict?.injection && !flagged.has(passage.documentId)) {
-        flagged.add(passage.documentId);
-        this.quarantine(ctx.projectId, passage.documentId);
-        this.events.record({
-          projectId: ctx.projectId,
-          runId: ctx.runId,
-          documentId: passage.documentId,
-          stage: 'retrieval',
-          rule: 'prompt-injection',
-          source: `${passage.title} (${passage.path})`,
-          outcome: 'quarantined',
-          detail:
-            'A retrieved passage looked like a prompt-injection attempt; the document was quarantined and withheld from the model.',
-          evidence: safeExcerpt(passage.text),
-          score: verdict.score,
-        });
-      }
+      if (!verdict?.injection) return;
+      flagged.add(passage);
+      this.withhold(ctx.projectId, passage.documentId, [passage.seq]);
+      this.events.record({
+        projectId: ctx.projectId,
+        runId: ctx.runId,
+        documentId: passage.documentId,
+        stage: 'retrieval',
+        rule: 'prompt-injection',
+        source: `${passage.title} (${passage.path})`,
+        outcome: 'excluded',
+        detail:
+          'A retrieved passage looked like a prompt-injection attempt and was withheld from the model.',
+        evidence: safeExcerpt(passage.text),
+        score: verdict.score,
+      });
     });
-    for (const passage of passages)
-      if (!flagged.has(passage.documentId)) kept.push(passage);
-    return { passages: kept, blocked: null };
+    return {
+      passages: passages.filter((passage) => !flagged.has(passage)),
+      blocked: null,
+    };
   }
 
-  /** Scans a document at ingestion. Resolves blocked when it must be quarantined; throws if it could not be scanned. */
+  /**
+   * Scans every passage of a document at ingestion and returns the ones to withhold. Only flagged
+   * passages are withheld, so one suspect paragraph does not discard a whole manual; each is
+   * recorded for review. Throws if the document could not be scanned.
+   */
   async screenDocument(
     ctx: { projectId: string; documentId: string; title: string; path: string },
     chunks: string[],
-  ): Promise<Decision> {
+  ): Promise<{ withheld: number[] }> {
     const source = `${ctx.title} (${ctx.path})`;
+    const withheld: number[] = [];
     try {
       for (let start = 0; start < chunks.length; start += BATCH) {
         const batch = chunks.slice(start, start + BATCH);
         const verdicts = await this.scanner.scan(batch);
-        const hit = verdicts.findIndex((verdict) => verdict.injection);
-        if (hit >= 0) {
-          const verdict = verdicts[hit] as ScanVerdict;
-          const blocked: Blocked = {
-            allowed: false,
-            rule: 'prompt-injection',
-            reason:
-              'The document contains instructions aimed at the model and was quarantined.',
-          };
+        verdicts.forEach((verdict, index) => {
+          if (!verdict.injection) return;
+          withheld.push(start + index);
           this.events.record({
             projectId: ctx.projectId,
             runId: null,
             documentId: ctx.documentId,
             stage: 'ingestion',
-            rule: blocked.rule,
+            rule: 'prompt-injection',
             source,
-            outcome: 'quarantined',
-            detail: blocked.reason,
-            evidence: safeExcerpt(batch[hit] ?? ''),
+            outcome: 'excluded',
+            detail:
+              'A passage contains instructions aimed at the model and was withheld for review.',
+            evidence: safeExcerpt(batch[index] ?? ''),
             score: verdict.score,
           });
-          return blocked;
-        }
+        });
       }
     } catch (error) {
       this.requireScannerError(error);
@@ -253,7 +254,7 @@ export class ProtectionPipeline implements RunGuard {
       });
       throw error;
     }
-    return { allowed: true };
+    return { withheld };
   }
 
   inspectOutput(ctx: RunContext, text: string): Decision {

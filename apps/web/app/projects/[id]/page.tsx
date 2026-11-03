@@ -11,7 +11,7 @@ import {
   projects,
   sessions,
 } from '@/lib/controller';
-import { removeContext, removeReference } from '@/app/actions';
+import { releasePassage, removeContext, removeReference } from '@/app/actions';
 import { AddContext, AddReference } from '@/components/knowledge-forms';
 import { StartSession } from '@/components/start-session';
 import { Panel } from '@/components/panel';
@@ -120,8 +120,9 @@ export default async function ProjectPage({
           >
             <p className="muted">
               Retrieval uses passages from these documents. Files are read only
-              from the configured reference folder. Suspect documents are
-              quarantined by the security pipeline.
+              from the configured reference folder. Passages that look like
+              instructions aimed at the model are withheld until you review
+              them.
             </p>
             <ul className="context-items">
               {references.map((document) => (
@@ -130,12 +131,50 @@ export default async function ProjectPage({
                     <strong>{document.title}</strong>
                     <p className="metadata">
                       {document.path} · {document.chunkCount} passages
+                      {document.withheld > 0
+                        ? ` · ${document.withheld} withheld`
+                        : ''}
                     </p>
                     <span
                       className={`status-label ${document.status === 'quarantined' ? 'failure' : ''}`}
                     >
                       {document.status}
                     </span>
+                    {document.withheld > 0 && (
+                      <details className="answer-details">
+                        <summary>Review withheld passages</summary>
+                        <p>
+                          The scanner flagged these as instructions aimed at the
+                          model, so the model never sees them. Release one only
+                          if you trust it: it is not scanned again.
+                        </p>
+                        {documents()
+                          .withheldPassages(id, document.id)
+                          .map((passage) => (
+                            <form key={passage.seq} action={releasePassage}>
+                              <blockquote>{passage.excerpt}</blockquote>
+                              <input
+                                type="hidden"
+                                name="projectId"
+                                value={id}
+                              />
+                              <input
+                                type="hidden"
+                                name="documentId"
+                                value={document.id}
+                              />
+                              <input
+                                type="hidden"
+                                name="seq"
+                                value={passage.seq}
+                              />
+                              <button type="submit" className="text-button">
+                                Release passage {passage.seq + 1}
+                              </button>
+                            </form>
+                          ))}
+                      </details>
+                    )}
                   </div>
                   <form action={removeReference}>
                     <input type="hidden" name="projectId" value={id} />

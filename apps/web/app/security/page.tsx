@@ -129,7 +129,9 @@ export default async function SecurityPage({
               {events.map((event) => (
                 <li key={event.id}>
                   <div className="finding-heading">
-                    <span className="status-label failure">
+                    <span
+                      className={`status-label ${event.outcome === 'released' ? '' : 'failure'}`}
+                    >
                       <Icon name="warning" width={12} />
                       {event.outcome}
                     </span>
