@@ -16,12 +16,17 @@ export default async function ModelsPage() {
       </header>
       <section aria-labelledby="checks-title" className="provider-section">
         <h2 id="checks-title">System check</h2>
-        <ul className="muted">
+        <ul className="system-checks">
           {checks.map((check) => (
             <li key={check.name}>
-              <span aria-hidden="true">{check.ok ? '✅' : '⚠️'}</span>{' '}
-              <strong>{check.name}</strong> — {check.detail}
-              {!check.ok && <span className="block">{check.fix}</span>}
+              <strong>{check.name}</strong>
+              <span
+                className={`status-label row-span-2 ${check.ok ? 'positive' : 'attention'}`}
+              >
+                {check.ok ? 'Ready' : 'Needs attention'}
+              </span>
+              <span className="detail">{check.detail}</span>
+              {!check.ok && <span className="fix">{check.fix}</span>}
             </li>
           ))}
         </ul>

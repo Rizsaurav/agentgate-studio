@@ -12,6 +12,7 @@
   --accent-bg: #292238;
   --success: #8ad1aa;
   --danger: #f1a3a6;
+  --warning: #f2c97d;
 }
 * {
   box-sizing: border-box;
@@ -579,6 +580,46 @@ details.provider-section:not([open]) > summary {
   background: #28252e;
   font-size: 10px;
   line-height: 1.4;
+}
+/* A coloured dot leads each status, as in Vercel or Linear, instead of tick or emoji glyphs. */
+.status-label::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+.status-label.attention {
+  color: var(--warning);
+  background: #33291b;
+}
+.system-checks {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+.system-checks li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 16px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.system-checks .detail,
+.system-checks .fix {
+  grid-column: 1;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 13px;
+}
+.system-checks .fix {
+  color: var(--text);
 }
 .status-label.positive {
   color: var(--success);
