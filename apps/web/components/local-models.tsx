@@ -8,13 +8,11 @@ import type { CatalogModel } from '@agentgate/controller';
 export function LocalModels({
   recommended,
   installed,
-  ollamaReady,
   summary,
   recommendedError,
 }: {
   recommended: CatalogModel[];
   installed: { name: string; sizeBytes: number }[];
-  ollamaReady: boolean;
   summary: string;
   recommendedError: string | null;
 }) {
@@ -116,7 +114,7 @@ export function LocalModels({
                 <Button
                   type="button"
                   variant={model.best ? 'default' : 'outline'}
-                  disabled={!ollamaReady || downloading || !model.fits}
+                  disabled={downloading || !model.fits}
                   aria-label={`Install ${model.label}`}
                   onClick={() => void install(model.id)}
                 >
@@ -151,7 +149,7 @@ export function LocalModels({
         <Button
           type="submit"
           variant="outline"
-          disabled={!ollamaReady || downloading || !custom.trim()}
+          disabled={downloading || !custom.trim()}
         >
           Install
         </Button>

@@ -32,18 +32,35 @@ export class AgentStore {
   ) {}
 
   enabled(): boolean {
-    const row = this.db
-      .prepare("SELECT value FROM agent_settings WHERE key = 'enabled'")
-      .get() as { value: string } | undefined;
-    return row?.value !== 'off';
+    return this.setting('enabled') !== 'off';
   }
 
   setEnabled(enabled: boolean): void {
+    this.saveSetting('enabled', enabled ? 'on' : 'off');
+  }
+
+  /** Whether the user has chosen local models. Until then Ollama is not started or watched. */
+  usesLocalModels(): boolean {
+    return this.setting('local-models') === 'on';
+  }
+
+  setUsesLocalModels(): void {
+    this.saveSetting('local-models', 'on');
+  }
+
+  private setting(key: string): string | undefined {
+    const row = this.db
+      .prepare('SELECT value FROM agent_settings WHERE key = ?')
+      .get(key) as { value: string } | undefined;
+    return row?.value;
+  }
+
+  private saveSetting(key: string, value: string): void {
     this.db
       .prepare(
-        "INSERT INTO agent_settings (key, value) VALUES ('enabled', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        'INSERT INTO agent_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
       )
-      .run(enabled ? 'on' : 'off');
+      .run(key, value);
   }
 
   tokensToday(): number {

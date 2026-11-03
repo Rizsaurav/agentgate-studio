@@ -38,17 +38,24 @@ function dailyTokens(): number {
 }
 
 async function probe(): Promise<Probe> {
-  const services = await checkServices(endpoints());
+  const services = await checkServices({
+    ...endpoints(),
+    usesLocalModels: agentStore().usesLocalModels(),
+  });
+  const installedModels = await ollama()
+    .listInstalled()
+    .then((models) => models.length)
+    .catch(() => null);
+  // Someone who already has local models has chosen them, even before this setting existed.
+  if (installedModels) agentStore().setUsesLocalModels();
   const lastEval = evals()
     .recent(20)
     .find((run) => run.profile === 'enforced');
   const since = Date.now() - DAY_MS;
   return {
     services,
-    installedModels: await ollama()
-      .listInstalled()
-      .then((models) => models.length)
-      .catch(() => null),
+    usesLocalModels: agentStore().usesLocalModels(),
+    installedModels,
     lastEval: lastEval
       ? {
           id: lastEval.id,

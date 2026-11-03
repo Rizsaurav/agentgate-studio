@@ -7,11 +7,13 @@ export class ModelRouter implements AgentModels {
   constructor(
     private readonly ollama: OllamaCatalog,
     private readonly cloud: CloudCatalog,
+    /** Starts Ollama if it is not running; local models are started on demand, not at launch. */
+    private readonly ensureOllama: () => Promise<unknown> = async () => {},
   ) {}
 
-  open(ref: ModelRef): Promise<OpenedModel> {
-    return ref.provider === 'ollama'
-      ? this.ollama.open(ref)
-      : this.cloud.open(ref);
+  async open(ref: ModelRef): Promise<OpenedModel> {
+    if (ref.provider !== 'ollama') return this.cloud.open(ref);
+    await this.ensureOllama();
+    return this.ollama.open(ref);
   }
 }

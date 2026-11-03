@@ -1,7 +1,17 @@
 import { z } from 'zod';
 import { projectIdSchema, type ProjectRepository } from './projects';
 
-export const CLOUD_PROVIDERS = ['anthropic', 'openai'] as const;
+/** Providers a user can connect with an API key. Each one is a built-in provider of the Pi SDK. */
+export const CLOUD_PROVIDERS = [
+  'openrouter',
+  'anthropic',
+  'openai',
+  'google',
+  'groq',
+  'deepseek',
+  'mistral',
+  'xai',
+] as const;
 export const cloudProviderSchema = z.enum(CLOUD_PROVIDERS);
 export type CloudProvider = z.infer<typeof cloudProviderSchema>;
 export const modelRefSchema = z

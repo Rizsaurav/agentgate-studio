@@ -14,6 +14,7 @@ const healthy: Probe = {
     ok('Security scanner (LLM Guard)'),
     ok('Reference folder'),
   ],
+  usesLocalModels: true,
   installedModels: 2,
   lastEval: { id: 'e1', status: 'passed', passed: 12, total: 12 },
   blockedLast24h: 0,
@@ -59,6 +60,19 @@ describe('watchdog rules', () => {
       ['no-local-model', 'info'],
       ['blocked-activity', 'info'],
     ]);
+  });
+  it('leaves Ollama alone for someone who only uses API keys', () => {
+    const findings = assess({
+      ...healthy,
+      usesLocalModels: false,
+      installedModels: null,
+      services: [
+        down('Ollama (local models)'),
+        ok('Security scanner (LLM Guard)'),
+        ok('Reference folder'),
+      ],
+    });
+    expect(findings).toEqual([]);
   });
 });
 
