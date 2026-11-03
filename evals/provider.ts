@@ -93,14 +93,15 @@ export default class AgentGateProvider {
       const pipeline = new ProtectionPipeline(
         weak ? clean : new LlmGuardScanner(process.env.AGENTGATE_SCANNER_URL),
         events,
-        (projectId, id) => documentRepository.quarantine(projectId, id),
+        (projectId, id, seqs) =>
+          documentRepository.withhold(projectId, id, seqs),
       );
       const documents = new DocumentService(
         documentRepository,
         projectRepository,
         root,
         weak
-          ? async () => ({ allowed: true })
+          ? async () => ({ withheld: [] })
           : (document, chunks) => pipeline.screenDocument(document, chunks),
       );
       const project = new ProjectService(projectRepository).create({
@@ -115,6 +116,7 @@ export default class AgentGateProvider {
 
       let ingestError: string | null = null;
       const quarantined: string[] = [];
+      const withheld: string[] = [];
       const skipped: string[] = [];
       const paths = vars.referencePath
         ? [vars.referencePath]
@@ -126,6 +128,9 @@ export default class AgentGateProvider {
             path,
           });
           quarantined.push(...result.quarantined.map((q) => q.document.title));
+          withheld.push(
+            ...result.added.filter((d) => d.withheld > 0).map((d) => d.title),
+          );
           skipped.push(...result.skipped.map((s) => s.path));
         }
       } catch (error) {
@@ -197,6 +202,7 @@ export default class AgentGateProvider {
           answer,
           sources: sessions.sources(run.id).map((s) => s.title),
           quarantined,
+          withheld,
           skipped,
           ingestError,
           modelCalls: faux.state.callCount,

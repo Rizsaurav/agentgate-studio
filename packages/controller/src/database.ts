@@ -137,6 +137,30 @@ CREATE TABLE agent_notes (
 ) STRICT;
 CREATE INDEX agent_notes_created ON agent_notes(created_at);`;
 
+// Passages are withheld one at a time; documents quarantined before this held no per-passage verdict,
+// so all their passages start withheld (fail closed) and can be reviewed and released.
+const WITHHELD_PASSAGES = `
+ALTER TABLE chunks ADD COLUMN state TEXT NOT NULL DEFAULT 'ok' CHECK(state IN ('ok','withheld','released'));
+UPDATE chunks SET state = 'withheld' WHERE document_id IN (SELECT id FROM documents WHERE status = 'quarantined');
+CREATE TABLE security_events_new (
+  id TEXT PRIMARY KEY NOT NULL,
+  project_id TEXT NOT NULL,
+  run_id TEXT,
+  document_id TEXT,
+  stage TEXT NOT NULL CHECK(stage IN ('input','ingestion','retrieval','output')),
+  rule TEXT NOT NULL,
+  source TEXT NOT NULL,
+  outcome TEXT NOT NULL CHECK(outcome IN ('blocked','quarantined','excluded','released')),
+  detail TEXT NOT NULL,
+  evidence TEXT,
+  score REAL,
+  created_at TEXT NOT NULL
+) STRICT;
+INSERT INTO security_events_new SELECT * FROM security_events;
+DROP TABLE security_events;
+ALTER TABLE security_events_new RENAME TO security_events;
+CREATE INDEX security_events_by_time ON security_events(created_at DESC);`;
+
 /** Ordered migrations; PRAGMA user_version is the number applied. Never edit an applied entry. */
 const MIGRATIONS = [
   PROJECTS,
@@ -145,6 +169,7 @@ const MIGRATIONS = [
   SECURITY,
   EVALUATIONS,
   AGENT,
+  WITHHELD_PASSAGES,
 ];
 
 /** Single owner of the application database file, schema, and migrations. */

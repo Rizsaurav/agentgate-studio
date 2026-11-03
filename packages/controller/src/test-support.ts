@@ -30,8 +30,8 @@ export function protection(
   const projects = new SqliteProjects(db);
   const documentRepository = new SqliteDocuments(db);
   const events = new SqliteSecurityEvents(db);
-  const guard = new ProtectionPipeline(scanner, events, (projectId, id) =>
-    documentRepository.quarantine(projectId, id),
+  const guard = new ProtectionPipeline(scanner, events, (projectId, id, seqs) =>
+    documentRepository.withhold(projectId, id, seqs),
   );
   const documents = new DocumentService(
     documentRepository,

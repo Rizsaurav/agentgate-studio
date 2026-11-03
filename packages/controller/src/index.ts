@@ -44,6 +44,7 @@ export {
   DocumentService,
   SqliteDocuments,
   chunkText,
+  normalizeText,
   toFtsQuery,
 } from './documents';
 export type { Document } from './documents';

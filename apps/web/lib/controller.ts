@@ -106,8 +106,8 @@ function controller(): Controller {
     const guard = new ProtectionPipeline(
       new LlmGuardScanner(process.env.AGENTGATE_SCANNER_URL),
       security,
-      (projectId, documentId) =>
-        documentRepository.quarantine(projectId, documentId),
+      (projectId, documentId, seqs) =>
+        documentRepository.withhold(projectId, documentId, seqs),
     );
     const documents = new DocumentService(
       documentRepository,

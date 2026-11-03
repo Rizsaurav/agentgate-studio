@@ -1160,7 +1160,8 @@ select {
   overflow-wrap: anywhere;
   font-family: monospace;
 }
-.finding-evidence blockquote {
+.finding-evidence blockquote,
+.answer-details blockquote {
   padding: 12px;
   background: #0f1015;
   border-radius: 6px;

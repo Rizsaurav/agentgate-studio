@@ -23,6 +23,7 @@ import {
   projects,
   puller,
   runs,
+  security,
   sessions,
 } from '@/lib/controller';
 import { assistant } from '@/lib/assistant';
@@ -278,12 +279,18 @@ function referenceFeedback(
       ...result.quarantined.map(
         (q) => `${q.document.path}: quarantined (${q.reason})`,
       ),
+      ...result.added
+        .filter((document) => document.withheld > 0)
+        .map(
+          (document) =>
+            `${document.path}: ${document.withheld} of ${document.chunkCount} passages withheld for review.`,
+        ),
       ...result.skipped.map((skip) => `${skip.path}: ${skip.reason}`),
     ]),
   ].join(' ');
   return {
     error: added === 0 && problems ? problems : null,
-    notice: `Added ${added} document(s).${added > 0 && problems ? ` Not used: ${problems}` : ''}`,
+    notice: `Added ${added} document(s).${added > 0 && problems ? ` Notes: ${problems}` : ''}`,
   };
 }
 
@@ -329,6 +336,32 @@ export async function removeReference(form: FormData): Promise<void> {
   if (!(await isLocalRequest())) return;
   documents().remove(form.get('projectId'), form.get('id'));
   revalidatePath(`/projects/${form.get('projectId')}`);
+}
+
+/** Releases a withheld passage after the user reviewed it; the override is kept with the security events. */
+export async function releasePassage(form: FormData): Promise<void> {
+  if (!(await isLocalRequest())) return;
+  const projectId = String(form.get('projectId'));
+  const released = documents().release(
+    projectId,
+    form.get('documentId'),
+    form.get('seq'),
+  );
+  if (released)
+    security().record({
+      projectId,
+      runId: null,
+      documentId: released.document.id,
+      stage: 'ingestion',
+      rule: 'user-release',
+      source: `${released.document.title} (${released.document.path})`,
+      outcome: 'released',
+      detail:
+        'The user reviewed a withheld passage and released it to the model.',
+      evidence: released.excerpt.slice(0, 160),
+      score: null,
+    });
+  revalidatePath(`/projects/${projectId}`);
 }
 
 /** Records an assistant answer the user has checked as a verified outcome in the shared context. */

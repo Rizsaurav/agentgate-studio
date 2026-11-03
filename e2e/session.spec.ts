@@ -160,7 +160,7 @@ test('a poisoned document is quarantined and a prompt injection is blocked, with
     findings.filter({
       hasText: 'Customer FAQ Update (attack/poisoned-faq.md)',
     }),
-  ).toContainText('quarantined');
+  ).toContainText('excluded');
   await expect(findings.filter({ hasText: 'user input' })).toContainText(
     'blocked',
   );
