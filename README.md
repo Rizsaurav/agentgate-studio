@@ -86,7 +86,7 @@ Live-service tests are skipped unless `AGENTGATE_OLLAMA_URL` + `AGENTGATE_OLLAMA
 ## Known limitations
 
 - Single user, loopback only, no authentication. SQLite is not encrypted.
-- Models: any of OpenRouter, Anthropic, OpenAI, Google Gemini, Groq, DeepSeek, Mistral or xAI with an API key, and Ollama for local models. You need only one. A full chat through OpenRouter was verified; the other providers use the same Pi SDK path but were not run with real keys.
+- Models: any of OpenRouter, Anthropic, OpenAI, Google Gemini, Groq, DeepSeek, Mistral or xAI with an API key, one custom OpenAI-compatible endpoint (LM Studio, vLLM, a company gateway; https unless it runs on this computer), and Ollama for local models. You need only one. A full chat through OpenRouter was verified; the other providers use the same Pi SDK path but were not run with real keys.
 - Agents have no tools: no filesystem or shell access is granted.
 - Reference documents: `.md`/`.txt` files up to 200 KB from one folder (`AGENTGATE_DOCS_ROOT`), non-recursive.
 - Answers appear after generation finishes, because model text is held until it has been inspected.

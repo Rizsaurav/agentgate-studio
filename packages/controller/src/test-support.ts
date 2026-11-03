@@ -6,6 +6,7 @@ import {
   SqliteProjects,
   SqliteSecurityEvents,
   type InjectionScanner,
+  type SecretBackend,
 } from './index';
 
 /** Deterministic stand-in for the scanner service in logic tests; flags text containing a marker. */
@@ -39,4 +40,18 @@ export function protection(
     async (document, chunks) => guard.screenDocument(document, chunks),
   );
   return { guard, events, documents };
+}
+
+/** In-memory secret backend for tests; never touches the OS credential store. */
+export class MemoryBackend implements SecretBackend {
+  readonly values = new Map<string, string>();
+  async get(account: string) {
+    return this.values.get(account) ?? null;
+  }
+  async set(account: string, secret: string) {
+    this.values.set(account, secret);
+  }
+  async delete(account: string) {
+    this.values.delete(account);
+  }
 }

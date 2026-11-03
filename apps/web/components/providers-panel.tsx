@@ -1,7 +1,8 @@
 import { PROVIDER_INFO } from '@agentgate/controller';
 import { LocalModels } from './local-models';
-import { agentStore, cloud, ollama } from '@/lib/controller';
-import { disconnectProvider } from '@/app/actions';
+import { agentStore, cloud, customEndpoint, ollama } from '@/lib/controller';
+import { disconnectCustomEndpoint, disconnectProvider } from '@/app/actions';
+import { CustomEndpointForm } from './custom-endpoint-form';
 import { ConnectProvider } from './connect-provider';
 import { Icon } from './icon';
 import { ModelSetup } from './model-setup';
@@ -23,6 +24,9 @@ export async function ProvidersPanel() {
     .status()
     .then((providers) => ({ providers, error: false }))
     .catch(() => ({ providers: [], error: true }));
+  const custom = await customEndpoint()
+    .status()
+    .catch(() => ({ configured: false as const }));
   const localStatus = local.available
     ? 'Running'
     : agentStore().usesLocalModels()
@@ -96,6 +100,44 @@ export async function ProvidersPanel() {
           </details>
         );
       })}
+      <details className="provider-section" open={custom.configured}>
+        <summary className="provider-heading cursor-pointer">
+          <span className="provider-icon">
+            <Icon name="spark" />
+          </span>
+          <h3>
+            {custom.configured ? custom.name : 'Custom endpoint'}
+            <span>
+              {custom.configured
+                ? `${custom.baseUrl} · ${custom.models.length} models`
+                : 'Any OpenAI-compatible server: LM Studio, vLLM, a company gateway'}
+            </span>
+          </h3>
+          <span
+            className={`status-label ${custom.configured ? 'positive' : ''}`}
+          >
+            {custom.configured ? 'Connected' : 'Not connected'}
+          </span>
+        </summary>
+        <CustomEndpointForm
+          current={
+            custom.configured
+              ? {
+                  name: custom.name,
+                  baseUrl: custom.baseUrl,
+                  models: custom.models,
+                }
+              : null
+          }
+        />
+        {custom.configured && (
+          <form action={disconnectCustomEndpoint} className="mt-4">
+            <Button type="submit" variant="outline">
+              Remove endpoint
+            </Button>
+          </form>
+        )}
+      </details>
       <h3 className="provider-group-title">Run models on this computer</h3>
       <section className="provider-section">
         <div className="provider-heading">

@@ -16,7 +16,7 @@ export const cloudProviderSchema = z.enum(CLOUD_PROVIDERS);
 export type CloudProvider = z.infer<typeof cloudProviderSchema>;
 export const modelRefSchema = z
   .object({
-    provider: z.enum(['ollama', ...CLOUD_PROVIDERS]),
+    provider: z.enum(['ollama', 'custom', ...CLOUD_PROVIDERS]),
     modelId: z.string().trim().min(1).max(200),
   })
   .strict();

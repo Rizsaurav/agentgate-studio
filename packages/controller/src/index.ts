@@ -32,6 +32,13 @@ export {
 } from './credentials';
 export type { SecretBackend } from './credentials';
 export { ModelRouter } from './models';
+export {
+  CUSTOM_PROVIDER,
+  CustomEndpoint,
+  customEndpointSchema,
+} from './custom-endpoint';
+export type { CustomEndpointStatus } from './custom-endpoint';
+export { SqliteSettings } from './settings';
 export { ContextService, SqliteContext } from './context';
 export {
   DocumentService,

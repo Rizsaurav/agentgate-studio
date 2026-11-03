@@ -5,6 +5,7 @@ import {
   agentStore,
   cloud,
   context,
+  customEndpoint,
   documents,
   ollama,
   projects,
@@ -34,6 +35,9 @@ export default async function ProjectPage({
   const cloudStatus = await cloud()
     .status()
     .catch(() => null);
+  const custom = await customEndpoint()
+    .status()
+    .catch(() => ({ configured: false as const }));
   const contextItems = context().list(id),
     preview = context().render(id),
     references = documents().list(id);
@@ -54,6 +58,9 @@ export default async function ProjectPage({
         provider: entry.provider,
         models: entry.models,
       })),
+    ...(custom.configured
+      ? [{ label: custom.name, provider: 'custom', models: custom.models }]
+      : []),
   ];
   return (
     <>

@@ -28,6 +28,9 @@ import {
   RunService,
   SecretCredentialStore,
   CLOUD_PROVIDERS,
+  CUSTOM_PROVIDER,
+  CustomEndpoint,
+  SqliteSettings,
   SessionService,
   SqliteProjects,
   SqliteSessions,
@@ -41,6 +44,7 @@ type Controller = {
   runs: RunService;
   ollama: OllamaCatalog;
   cloud: CloudCatalog;
+  customEndpoint: CustomEndpoint;
   context: ContextService;
   documents: DocumentService;
   security: SqliteSecurityEvents;
@@ -81,6 +85,10 @@ function controller(): Controller {
     const cloud = new CloudCatalog(
       new SecretCredentialStore(secrets, CLOUD_PROVIDERS),
     );
+    const customEndpoint = new CustomEndpoint(
+      new SqliteSettings(db),
+      new SecretCredentialStore(secrets, [CUSTOM_PROVIDER]),
+    );
     // Reference documents are read only from this folder; by default it lives beside the database.
     const docsRoot = resolve(
       /* turbopackIgnore: true */
@@ -118,7 +126,7 @@ function controller(): Controller {
     const runs = new RunService(
       sessionRepository,
       // Ollama is started the first time a local model is used, not when the app opens.
-      new ModelRouter(ollama, cloud, async () => {
+      new ModelRouter(ollama, cloud, customEndpoint, async () => {
         agentStore.setUsesLocalModels();
         return startOllama(ollamaUrl);
       }),
@@ -137,6 +145,7 @@ function controller(): Controller {
       runs,
       ollama,
       cloud,
+      customEndpoint,
       context,
       documents,
       security,
@@ -165,6 +174,7 @@ export const sessions = () => controller().sessions;
 export const runs = () => controller().runs;
 export const ollama = () => controller().ollama;
 export const cloud = () => controller().cloud;
+export const customEndpoint = () => controller().customEndpoint;
 export const context = () => controller().context;
 export const documents = () => controller().documents;
 export const security = () => controller().security;
