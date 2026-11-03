@@ -32,6 +32,8 @@ export default defineConfig({
         AGENTGATE_DATA_DIR: mkdtempSync(join(tmpdir(), 'agentgate-e2e-')),
         AGENTGATE_DOCS_ROOT: join(repoRoot, 'fixtures'),
         AGENTGATE_SCANNER_URL: `http://127.0.0.1:${scannerPort}`,
+        // Never the developer's keychain: tests must not read or change real keys.
+        AGENTGATE_SECRETS: 'env',
       },
     },
   ],

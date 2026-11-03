@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { addReference, closePanel, openPanel } from './panels';
 
 const model = process.env.AGENTGATE_E2E_MODEL;
 
@@ -45,16 +46,21 @@ test('project → real model session → streamed answer persists', async ({
   ).toBeGreaterThan(0);
 });
 
-test('disconnected model service shows an actionable error', async ({
+test('with no models yet, a new project offers an API key or a local model', async ({
   page,
 }) => {
-  test.skip(Boolean(model), 'Only meaningful when Ollama is not provided.');
+  test.skip(Boolean(model), 'Only meaningful when no local model is provided.');
   await page.goto('/');
-  await page.getByLabel('Project name').fill('Offline');
+  await page.getByLabel('Project name').fill('No models');
   await page.getByRole('button', { name: /Create project/ }).click();
-  await expect(page.getByText(/Ollama is not reachable/)).toContainText(
-    'ollama serve',
-  );
+  await expect(
+    page.getByRole('heading', { name: 'Use an API key' }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Run a model on this computer' }),
+  ).toBeVisible();
+  // Ollama is started on demand, so its absence is not reported as an error.
+  await expect(page.getByText(/Ollama is not reachable/)).toHaveCount(0);
 });
 
 test('an invalid cloud API key is rejected with a sanitized message and not saved', async ({
@@ -66,14 +72,17 @@ test('an invalid cloud API key is rejected with a sanitized message and not save
   );
   const bogus = 'sk-invalid-0000000000000000';
   await page.goto('/models');
-  await page.locator('#key-openai').fill(bogus);
-  await page.getByRole('button', { name: 'Test and save key' }).nth(1).click();
+  // Each provider is a collapsed section until it has a key.
+  const openai = page.locator('main details:has(#key-openai)');
+  await openai.locator('summary').click();
+  await openai.locator('#key-openai').fill(bogus);
+  await openai.getByRole('button', { name: 'Test and save key' }).click();
   await expect(
-    page.getByText('The provider rejected the API key.'),
+    openai.getByText('The provider rejected the API key.'),
   ).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(bogus)).toHaveCount(0);
   await page.reload();
-  await expect(page.getByText('Not connected', { exact: true })).toHaveCount(2);
+  await expect(openai.locator('summary')).toContainText('Not connected');
 });
 
 const secondModel = process.env.AGENTGATE_E2E_MODEL_2;
@@ -88,18 +97,19 @@ test('shared context and retrieved sources follow the project across two models'
   await page.getByLabel('Project name').fill('Reference RAG');
   await page.getByRole('button', { name: /Create project/ }).click();
 
-  await page.getByLabel('Add to shared context').selectOption('goal');
-  await page
+  const context = await openPanel(page, 'Shared context');
+  await context.getByLabel('Add to shared context').selectOption('goal');
+  await context
     .getByLabel('Context text')
     .fill('Answer Northwind Bikes support questions');
-  await page.getByRole('button', { name: 'Add', exact: true }).click();
-  const preview = page.getByLabel('Context shared with models');
-  await expect(preview).toContainText(
+  await context.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(context.getByLabel('Context shared with models')).toContainText(
     'Answer Northwind Bikes support questions',
   );
-  await page.getByLabel('File or folder in the reference folder').fill('rag');
-  await page.getByRole('button', { name: 'Add reference' }).click();
-  await expect(page.getByText('Returns Policy')).toBeVisible();
+  await closePanel(page, 'Shared context');
+  const references = await addReference(page, 'rag');
+  await expect(references.getByText('Returns Policy')).toBeVisible();
+  await closePanel(page, 'Reference documents');
 
   for (const id of [model, secondModel] as string[]) {
     await page
@@ -116,10 +126,13 @@ test('shared context and retrieved sources follow the project across two models'
         timeout: 90_000,
       },
     );
-    await page.getByRole('link', { name: /^←/ }).click();
-    await expect(preview).toContainText(
+    // The session carries the same project context the other model used.
+    const shared = await openPanel(page, 'Shared context');
+    await expect(shared.getByLabel('Context shared with models')).toContainText(
       'Answer Northwind Bikes support questions',
     );
+    await closePanel(page, 'Shared context');
+    await page.getByRole('link', { name: /^←/ }).click();
   }
 });
 
@@ -131,16 +144,14 @@ test('a poisoned document is quarantined and a prompt injection is blocked, with
   await page.getByLabel('Project name').fill('Security demo');
   await page.getByRole('button', { name: /Create project/ }).click();
 
-  await page.getByLabel('File or folder in the reference folder').fill('rag');
-  await page.getByRole('button', { name: 'Add reference' }).click();
-  await expect(page.getByText('Returns Policy')).toBeVisible();
-  await page
-    .getByLabel('File or folder in the reference folder')
-    .fill('attack');
-  await page.getByRole('button', { name: 'Add reference' }).click();
-  await expect(page.getByText('Quarantined: not used in answers')).toBeVisible({
-    timeout: 60_000,
-  });
+  const references = await addReference(page, 'rag');
+  await expect(references.getByText('Returns Policy')).toBeVisible();
+  await addReference(page, 'attack');
+  // Every passage of the poisoned FAQ is flagged, so the whole document is quarantined.
+  await expect(
+    references.getByRole('listitem').filter({ hasText: 'Customer FAQ Update' }),
+  ).toContainText('quarantined', { timeout: 60_000 });
+  await closePanel(page, 'Reference documents');
 
   await page
     .getByLabel('Model', { exact: true })
@@ -175,12 +186,12 @@ test('the dashboard runs the required suite, and a deliberately weak configurati
   const runs = page.getByRole('listitem').filter({ hasText: 'Configuration:' });
   await expect(
     runs.filter({ hasText: 'Required suite' }).first(),
-  ).toContainText('12 of 12 cases passed', { timeout: 120_000 });
+  ).toContainText(/(\d+) of \1 cases passed/, { timeout: 120_000 });
 
   await page.getByText('Deliberately weak demonstration').click();
   await page.getByRole('button', { name: 'Run weak demo' }).click();
   const weak = runs.filter({ hasText: 'Weak demo' }).first();
-  await expect(weak).toContainText('5 of 12 cases passed', {
+  await expect(weak).toContainText('6 of 14 cases passed', {
     timeout: 120_000,
   });
   await expect(weak).toContainText(
