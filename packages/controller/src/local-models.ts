@@ -55,19 +55,22 @@ export type PullOptions = {
 const STALL_MS = 2 * 60_000;
 const VERIFY_MS = 5 * 60_000;
 const MAX_ATTEMPTS = 3;
+/** Downloads waiting behind the current one. */
+export const MAX_QUEUED = 10;
 
 class Stalled extends Error {}
 /** Ollama answered, but the model cannot run here (for example an unsupported architecture). */
 class DoesNotRun extends Error {}
 
 /**
- * Downloads one model at a time through Ollama, with a time limit and cancel.
+ * Downloads one model at a time through Ollama, with a time limit and cancel; more wait in a queue.
  * A stalled download is resumed, and a model counts as installed only once it answers a prompt;
  * one that does not run is removed and the next candidate is tried.
  * Progress is held in memory; Ollama itself resumes a partial download.
  */
 export class ModelPuller {
   private current: PullState | null = null;
+  private readonly waiting: string[][] = [];
   private abort: AbortController | null = null;
   private readonly baseUrl: string;
   private readonly stallMs: number;
@@ -85,16 +88,52 @@ export class ModelPuller {
     return this.current;
   }
 
+  /** Models waiting to download, in order. */
+  queued(): string[] {
+    return this.waiting.map((models) => models[0] as string);
+  }
+
   /**
-   * Starts the download and returns once it is running; progress is read with state().
+   * Starts the download, or queues it behind the current one; progress is read with state().
    * `fallbacks` are tried in order if a model downloads but does not run on this computer.
    */
-  start(modelInput: unknown, fallbacks: unknown[] = []): PullState {
+  start(modelInput: unknown, fallbacks: unknown[] = []): 'started' | 'queued' {
     const models = [modelInput, ...fallbacks].map((model) =>
       modelNameSchema.parse(model),
     );
-    if (this.current?.status === 'downloading')
-      throw new Error(`${this.current.model} is already downloading.`);
+    const model = models[0] as string;
+    if (this.current?.status === 'downloading') {
+      if (this.current.model === model || this.queued().includes(model))
+        throw new Error(`${model} is already being installed.`);
+      if (this.waiting.length >= MAX_QUEUED)
+        throw new Error(
+          `At most ${MAX_QUEUED} models can wait to install. Try again once some finish.`,
+        );
+      this.waiting.push(models);
+      return 'queued';
+    }
+    this.begin(models);
+    return 'started';
+  }
+
+  /** Takes a model off the queue before its download starts. */
+  unqueue(modelInput: unknown): void {
+    const model = modelNameSchema.parse(modelInput);
+    const index = this.queued().indexOf(model);
+    if (index >= 0) this.waiting.splice(index, 1);
+  }
+
+  /** Deletes an installed model from Ollama. */
+  async uninstall(modelInput: unknown): Promise<void> {
+    const model = modelNameSchema.parse(modelInput);
+    if (this.current?.status === 'downloading' && this.current.model === model)
+      throw new Error(`${model} is installing; cancel it first.`);
+    this.unqueue(model);
+    if (!(await this.remove(model)))
+      throw new Error(`${model} could not be removed.`);
+  }
+
+  private begin(models: string[]): void {
     const state: PullState = {
       model: models[0] as string,
       status: 'downloading',
@@ -104,17 +143,20 @@ export class ModelPuller {
     };
     this.current = state;
     this.abort = new AbortController();
-    void this.run(state, models, this.abort);
-    return state;
+    void this.run(state, models, this.abort).finally(() => {
+      const next = this.waiting.shift();
+      if (next) this.begin(next);
+    });
   }
 
+  /** Stops the current download; queued ones continue after it. */
   cancel(): void {
     this.abort?.abort(new Error('cancelled'));
   }
 
-  /** Resolves when the active download ends. Used by tests. */
+  /** Resolves when the active download and the queue end. Used by tests. */
   async idle(): Promise<void> {
-    while (this.current?.status === 'downloading')
+    while (this.current?.status === 'downloading' || this.waiting.length)
       await new Promise((resolve) => setTimeout(resolve, 20));
   }
 
@@ -141,7 +183,10 @@ export class ModelPuller {
           await this.verify(model, controller.signal);
         } catch (error) {
           if (!(error instanceof DoesNotRun)) throw error;
-          await this.remove(model);
+          if (!(await this.remove(model)))
+            throw new Error(
+              `${model} does not run here and could not be removed.`,
+            );
           const next = models[index + 1];
           if (!next)
             throw new Error(
@@ -254,14 +299,14 @@ export class ModelPuller {
     if (!response.ok) throw new DoesNotRun();
   }
 
-  private async remove(model: string): Promise<void> {
+  /** True when the model is gone afterwards (including when it was never there). */
+  private async remove(model: string): Promise<boolean> {
     const response = await fetch(`${this.baseUrl}/api/delete`, {
       method: 'DELETE',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ model }),
     });
-    if (!response.ok && response.status !== 404)
-      throw new Error(`${model} does not run here and could not be removed.`);
+    return response.ok || response.status === 404;
   }
 }
 

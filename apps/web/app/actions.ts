@@ -407,6 +407,23 @@ export async function cancelPull(): Promise<void> {
   if (await isLocalRequest()) puller().cancel();
 }
 
+export async function unqueueModel(model: string): Promise<void> {
+  if (await isLocalRequest()) puller().unqueue(model);
+}
+
+/** Deletes an installed local model; the page confirms with the person first. */
+export async function removeModel(model: string): Promise<PullResult> {
+  if (!(await isLocalRequest()))
+    return { error: 'Requests must come from this local workspace.' };
+  try {
+    await puller().uninstall(model);
+  } catch (error) {
+    return { error: userMessage(error, 'The model could not be removed.') };
+  }
+  revalidatePath('/models');
+  return { error: null };
+}
+
 export async function connectAssistant(
   _previous: ConnectState,
   form: FormData,

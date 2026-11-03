@@ -204,8 +204,8 @@ describe('model downloads', () => {
     });
     const puller = new ModelPuller(baseUrl);
     expect(() => puller.start('bad name!')).toThrow();
-    puller.start('slow:1b');
-    expect(() => puller.start('other:1b')).toThrow('already downloading');
+    expect(puller.start('slow:1b')).toBe('started');
+    expect(() => puller.start('slow:1b')).toThrow('already being installed');
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(puller.state()?.completedBytes).toBe(1);
     puller.cancel();
@@ -216,6 +216,45 @@ describe('model downloads', () => {
     });
     puller.start('next:1b');
     puller.cancel();
+    await puller.idle();
+  });
+
+  it('queues further models, installs them in order, and removes models', async () => {
+    const order: string[] = [];
+    const deleted: string[] = [];
+    const baseUrl = await fakeOllama((req, res) => {
+      let body = '';
+      req.on('data', (c) => (body += c));
+      req.on('end', () => {
+        const { model } = JSON.parse(body) as { model: string };
+        if (req.url === '/api/pull') {
+          order.push(model);
+          return setTimeout(() => res.end(ndjson([{ status: 'success' }])), 30);
+        }
+        if (req.url === '/api/delete') deleted.push(model);
+        res.end('{}');
+      });
+    });
+    const puller = new ModelPuller(baseUrl);
+    expect(puller.start('a:1b')).toBe('started');
+    expect(puller.start('b:1b')).toBe('queued');
+    expect(puller.start('c:1b')).toBe('queued');
+    expect(puller.start('d:1b')).toBe('queued');
+    expect(() => puller.start('c:1b')).toThrow('already being installed');
+    puller.unqueue('d:1b');
+    expect(puller.queued()).toEqual(['b:1b', 'c:1b']);
+    await expect(puller.uninstall('a:1b')).rejects.toThrow('cancel it first');
+    await puller.idle();
+    expect(order).toEqual(['a:1b', 'b:1b', 'c:1b']);
+    expect(puller.state()).toMatchObject({ model: 'c:1b', status: 'done' });
+    await puller.uninstall('b:1b');
+    expect(deleted).toEqual(['b:1b']);
+    for (let i = 0; i < 12; i += 1)
+      if (i === 0) puller.start('busy:1b');
+      else if (i <= 10) puller.start(`q${i}:1b`);
+      else expect(() => puller.start(`q${i}:1b`)).toThrow('At most 10');
+    puller.cancel();
+    for (const model of puller.queued()) puller.unqueue(model);
     await puller.idle();
   });
 });
