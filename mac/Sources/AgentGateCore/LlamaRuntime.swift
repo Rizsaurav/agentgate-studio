@@ -88,6 +88,7 @@ public final class LlamaRuntime: @unchecked Sendable {
     process.standardError = pipe
     pipe.fileHandleForReading.readabilityHandler = { log.append($0.availableData) }
     try process.run()
+    try? EngineRegistry().record(process.processIdentifier)
     let runtime = LlamaRuntime(
       baseURL: URL(string: "http://127.0.0.1:\(port)")!, apiKey: key, alias: alias, process: process, log: log)
     do {
@@ -111,6 +112,7 @@ public final class LlamaRuntime: @unchecked Sendable {
     while process.isRunning, Date() < deadline { usleep(50_000) }
     if process.isRunning { kill(process.processIdentifier, SIGKILL) }
     process.waitUntilExit()
+    EngineRegistry().forget(process.processIdentifier)
   }
 
   deinit { stop() }
@@ -183,4 +185,49 @@ final class LogTail: @unchecked Sendable {
   }
 
   var text: String { lock.withLock { String(decoding: data, as: UTF8.self) } }
+}
+
+/// Pid files for running engines, so engines left behind by a crash or a forced quit are
+/// stopped on the next launch. Only processes running our bundled llama-server are touched.
+public struct EngineRegistry: Sendable {
+  public let folder: URL
+
+  public init(folder: URL = AppPaths.support.appendingPathComponent("engines", isDirectory: true)) {
+    self.folder = folder
+  }
+
+  func record(_ pid: Int32) throws {
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    try Data().write(to: folder.appendingPathComponent(String(pid)))
+  }
+
+  func forget(_ pid: Int32) {
+    try? FileManager.default.removeItem(at: folder.appendingPathComponent(String(pid)))
+  }
+
+  /// Stops recorded engines that are still running `binaries/llama-server`. Returns the pids stopped.
+  @discardableResult
+  public func reapOrphans(binaries: URL? = LlamaRuntime.binaryDirectory()) -> [Int32] {
+    guard let binaries,
+          let entries = try? FileManager.default.contentsOfDirectory(atPath: folder.path) else { return [] }
+    let server = binaries.appendingPathComponent("llama-server").resolvingSymlinksInPath().path
+    var stopped: [Int32] = []
+    for entry in entries {
+      guard let pid = Int32(entry) else { continue }
+      if Self.executablePath(pid) == server {
+        kill(pid, SIGTERM)
+        stopped.append(pid)
+      }
+      forget(pid)
+    }
+    return stopped
+  }
+
+  static func executablePath(_ pid: Int32) -> String? {
+    var buffer = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
+    let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
+    guard length > 0 else { return nil }
+    return URL(fileURLWithPath: String(decoding: buffer.prefix(Int(length)).map(UInt8.init), as: UTF8.self))
+      .resolvingSymlinksInPath().path
+  }
 }

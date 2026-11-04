@@ -29,6 +29,14 @@ struct LiveInstallTests {
     let readiness = try await ModelVerifier().verify(baseURL: runtime.baseURL, apiKey: runtime.apiKey, model: model.id)
     #expect(readiness == .ready)
 
+    // The chat path the app uses streams a real answer.
+    var answer = ""
+    let client = ChatClient(baseURL: runtime.baseURL, apiKey: runtime.apiKey, model: model.id)
+    for try await chunk in client.stream([ChatMessage(role: .user, content: "Name one planet. One word.")], maxTokens: 256) {
+      if case .text(let text) = chunk { answer += text }
+    }
+    #expect(!answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
     // The engine refuses requests without the per-launch key.
     var request = URLRequest(url: runtime.baseURL.appendingPathComponent("v1/models"))
     request.httpMethod = "GET"
@@ -46,6 +54,18 @@ struct LiveInstallTests {
     #expect(steps.unique == InstallStep.allCases)
     #expect(installed.readiness == .ready)
     #expect(try ModelStore().load(model.id) == installed)
+  }
+
+  @Test func leftoverEngineIsStoppedOnNextLaunch() async throws {
+    let model = try #require(try Catalog.bundled().model("qwen3-0.6b"))
+    let path = AppPaths.models.appendingPathComponent(model.id).appendingPathComponent(model.file(.q8_0)!.file)
+    let config = RuntimeConfig(context: 8192, gpuLayers: 999, kvCacheType: "q8_0", flashAttention: true, threads: 4)
+    let runtime = try await LlamaRuntime.start(model: path, alias: model.id, config: config, binaries: devRuntime)
+    // As if the app had been force-quit: the engine is still running and still recorded.
+    let stopped = EngineRegistry().reapOrphans(binaries: devRuntime)
+    #expect(stopped.count == 1)
+    try await Task.sleep(for: .seconds(2))
+    #expect(!runtime.isRunning)
   }
 
   @Test func outOfMemoryIsDetected() async throws {

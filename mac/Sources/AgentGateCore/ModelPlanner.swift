@@ -188,7 +188,7 @@ public enum ModelPlanner {
     }
   }
 
-  static func gb(_ bytes: UInt64) -> String {
+  public static func gb(_ bytes: UInt64) -> String {
     String(format: "%.1f GB", Double(bytes) / Double(MemoryBudget.gib))
   }
 }

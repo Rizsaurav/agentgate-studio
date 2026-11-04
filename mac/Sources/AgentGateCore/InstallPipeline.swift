@@ -25,6 +25,13 @@ public struct InstallUpdate: Sendable, Equatable {
   public var message: String
   public var completedBytes: UInt64 = 0
   public var totalBytes: UInt64 = 0
+
+  public init(step: InstallStep, message: String, completedBytes: UInt64 = 0, totalBytes: UInt64 = 0) {
+    self.step = step
+    self.message = message
+    self.completedBytes = completedBytes
+    self.totalBytes = totalBytes
+  }
 }
 
 /// A failed install: where it stopped and why, for the user and the repair assistant.
@@ -37,6 +44,13 @@ public struct InstallFailure: Error, Sendable, CustomStringConvertible {
   public var logTail: String?
 
   public var description: String { message }
+
+  public init(step: InstallStep, message: String, cause: any Error & Sendable, logTail: String?) {
+    self.step = step
+    self.message = message
+    self.cause = cause
+    self.logTail = logTail
+  }
 }
 
 /// Runs the whole install for one model: hardware → compatibility → quantization → download →
@@ -129,6 +143,21 @@ public struct InstallPipeline: Sendable {
       var failure = failure
       failure.logTail = failure.logTail ?? tail
       throw failure
+    }
+  }
+
+  /// Loads a model that is already installed, with the configuration it was verified with.
+  public func load(
+    _ model: InstalledModel, update: @escaping @Sendable (InstallUpdate) -> Void
+  ) async throws -> LlamaRuntime {
+    update(InstallUpdate(step: .load, message: "Loading \(model.name) into memory…"))
+    do {
+      let runtime = try await LlamaRuntime.start(
+        model: store.fileURL(model), alias: model.id, config: model.config, binaries: binaries)
+      update(InstallUpdate(step: .ready, message: "\(model.name) is loaded."))
+      return runtime
+    } catch let error as RuntimeError {
+      throw InstallFailure(step: .load, message: error.description, cause: error, logTail: Self.logTail(error))
     }
   }
 
