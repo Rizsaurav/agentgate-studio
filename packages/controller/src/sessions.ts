@@ -1,5 +1,15 @@
 import { z } from 'zod';
 import { projectIdSchema, type ProjectRepository } from './projects';
+import { securityEventSchema } from './security';
+import {
+  buildTraceStages,
+  runTraceStageSchema,
+  screenedDocumentIds,
+  securityEventSummarySchema,
+  sourcesFromEvents,
+  toSecurityEventSummaries,
+  traceSourceSchema,
+} from './trace';
 
 /** Providers a user can connect with an API key. Each one is a built-in provider of the Pi SDK. */
 export const CLOUD_PROVIDERS = [
@@ -73,6 +83,7 @@ export const runEventSchema = z
     seq: z.number().int().positive(),
     type: z.enum([
       'started',
+      'screened',
       'sources',
       'text_delta',
       'completed',
@@ -84,6 +95,18 @@ export const runEventSchema = z
   })
   .strict();
 export type RunEvent = z.infer<typeof runEventSchema>;
+
+export const runTraceSchema = z
+  .object({
+    run: runSchema,
+    started: z.boolean(),
+    sources: z.array(traceSourceSchema),
+    securityEvents: z.array(securityEventSummarySchema),
+    stages: z.array(runTraceStageSchema),
+  })
+  .strict();
+export type RunTrace = z.infer<typeof runTraceSchema>;
+
 export const TERMINAL_STATUSES: readonly RunStatus[] = [
   'completed',
   'failed',
@@ -132,6 +155,8 @@ export interface SessionRepository {
   claimNextQueued(): Run | null;
   appendEvent(runId: string, type: RunEvent['type'], text: string): void;
   eventsAfter(runId: string, seq: number): RunEvent[];
+  /** Only 'started', 'screened', 'sources', and 'completed' events, for traces and source lists. */
+  traceEvents(runId: string): RunEvent[];
   /** Atomically appends the turn's messages and marks the run completed. */
   completeRun(run: Run, messages: StoredMessage[]): void;
   finishRun(
@@ -186,21 +211,85 @@ export class SessionService {
   sources(
     runId: unknown,
   ): { documentId: string; title: string; seq: number }[] {
-    return this.eventsAfter(runId, 0)
-      .filter((event) => event.type === 'sources')
-      .flatMap((event) =>
-        z
-          .array(
-            z
-              .object({
-                documentId: z.uuid(),
-                title: z.string(),
-                seq: z.number().int(),
-              })
-              .strict(),
-          )
-          .parse(JSON.parse(event.text)),
+    return sourcesFromEvents(this.traceEvents(runId));
+  }
+
+  /** Only 'started', 'screened', 'sources', and 'completed' events, without streamed text deltas. */
+  traceEvents(runId: unknown): RunEvent[] {
+    return z
+      .array(runEventSchema)
+      .parse(this.repository.traceEvents(runIdSchema.parse(runId)));
+  }
+
+  /**
+   * A per-run trace built only from already-stored data: run events,
+   * retrieved sources, and security events. It never invents a stage that
+   * did not happen, it never includes model text or retrieved excerpts,
+   * and its security events carry no stored evidence.
+   *
+   * Malformed stored events (a Zod parse error or a JSON syntax error)
+   * make this run's trace unavailable (null); the page renders a
+   * placeholder for it. Any other error is a bug or a database failure:
+   * it is logged server-side with only the error name and the run id,
+   * no stored values, and then rethrown, never swallowed.
+   */
+  trace(runId: unknown, securityEvents: unknown): RunTrace | null {
+    const run = this.findRun(runId);
+    if (!run) return null;
+    return this.traceForRun(run, securityEvents);
+  }
+
+  /**
+   * Same as trace(), but for a run the caller already fetched (the
+   * session page's listRuns snapshot). Skipping a second findRun keeps
+   * the run badge and the stages on the same run snapshot.
+   */
+  traceForRun(runInput: unknown, securityEvents: unknown): RunTrace | null {
+    try {
+      const run = runSchema.parse(runInput);
+      const events = z.array(securityEventSchema).parse(securityEvents);
+      const storedEvents = this.traceEvents(run.id);
+      const started = storedEvents.some((event) => event.type === 'started');
+      const screened = storedEvents.some((event) => event.type === 'screened');
+      const hasCompleted = storedEvents.some(
+        (event) => event.type === 'completed',
       );
+      const sources = sourcesFromEvents(storedEvents);
+      const stages = buildTraceStages({
+        run,
+        started,
+        screened,
+        screenedDocumentIds: screenedDocumentIds(storedEvents),
+        hasCompleted,
+        sources,
+        securityEvents: events,
+      });
+      return runTraceSchema.parse({
+        run,
+        started,
+        sources,
+        securityEvents: toSecurityEventSummaries(events),
+        stages,
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError || error instanceof SyntaxError) {
+        return null;
+      }
+      // Log only the error class and the run id: stored values may
+      // contain private content.
+      const runIdForLog =
+        typeof runInput === 'object' &&
+        runInput !== null &&
+        'id' in runInput &&
+        typeof (runInput as { id: unknown }).id === 'string'
+          ? (runInput as { id: string }).id
+          : 'unknown';
+      console.error(
+        `Trace for run ${runIdForLog} failed:`,
+        error instanceof Error ? error.name : 'unknown',
+      );
+      throw error;
+    }
   }
 
   listRuns(sessionId: unknown): Run[] {

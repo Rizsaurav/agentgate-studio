@@ -170,6 +170,18 @@ export class SqliteSessions implements SessionRepository {
       );
   }
 
+  traceEvents(runId: string): RunEvent[] {
+    return z
+      .array(runEventSchema)
+      .parse(
+        this.db
+          .prepare(
+            "SELECT seq, type, text FROM run_events WHERE run_id = ? AND type IN ('started', 'screened', 'sources', 'completed') ORDER BY seq",
+          )
+          .all(runId),
+      );
+  }
+
   completeRun(run: Run, messages: StoredMessage[]): void {
     this.db.transaction(() => {
       const next = this.db
