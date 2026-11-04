@@ -75,7 +75,7 @@ Contributing? See [CONTRIBUTING.md](CONTRIBUTING.md) for branches, checks and ho
 | `npm run setup` cannot install the scanner  | It needs Python 3.11 with `venv`, or `uv`. Install one, then run `npm run setup` again.                        |
 | Docker on Linux cannot reach Ollama         | Host Ollama listens on 127.0.0.1 only: run `OLLAMA_HOST=0.0.0.0 ollama serve`, or use the `ollama` profile.    |
 | Docker: models never appear                 | Ollama must run on your computer (`ollama serve`) or use the `ollama` profile above.                           |
-| Keys                                        | From source: stored in your OS keychain. Docker: set them in `.env` (a container has no keychain).             |
+| Keys                                        | From source: stored in your OS keychain. Docker: `.env`, or a Docker secret via `NAME_FILE` (see below).       |
 
 ## Settings
 
@@ -94,7 +94,22 @@ Cloud keys (Anthropic, OpenAI) are entered on the Models page, tested with one s
 
 ## Assistant
 
-The **Assistant** button in the title bar shows live status and opens a panel. A watchdog checks the scanner, downloads, the latest evaluation and (once you use local models) Ollama every 30 seconds and restarts Ollama or the scanner for you (at most 3 tries per 10 minutes) without using any model. With an OpenRouter key (entered in the panel and stored in the operating system credential store) an AI assistant can also explain a failed evaluation or download and answer questions. It sees only system state: service status, evaluation case names and counts of blocked items, never documents, conversations or other keys. It can start services and run the evaluation suite; installing a model always waits for your approval. Token guardrails: a daily cap, at most 6 tool calls and 700 output tokens per run, a 60-second limit, each problem investigated at most once per 30 minutes and 6 times per hour, and no model call at all when the assistant is off, has no key, or is out of budget.
+The **Assistant** button in the title bar shows live status and opens a panel. A watchdog checks the scanner, downloads, the latest evaluation and (once you use local models) Ollama every 30 seconds and restarts Ollama or the scanner for you (at most 3 tries per 10 minutes) without using any model. With an OpenRouter key (entered in the panel and stored in the operating system credential store) an AI assistant can also explain a failed evaluation or download and answer questions. It can start services and run the evaluation suite; installing a model always waits for your approval. Token guardrails: a daily cap, at most 6 tool calls and 700 output tokens per run, a 60-second limit, each problem investigated at most once per 30 minutes and 6 times per hour, and no model call at all when the assistant is off, has no key, or is out of budget.
+
+### What the assistant can and cannot see
+
+Everything the assistant model receives goes to OpenRouter, a third party, so it is limited to system state:
+
+- **Sees:** watchdog problems and service status (including the reference folder's path when that folder is missing); the last 5 evaluation runs (profile, status, pass counts, and up to 5 failing case names with a reason cut to 120 characters); counts of blocked or quarantined items in the last 24 hours by stage and rule; the newest failed CI run reduced to its error lines; the recommended local model and a summary of this computer's hardware.
+- **Never sees:** documents or passages, session prompts and answers, project names and context, security-event excerpts, or any API key.
+- **Redaction:** every tool result is passed through the same credential-format rules used for documents before the model sees it, and the assistant's answers, notes and stored evaluation reasons are redacted too. This catches known key formats (OpenRouter, Anthropic, OpenAI, Groq, xAI, Google, Hugging Face, GitHub, AWS, Slack, bearer tokens, private keys); a key without a recognisable format (Mistral, for example) is not detected, so never paste one anywhere in the app.
+- A question that contains a key is refused before anything is sent or saved.
+
+### Keeping keys safe
+
+- From source, keys live in the operating system credential store. In Docker, use `.env` or, to keep keys out of the container environment, Docker secrets: set `NAME_FILE` (for example `OPENROUTER_API_KEY_FILE=/run/secrets/openrouter_api_key`) and leave `NAME` empty; `compose.yaml` has a commented example. Keys are never sent to the browser.
+- Set a spend limit on the OpenRouter key (OpenRouter → Keys → edit the key → credit limit). `AGENTGATE_AGENT_DAILY_TOKENS` caps the assistant's own use, but the limit on the key is what bounds the bill if the key leaks.
+- If a key was pasted into a chat, an issue, a screenshot or a commit, rotate it: create a new key at the provider, replace it here (Models page, the Assistant panel, or `.env`), then delete the old one at the provider.
 
 ## Security notes
 

@@ -51,7 +51,9 @@ export type { Document } from './documents';
 export {
   detectDisallowedOperation,
   detectExfiltrationLink,
+  REDACTED,
   detectSecrets,
+  redactSecrets,
   safeExcerpt,
 } from './policy';
 export {

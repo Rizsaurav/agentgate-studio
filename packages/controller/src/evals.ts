@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type Database from 'better-sqlite3';
 import { z } from 'zod';
+import { redactSecrets } from './policy';
 
 const run = promisify(execFile);
 export const EVAL_TIMEOUT_MS = 10 * 60_000;
@@ -186,7 +187,7 @@ export class SqliteEvals {
             "UPDATE eval_runs SET status = 'error', error = ?, finished_at = ? WHERE id = ?",
           )
           .run(
-            outcome.error.slice(0, MAX_REASON),
+            redactSecrets(outcome.error).slice(0, MAX_REASON),
             new Date().toISOString(),
             id,
           );
@@ -201,7 +202,11 @@ export class SqliteEvals {
           idx,
           result.description,
           result.passed ? 1 : 0,
-          result.reason,
+          // Reasons come from assertion output, which can echo model text; they are shown in the
+          // Evaluations tab and read by the assistant, so they are redacted and kept short.
+          result.reason === null
+            ? null
+            : redactSecrets(result.reason).slice(0, MAX_REASON),
           result.measures ?? null,
         ),
       );
