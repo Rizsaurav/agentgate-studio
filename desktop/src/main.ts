@@ -46,8 +46,6 @@ async function start() {
       join(resources, 'runtime'),
       process.env.PATH ?? '/usr/bin:/bin',
     ].join(':'),
-    AGENTGATE_REPO_ROOT:
-      process.env.AGENTGATE_REPO_ROOT || join(resources, 'evaluation'),
   };
   delete environment.NODE_OPTIONS;
   delete environment.ELECTRON_RUN_AS_NODE;

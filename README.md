@@ -32,7 +32,8 @@ Open http://localhost:3000, go to Models, and install the model it recommends. S
   ```
 - **Data:** projects, sessions and settings live in the `data` volume, the scanner model in `model-cache`, Ollama models in `ollama`. `docker compose down` keeps them. **`docker compose down -v` deletes all three**: your projects are gone and the scanner model (about 700 MB) and any Ollama models are downloaded again on the next start.
 - **Base images** are pinned by digest in `Dockerfile` and `scanner/Dockerfile`, so every build starts from the same bytes. Dependabot opens a pull request when a new digest is published for the same tag. To update by hand: `docker buildx imagetools inspect node:24-bookworm-slim` and copy the `Digest:` line into the `FROM` line.
-- **CI:** the `compose-smoke` job builds both images on every pull request, starts the stack, checks that only `127.0.0.1:3000` is published, and runs the required evaluation suite inside the app container against the scanner container.
+- **Slim app image:** the `app` image holds only the standalone server and the files it needs at runtime: no dev tools and no evaluation suite. The suite is a separate `evals` image, built only when asked for: `docker compose --profile evals run --rm --build evals` runs it against the scanner container.
+- **CI:** the `compose-smoke` job builds the images on every pull request, starts the stack, checks that only `127.0.0.1:3000` is published and that the app image ships no evaluation suite or dev tools, then runs the required evaluation suite in its own container against the scanner container.
 
 </details>
 
@@ -136,7 +137,7 @@ npm run check        # typecheck, lint, format, unit/integration tests, producti
 npm run test:e2e     # Chrome end-to-end; see docs/IMPLEMENTATION_PLAN.md for the live-service variables
 ```
 
-`npm run eval` runs the Promptfoo suite (needs the scanner); `npm run eval:weak` runs the deliberately weak demonstration, which must fail. Both are also on the Evaluations page, which shows each run's false-positive rate (benign cases wrongly blocked) next to its detection rate (injections caught), from the cases tagged `metadata.measures` in `evals/tests/cases.yaml`.
+`npm run eval` runs the Promptfoo suite (needs the scanner); `npm run eval:weak` runs the deliberately weak demonstration, which must fail. When run from source, both are also on the Evaluations page (the Docker image and the desktop app do not ship the suite, to stay small; they show the CI runs instead), which shows each run's false-positive rate (benign cases wrongly blocked) next to its detection rate (injections caught), from the cases tagged `metadata.measures` in `evals/tests/cases.yaml`.
 
 Live-service tests are skipped unless `AGENTGATE_OLLAMA_URL` + `AGENTGATE_OLLAMA_MODEL`, `AGENTGATE_SCANNER_URL`, or `AGENTGATE_LIVE_CLOUD=1` are set.
 

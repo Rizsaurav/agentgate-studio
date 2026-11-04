@@ -1,4 +1,3 @@
-import { prepareEvaluation } from './evaluation-resources.mjs';
 import { cp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,7 +17,7 @@ const build = spawnSync(
     stdio: 'inherit',
     env: {
       ...process.env,
-      AGENTGATE_DESKTOP_BUILD: '1',
+      AGENTGATE_STANDALONE: '1',
       NEXT_TELEMETRY_DISABLED: '1',
     },
   },
@@ -63,7 +62,5 @@ await writeFile(
     2,
   ),
 );
-const dependencies = await prepareEvaluation(root, join(stage, 'evaluation'));
-console.log(
-  `Desktop resources prepared with ${dependencies} evaluation dependency packages.`,
-);
+// The evaluation suite is not shipped: it runs in CI and from source (`npm run eval`).
+console.log('Desktop resources prepared.');

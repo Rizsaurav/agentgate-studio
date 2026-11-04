@@ -4,7 +4,7 @@ import {
   type GuardrailRate,
   type GuardrailRates,
 } from '@agentgate/controller';
-import { evals, repoRoot } from '@/lib/controller';
+import { evals } from '@/lib/controller';
 import { githubRuns } from '@/lib/github';
 import { startEvaluation } from '@/app/actions';
 import { AutoRefresh } from '@/components/auto-refresh';
@@ -59,9 +59,10 @@ export async function EvaluationsPanel() {
           </details>
         </div>
       ) : (
-        <p role="alert" className="mb-10 text-sm text-red-800">
-          The evaluation suite was not found at {repoRoot()}. Set{' '}
-          <code>AGENTGATE_REPO_ROOT</code> to the repository folder.
+        <p role="status" className="mb-10 text-sm text-stone-700">
+          The evaluation suite is not shipped with the app, to keep it small. It
+          runs in CI on every change (see the GitHub runs below) and from source
+          with <code>npm run eval</code>.
         </p>
       )}
 
