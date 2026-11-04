@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { AsyncEntry } from '@napi-rs/keyring';
 import type {
   AuthOperationOptions,
@@ -44,6 +45,8 @@ const ENVIRONMENT_KEYS: Record<string, string> = {
 /**
  * Read-only keys from environment variables, for containers, which have no operating system
  * credential store. Keys are set when the container starts, never saved by the app.
+ * `NAME_FILE` (a path, as Docker secrets mount them) is read when `NAME` itself is empty,
+ * so a key need not sit in `.env` or in the container's environment.
  */
 export class EnvironmentBackend implements SecretBackend {
   constructor(
@@ -51,8 +54,23 @@ export class EnvironmentBackend implements SecretBackend {
   ) {}
   async get(account: string): Promise<string | null> {
     const name = ENVIRONMENT_KEYS[account];
-    const value = name ? this.env[name]?.trim() : undefined;
+    if (!name) return null;
+    const value = this.env[name]?.trim() || this.fromFile(name);
     return value ? JSON.stringify({ type: 'api_key', key: value }) : null;
+  }
+
+  private fromFile(name: string): string | undefined {
+    const path = this.env[`${name}_FILE`]?.trim();
+    if (!path) return undefined;
+    try {
+      return readFileSync(path, 'utf8').trim() || undefined;
+    } catch (error) {
+      // A configured key that cannot be read is an error, not a missing key. The file's
+      // content is never part of the message.
+      throw new Error(
+        `${name}_FILE is set but the file cannot be read (${error instanceof Error && 'code' in error ? String(error.code) : 'unknown error'}).`,
+      );
+    }
   }
   async set(): Promise<void> {
     throw new Error(

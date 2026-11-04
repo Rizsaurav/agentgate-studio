@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { projectIdSchema, sessionIdSchema } from '@agentgate/controller';
-import { projects, sessions, context } from '@/lib/controller';
+import { projects, security, sessions, context } from '@/lib/controller';
+import { RunTraces } from '@/components/run-traces';
 import { SessionChat } from '@/components/session-chat';
 import { Panel } from '@/components/panel';
 import { Icon } from '@/components/icon';
@@ -26,6 +27,14 @@ export default async function SessionPage({
     ),
     completed = runs.filter((run) => run.status === 'completed'),
     last = runs.at(-1);
+  // Cap before mapping, so trace() and forRun() are not run for every run in a long session.
+  const traceItems = runs
+    .toReversed()
+    .slice(0, 20)
+    .map((run) => ({
+      run,
+      trace: sessions().traceForRun(run, security().forRun(run.id)),
+    }));
   return (
     <>
       <Link href={`/projects/${id}`} className="breadcrumb-link">
@@ -145,6 +154,7 @@ export default async function SessionPage({
           </section>
         </aside>
       </div>
+      <RunTraces items={traceItems} totalRuns={runs.length} />
     </>
   );
 }

@@ -1,4 +1,9 @@
 import { Suspense } from 'react';
+import {
+  guardrailRates,
+  type GuardrailRate,
+  type GuardrailRates,
+} from '@agentgate/controller';
 import { evals, repoRoot } from '@/lib/controller';
 import { githubRuns } from '@/lib/github';
 import { startEvaluation } from '@/app/actions';
@@ -93,9 +98,12 @@ export async function EvaluationsPanel() {
                   </time>
                 </div>
                 {run.finishedAt && run.status !== 'error' && (
-                  <p className="mt-2 text-sm">
-                    {run.passed} of {run.total} cases passed
-                  </p>
+                  <>
+                    <p className="mt-2 text-sm">
+                      {run.passed} of {run.total} cases passed
+                    </p>
+                    <RatesSideBySide rates={guardrailRates(results)} />
+                  </>
                 )}
                 {run.error && (
                   <p className="mt-2 text-sm text-amber-900">{run.error}</p>
@@ -151,6 +159,51 @@ export async function EvaluationsPanel() {
         <GithubSection />
       </Suspense>
     </>
+  );
+}
+
+const percent = ({ count, total }: GuardrailRate) =>
+  `${Math.round((count / total) * 100)}%`;
+
+/**
+ * The scanner's two kinds of error, side by side, so tightening one cannot hide the other getting
+ * worse: benign content wrongly blocked, and injections caught.
+ */
+function RatesSideBySide({ rates }: { rates: GuardrailRates }) {
+  const { falsePositives, detections } = rates;
+  if (!falsePositives && !detections) return null;
+  return (
+    <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
+      <div className="rounded-lg border border-stone-200 p-3">
+        <dt className="text-xs text-stone-600">False-positive rate</dt>
+        {falsePositives ? (
+          <dd>
+            <span className="text-lg font-semibold">
+              {percent(falsePositives)}
+            </span>
+            <span className="block text-xs text-stone-600">
+              {falsePositives.count} of {falsePositives.total} benign cases
+              blocked
+            </span>
+          </dd>
+        ) : (
+          <dd className="text-xs text-stone-600">No benign cases</dd>
+        )}
+      </div>
+      <div className="rounded-lg border border-stone-200 p-3">
+        <dt className="text-xs text-stone-600">Detection rate</dt>
+        {detections ? (
+          <dd>
+            <span className="text-lg font-semibold">{percent(detections)}</span>
+            <span className="block text-xs text-stone-600">
+              {detections.count} of {detections.total} injections caught
+            </span>
+          </dd>
+        ) : (
+          <dd className="text-xs text-stone-600">No injection cases</dd>
+        )}
+      </div>
+    </dl>
   );
 }
 
