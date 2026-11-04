@@ -1270,7 +1270,6 @@ select {
   }
 }
 
-<<<<<<< HEAD
 /* Install strip: a slim live ticker pinned to the bottom while a local model installs. */
 .install-strip {
   position: fixed;
@@ -1420,7 +1419,8 @@ select {
   .install-strip-detail {
     display: none;
   }
-=======
+}
+
 /* Run traces: status badges in the theme's tones. */
 .trace-badge {
   display: inline-block;
@@ -1446,5 +1446,4 @@ select {
 }
 .error-text {
   color: var(--danger);
->>>>>>> origin/dev
 }
