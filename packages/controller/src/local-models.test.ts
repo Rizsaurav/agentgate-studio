@@ -64,6 +64,25 @@ describe('model names', () => {
 });
 
 describe('model downloads', () => {
+  it('reports each step, starting with getting Ollama ready', async () => {
+    const seen: string[] = [];
+    const baseUrl = await fakeOllama((req, res) => {
+      if (req.url === '/api/generate') return res.end('{}');
+      res.end(JSON.stringify({ status: 'success' }) + '\n');
+    });
+    const puller = new ModelPuller(baseUrl, {
+      prepare: async (report) => {
+        seen.push(puller.state()?.step ?? '');
+        report('Installing Ollama (10 of 230 MB)…');
+        seen.push(puller.state()?.message ?? '');
+      },
+    });
+    puller.start('tiny:1b');
+    await puller.idle();
+    expect(seen).toEqual(['runtime', 'Installing Ollama (10 of 230 MB)…']);
+    expect(puller.state()).toMatchObject({ step: 'ready', status: 'done' });
+  });
+
   const ndjson = (lines: object[]) =>
     lines.map((l) => JSON.stringify(l)).join('\n') + '\n';
 
@@ -111,6 +130,7 @@ describe('model downloads', () => {
     expect(puller.state()).toMatchObject({
       model: 'tiny:1b',
       status: 'done',
+      step: 'ready',
       completedBytes: 400,
       totalBytes: 400,
     });
@@ -166,7 +186,7 @@ describe('model downloads', () => {
 
     puller.start('new-arch:8b');
     await puller.idle();
-    expect(puller.state()).toMatchObject({ status: 'failed' });
+    expect(puller.state()).toMatchObject({ status: 'failed', step: 'verify' });
     expect(puller.state()?.message).toContain('does not run on this computer');
     expect(() => puller.start('ok:1b', ['bad name!'])).toThrow();
   });

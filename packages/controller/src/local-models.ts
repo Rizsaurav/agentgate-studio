@@ -32,9 +32,15 @@ const pullLineSchema = z
   })
   .loose();
 
+/** The install steps in order: get Ollama running, download, check the model answers, then ready. */
+export const PULL_STEPS = ['runtime', 'download', 'verify', 'ready'] as const;
+export type PullStep = (typeof PULL_STEPS)[number];
+
 export type PullState = {
   model: string;
   status: 'downloading' | 'done' | 'failed' | 'cancelled';
+  /** The step in progress, or the one that ended the install. */
+  step: PullStep;
   message: string;
   completedBytes: number;
   totalBytes: number;
@@ -137,7 +143,8 @@ export class ModelPuller {
     const state: PullState = {
       model: models[0] as string,
       status: 'downloading',
-      message: 'Starting…',
+      step: 'runtime',
+      message: 'Checking Ollama…',
       completedBytes: 0,
       totalBytes: 0,
     };
@@ -174,11 +181,13 @@ export class ModelPuller {
         state.message = message;
       }, controller.signal);
       for (const [index, model] of models.entries()) {
+        state.step = 'download';
         state.model = model;
         state.completedBytes = 0;
         state.totalBytes = 0;
         await this.download(state, controller.signal);
-        state.message = 'Checking that it runs…';
+        state.step = 'verify';
+        state.message = 'Asking it for a short reply…';
         try {
           await this.verify(model, controller.signal);
         } catch (error) {
@@ -195,6 +204,7 @@ export class ModelPuller {
           state.message = `${model} does not run on this computer; trying ${next}…`;
           continue;
         }
+        state.step = 'ready';
         state.status = 'done';
         state.message = 'Installed and ready to chat.';
         state.completedBytes = state.totalBytes;
@@ -270,7 +280,8 @@ export class ModelPuller {
             });
           state.totalBytes = sum(layers, 'total');
           state.completedBytes = sum(layers, 'completed');
-          state.message = parsed.status ?? state.message;
+          state.message =
+            describeProgress(parsed.status, state) ?? state.message;
         }
       }
     } catch (error) {
@@ -308,6 +319,24 @@ export class ModelPuller {
     });
     return response.ok || response.status === 404;
   }
+}
+
+const MB = 1024 ** 2;
+
+/** Ollama's progress lines in plain words; layer digests mean nothing to a person. */
+function describeProgress(
+  status: string | undefined,
+  state: PullState,
+): string | undefined {
+  if (!status) return undefined;
+  if (status.startsWith('pulling manifest')) return 'Finding the model…';
+  if (status.startsWith('pulling'))
+    return state.totalBytes
+      ? `Downloading ${Math.round(state.completedBytes / MB)} of ${Math.round(state.totalBytes / MB)} MB`
+      : 'Downloading…';
+  if (status.startsWith('verifying')) return 'Verifying the download…';
+  if (status === 'success') return 'Downloaded.';
+  return 'Finishing the install…';
 }
 
 function sum(

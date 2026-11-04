@@ -230,6 +230,10 @@ test('local models install one after another from the Models page, chat right aw
         .click();
     }
     await expect(page.getByText(`Next: ${second}`)).toBeVisible();
+    // The install strip shows the steps live, on any page.
+    const strip = page.getByRole('status', { name: 'Local model install' });
+    await expect(strip).toContainText('Ollama');
+    await expect(strip).toContainText('Check it runs');
     const installedList = page.getByRole('list', {
       name: 'Installed local models',
     });
