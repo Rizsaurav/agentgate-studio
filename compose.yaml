@@ -30,6 +30,10 @@ services:
     depends_on:
       scanner:
         condition: service_healthy
+      # Only with `--profile ollama`; without it the app uses Ollama on your computer.
+      ollama:
+        condition: service_healthy
+        required: false
     restart: unless-stopped
 
   scanner:
@@ -40,9 +44,16 @@ services:
 
   ollama:
     profiles: ['ollama']
-    image: ollama/ollama:0.40.13
+    image: ollama/ollama:0.40.13@sha256:b2f0122c476bc9fe7ce679d8bb4bd555351e25e2554eefb156f61cb0a89cf429
     volumes:
       - ollama:/root/.ollama
+    # No ports: the app reaches it on the compose network, nothing outside the machine can.
+    healthcheck:
+      test: ['CMD', 'ollama', 'list']
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
     restart: unless-stopped
 
 volumes:

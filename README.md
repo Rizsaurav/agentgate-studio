@@ -17,6 +17,25 @@ docker compose up --build     # first run downloads the scanner model (about 700
 
 Open http://localhost:3000, go to Models, and install the model it recommends. Stop with `docker compose down` (your data stays in a volume; `down -v` deletes it). To run Ollama in a container as well (CPU only on macOS and Windows): set `AGENTGATE_OLLAMA_URL=http://ollama:11434` in `.env` and use `docker compose --profile ollama up --build`. Only port 3000 is published, on `127.0.0.1`.
 
+<details>
+<summary>Docker details: GPUs, data, updates</summary>
+
+- **What runs:** `app` (port 3000, published on `127.0.0.1` only) and `scanner` (LLM Guard, on the compose network only, never published). With `--profile ollama`, also `ollama` (not published either). The app waits until the scanner, and Ollama when its profile is on, report healthy.
+- **GPUs:** Docker on macOS and Windows cannot use the GPU, so Ollama in a container runs on the CPU there. That is why the default is Ollama installed on your computer. On Linux with an NVIDIA GPU, install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) and add this to the `ollama` service in a `compose.override.yaml`:
+  ```yaml
+  services:
+    ollama:
+      deploy:
+        resources:
+          reservations:
+            devices: [{ driver: nvidia, count: all, capabilities: [gpu] }]
+  ```
+- **Data:** projects, sessions and settings live in the `data` volume, the scanner model in `model-cache`, Ollama models in `ollama`. `docker compose down` keeps them. **`docker compose down -v` deletes all three**: your projects are gone and the scanner model (about 700 MB) and any Ollama models are downloaded again on the next start.
+- **Base images** are pinned by digest in `Dockerfile` and `scanner/Dockerfile`, so every build starts from the same bytes. Dependabot opens a pull request when a new digest is published for the same tag. To update by hand: `docker buildx imagetools inspect node:24-bookworm-slim` and copy the `Digest:` line into the `FROM` line.
+- **CI:** the `compose-smoke` job builds both images on every pull request, starts the stack, checks that only `127.0.0.1:3000` is published, and runs the required evaluation suite inside the app container against the scanner container.
+
+</details>
+
 ### 2. From source
 
 Requirements: Node.js 24 (`nvm use`) and npm. The setup script installs the rest after asking.
