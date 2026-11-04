@@ -25,6 +25,16 @@ jobs:
       - run: npm ci
       - run: npm run check
 
+  # Required: the native Mac app's model manager builds and its unit tests pass.
+  mac:
+    name: mac
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift build --package-path mac
+      - run: swift test --package-path mac
+
   # Required: Promptfoo security and functional suite against the real application pipeline and
   # the real LLM Guard scanner. The model is a scripted fixture: no paid API key is used anywhere.
   security-evals:

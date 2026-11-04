@@ -12,3 +12,5 @@ scanner/.venv/
 __pycache__/
 eval-results/
 .vscode/
+mac/.build/
+mac/dist/
