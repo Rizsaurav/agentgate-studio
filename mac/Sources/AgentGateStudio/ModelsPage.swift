@@ -5,6 +5,7 @@ import SwiftUI
 struct ModelsPage: View {
   @Environment(AppModel.self) private var app
   @State private var showAll = false
+  @State private var repairs: [AuditEntry] = []
 
   var body: some View {
     PageScroll {
@@ -50,6 +51,19 @@ struct ModelsPage: View {
             }
           }
         }
+        if !repairs.isEmpty {
+          VStack(alignment: .leading, spacing: 12) {
+            Text("REPAIR HISTORY").font(.system(size: 12, weight: .semibold)).tracking(0.6).foregroundStyle(Theme.muted)
+            Card(padding: 6) {
+              VStack(spacing: 0) {
+                ForEach(Array(repairs.suffix(20).reversed().enumerated()), id: \.offset) { index, entry in
+                  RepairRow(entry: entry)
+                  if index < min(repairs.count, 20) - 1 { Divider().overlay(Theme.line) }
+                }
+              }
+            }
+          }
+        }
         VStack(alignment: .leading, spacing: 12) {
           Button { withAnimation { showAll.toggle() } } label: {
             HStack {
@@ -73,6 +87,26 @@ struct ModelsPage: View {
       }
       .frame(maxWidth: 820, alignment: .leading)
     }
+    .onAppear { repairs = AuditLog().entries() }
+  }
+}
+
+/// One audited repair step: what, why, and what happened.
+private struct RepairRow: View {
+  let entry: AuditEntry
+
+  var body: some View {
+    HStack(alignment: .firstTextBaseline, spacing: 12) {
+      VStack(alignment: .leading, spacing: 2) {
+        Text("\(entry.modelId) · \(entry.operation)").font(.system(size: 13, weight: .medium))
+        Text(entry.reason).font(.system(size: 12)).foregroundStyle(Theme.muted).lineLimit(2)
+      }
+      Spacer(minLength: 8)
+      Text(entry.outcome.rawValue).font(.system(size: 12)).foregroundStyle(Theme.muted)
+      Text(entry.date, style: .relative).font(.system(size: 12)).foregroundStyle(Theme.muted)
+    }
+    .padding(10)
+    .accessibilityElement(children: .combine)
   }
 }
 
