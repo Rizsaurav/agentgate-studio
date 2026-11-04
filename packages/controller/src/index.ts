@@ -91,6 +91,20 @@ export type { CatalogModel } from './hf-catalog';
 export { checkServices } from './health';
 export type { ServiceCheck } from './health';
 export { inspectSystem } from './system';
+export {
+  GithubCi,
+  describeGhError,
+  failureTail,
+  fixTask,
+  repositorySchema,
+} from './github-ci';
+export type {
+  CiFailure,
+  CiStatus,
+  GhRunner,
+  WorkflowRun,
+  WorkflowState,
+} from './github-ci';
 export type { SystemProfile } from './system';
 export { AgentStore } from './agent-store';
 export type { AgentNote } from './agent-store';

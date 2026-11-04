@@ -17,6 +17,7 @@ import { StartSession } from '@/components/start-session';
 import { Panel } from '@/components/panel';
 import { ModelSetup } from '@/components/model-setup';
 import { Icon } from '@/components/icon';
+import { CiStrip, ConnectRepository } from '@/components/ci-status';
 export const dynamic = 'force-dynamic';
 export default async function ProjectPage({
   params,
@@ -205,6 +206,39 @@ export default async function ProjectPage({
           </Panel>
         </div>
       </header>
+      <section className="ci-section" aria-labelledby="ci-title">
+        <div className="section-heading">
+          <h2 id="ci-title">CI/CD</h2>
+          {project.repository && (
+            <a
+              href={`https://github.com/${project.repository}/actions`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="muted"
+            >
+              {project.repository}
+            </a>
+          )}
+        </div>
+        {project.repository ? (
+          <>
+            <CiStrip
+              projectId={id}
+              repository={project.repository}
+              groups={groups}
+            />
+            <details className="metadata mt-3">
+              <summary className="cursor-pointer">Change repository</summary>
+              <ConnectRepository
+                projectId={id}
+                repository={project.repository}
+              />
+            </details>
+          </>
+        ) : (
+          <ConnectRepository projectId={id} repository={null} />
+        )}
+      </section>
       <div className="project-session-grid">
         <section aria-labelledby="sessions-title">
           <div className="section-heading">
