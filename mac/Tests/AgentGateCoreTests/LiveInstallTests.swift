@@ -36,6 +36,18 @@ struct LiveInstallTests {
     #expect((response as? HTTPURLResponse)?.statusCode == 401)
   }
 
+  @Test func pipelineReportsEveryStepInOrder() async throws {
+    let model = try #require(try Catalog.bundled().model("qwen3-0.6b"))
+    var pipeline = InstallPipeline()
+    pipeline.binaries = devRuntime
+    let steps = Steps()
+    let (installed, runtime) = try await pipeline.install(model) { steps.record($0.step) }
+    defer { runtime.stop() }
+    #expect(steps.unique == InstallStep.allCases)
+    #expect(installed.readiness == .ready)
+    #expect(try ModelStore().load(model.id) == installed)
+  }
+
   @Test func outOfMemoryIsDetected() async throws {
     let model = try #require(try Catalog.bundled().model("qwen3-0.6b"))
     let path = AppPaths.models.appendingPathComponent(model.id).appendingPathComponent(model.file(.q8_0)!.file)
@@ -46,4 +58,11 @@ struct LiveInstallTests {
       _ = try await LlamaRuntime.start(model: path, alias: "oom", config: config, binaries: devRuntime)
     }
   }
+}
+
+private final class Steps: @unchecked Sendable {
+  private let lock = NSLock()
+  private var values: [InstallStep] = []
+  func record(_ step: InstallStep) { lock.withLock { if values.last != step { values.append(step) } } }
+  var unique: [InstallStep] { lock.withLock { values } }
 }
