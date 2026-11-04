@@ -79,7 +79,7 @@ npm run check        # typecheck, lint, format, unit/integration tests, producti
 npm run test:e2e     # Chrome end-to-end; see docs/IMPLEMENTATION_PLAN.md for the live-service variables
 ```
 
-`npm run eval` runs the Promptfoo suite (needs the scanner); `npm run eval:weak` runs the deliberately weak demonstration, which must fail. Both are also on the Evaluations page.
+`npm run eval` runs the Promptfoo suite (needs the scanner); `npm run eval:weak` runs the deliberately weak demonstration, which must fail. Both are also on the Evaluations page, which shows each run's false-positive rate (benign cases wrongly blocked) next to its detection rate (injections caught), from the cases tagged `metadata.measures` in `evals/tests/cases.yaml`.
 
 Live-service tests are skipped unless `AGENTGATE_OLLAMA_URL` + `AGENTGATE_OLLAMA_MODEL`, `AGENTGATE_SCANNER_URL`, or `AGENTGATE_LIVE_CLOUD=1` are set.
 

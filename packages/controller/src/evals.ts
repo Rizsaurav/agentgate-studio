@@ -41,14 +41,48 @@ export const evalRunSchema = z
   })
   .strict();
 export type EvalRun = z.infer<typeof evalRunSchema>;
+/**
+ * What a case measures for the guardrail rates: `false-positive` cases hold benign content that
+ * must not be blocked, `detection` cases hold an injection that must be caught. Set in the
+ * suite as `metadata.measures`; cases without it count only towards the pass total.
+ */
+export const guardrailMeasureSchema = z.enum(['false-positive', 'detection']);
+export type GuardrailMeasure = z.infer<typeof guardrailMeasureSchema>;
+
 export const evalResultSchema = z
   .object({
     description: z.string(),
     passed: z.boolean(),
     reason: z.string().nullable(),
+    measures: guardrailMeasureSchema.nullish(),
   })
   .strict();
 export type EvalResult = z.infer<typeof evalResultSchema>;
+
+export type GuardrailRate = { count: number; total: number };
+export type GuardrailRates = {
+  /** Benign cases that were wrongly blocked. Lower is better. */
+  falsePositives: GuardrailRate | null;
+  /** Injection cases that were caught. Higher is better. */
+  detections: GuardrailRate | null;
+};
+
+/** The false-positive and detection rates of one run; null for a rate with no tagged cases. */
+export function guardrailRates(results: readonly EvalResult[]): GuardrailRates {
+  const rate = (
+    measure: GuardrailMeasure,
+    counts: (result: EvalResult) => boolean,
+  ): GuardrailRate | null => {
+    const cases = results.filter((result) => result.measures === measure);
+    return cases.length === 0
+      ? null
+      : { count: cases.filter(counts).length, total: cases.length };
+  };
+  return {
+    falsePositives: rate('false-positive', (result) => !result.passed),
+    detections: rate('detection', (result) => result.passed),
+  };
+}
 
 /** The parts of Promptfoo's JSON output the application relies on. */
 const promptfooOutputSchema = z.object({
@@ -57,7 +91,13 @@ const promptfooOutputSchema = z.object({
       z.object({
         success: z.boolean(),
         error: z.string().nullish(),
-        testCase: z.object({ description: z.string().optional() }),
+        testCase: z.object({
+          description: z.string().optional(),
+          // A misspelt measure fails the parse, so a mistagged case is an error, not a silent gap.
+          metadata: z
+            .object({ measures: guardrailMeasureSchema.optional() })
+            .optional(),
+        }),
         gradingResult: z
           .object({
             reason: z.string().optional(),
@@ -153,7 +193,7 @@ export class SqliteEvals {
         return;
       }
       const insert = this.db.prepare(
-        'INSERT INTO eval_results (run_id, idx, description, passed, reason) VALUES (?, ?, ?, ?, ?)',
+        'INSERT INTO eval_results (run_id, idx, description, passed, reason, measures) VALUES (?, ?, ?, ?, ?, ?)',
       );
       outcome.results.forEach((result, idx) =>
         insert.run(
@@ -162,6 +202,7 @@ export class SqliteEvals {
           result.description,
           result.passed ? 1 : 0,
           result.reason,
+          result.measures ?? null,
         ),
       );
       const passed = outcome.results.filter((r) => r.passed).length;
@@ -200,12 +241,13 @@ export class SqliteEvals {
   results(runId: string): EvalResult[] {
     const rows = this.db
       .prepare(
-        'SELECT description, passed, reason FROM eval_results WHERE run_id = ? ORDER BY idx',
+        'SELECT description, passed, reason, measures FROM eval_results WHERE run_id = ? ORDER BY idx',
       )
       .all(runId) as {
       description: string;
       passed: number;
       reason: string | null;
+      measures: string | null;
     }[];
     return rows.map((row) =>
       evalResultSchema.parse({ ...row, passed: row.passed === 1 }),
@@ -347,6 +389,7 @@ export class EvalService {
       const results = parsed.results.results.map((item) => ({
         description: item.testCase.description ?? 'Unnamed case',
         passed: item.success,
+        measures: item.testCase.metadata?.measures ?? null,
         reason: item.success
           ? null
           : firstLine(

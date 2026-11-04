@@ -161,6 +161,10 @@ DROP TABLE security_events;
 ALTER TABLE security_events_new RENAME TO security_events;
 CREATE INDEX security_events_by_time ON security_events(created_at DESC);`;
 
+/** Which guardrail an evaluation case measures, for the false-positive and detection rates. */
+const EVAL_MEASURES = `
+ALTER TABLE eval_results ADD COLUMN measures TEXT CHECK(measures IN ('false-positive','detection'));`;
+
 /** Ordered migrations; PRAGMA user_version is the number applied. Never edit an applied entry. */
 const MIGRATIONS = [
   PROJECTS,
@@ -170,6 +174,7 @@ const MIGRATIONS = [
   EVALUATIONS,
   AGENT,
   WITHHELD_PASSAGES,
+  EVAL_MEASURES,
 ];
 
 /** Single owner of the application database file, schema, and migrations. */
