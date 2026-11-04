@@ -99,7 +99,7 @@ describe('assistant answers with tools', () => {
     expect(store.tokensToday()).toBeGreaterThan(0);
   });
 
-  it('runs a fix once per run even if asked twice, and records the action', async () => {
+  it('runs a fix once per investigation even if asked twice, and records what triggered it', async () => {
     const { faux, supervisor, store, calls } = harness();
     faux.setResponses([
       fauxAssistantMessage(
@@ -108,13 +108,16 @@ describe('assistant answers with tools', () => {
       ),
       fauxAssistantMessage('Started the scanner.'),
     ]);
-    await supervisor.ask('Fix it');
+    await supervisor.investigate(finding);
     expect(calls).toEqual(['scanner']);
     expect(
       store
         .notes(10)
-        .some((n) => n.kind === 'action' && n.text.includes('Scanner started')),
-    ).toBe(true);
+        .find((n) => n.kind === 'action' && n.text.includes('Scanner started'))
+        ?.text,
+    ).toBe(
+      'Start the security scanner (investigating "Evaluation failed"): Scanner started.',
+    );
   });
 
   it('only proposes installs, deduplicates them, and rejects invalid names', async () => {

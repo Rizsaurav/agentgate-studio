@@ -83,8 +83,20 @@ export type { SystemProfile } from './system';
 export { AgentStore } from './agent-store';
 export type { AgentNote } from './agent-store';
 export { AgentModel, AGENT_PROVIDER, DEFAULT_AGENT_MODEL } from './agent-model';
-export { DEFAULT_LIMITS, Supervisor, questionSchema } from './supervisor';
-export type { SupervisorActions, SupervisorLimits } from './supervisor';
+export {
+  DEFAULT_LIMITS,
+  FIXES,
+  Supervisor,
+  asksForAction,
+  fixForProposal,
+  questionSchema,
+} from './supervisor';
+export type {
+  FixName,
+  RunTrigger,
+  SupervisorActions,
+  SupervisorLimits,
+} from './supervisor';
 export { Watchdog, assess } from './watchdog';
 export type { Finding, Probe, Remedy } from './watchdog';
 export { startOllama, startScanner } from './service-control';

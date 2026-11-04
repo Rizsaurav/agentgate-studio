@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import {
   createProjectSchema,
   createSessionSchema,
+  fixForProposal,
   isLocalMutation,
   questionSchema,
   runIdSchema,
@@ -455,7 +456,10 @@ export async function askAssistant(question: string): Promise<PullResult> {
   return { error: null };
 }
 
-/** Installing a model is never automatic: the assistant proposes, and only this action starts the download. */
+/**
+ * Installing a model, or an action asked for in a question, is never automatic: the assistant
+ * proposes, and only this action carries it out.
+ */
 export async function decideProposal(
   id: string,
   approve: boolean,
@@ -465,10 +469,19 @@ export async function decideProposal(
   const note = agentStore().findNote(id);
   if (note?.kind !== 'proposal' || note.status !== 'open')
     return { error: 'That suggestion is no longer open.' };
-  if (approve) {
-    const started = await installLocalModel(note.text);
-    if (started.error) return started;
-  }
+  // Closed first, so a double click cannot run the same approval twice.
   agentStore().setStatus(id, approve ? 'approved' : 'dismissed');
-  return { error: null };
+  if (!approve) return { error: null };
+  const fix = fixForProposal(note.text);
+  if (fix) {
+    try {
+      await assistant().supervisor.performApproved(fix);
+    } catch (error) {
+      return { error: userMessage(error, 'That action could not be done.') };
+    }
+    return { error: null };
+  }
+  const started = await installLocalModel(note.text);
+  if (started.error) agentStore().setStatus(id, 'open');
+  return started;
 }
