@@ -130,6 +130,15 @@ export class RunService {
       );
       if (screened.blocked) return blocked(screened.blocked);
       const passages = screened.passages;
+      // Proof that the input check and retrieval finished, recorded
+      // before model opening: if opening then fails, the trace can
+      // still show task and retrieval as done, instead of not-run.
+      // Document ids only, no titles or passage text.
+      this.repository.appendEvent(
+        run.id,
+        'screened',
+        JSON.stringify([...new Set(passages.map((p) => p.documentId))]),
+      );
       const context = this.knowledge?.context(session.projectId) ?? '';
       const opened = await this.models.open(session.model);
       const agent = new Agent({

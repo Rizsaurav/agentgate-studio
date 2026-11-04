@@ -14,3 +14,4 @@ eval-results/
 .vscode/
 mac/.build/
 mac/dist/
+/secrets/

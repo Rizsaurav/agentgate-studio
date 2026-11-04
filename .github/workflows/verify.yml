@@ -89,3 +89,53 @@ jobs:
           name: evaluation-results
           path: eval-results/
           if-no-files-found: ignore
+
+  # Required: the one-command Docker stack still works. Builds both images, starts the stack the way
+  # a teammate does, and runs the required evaluation suite inside the app container against the
+  # scanner container (a scripted task is answered, a prompt injection is blocked). GitHub's runners
+  # are amd64, so this also covers the platform the Docker setup was not verified on.
+  compose-smoke:
+    name: compose-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      COMPOSE: docker compose -f compose.yaml -f .github/compose.ci.yaml
+      HF_CACHE: ${{ github.workspace }}/.hf-cache
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compose files are valid, with and without the ollama profile
+        run: |
+          docker compose config --quiet
+          docker compose --profile ollama config --quiet
+      - uses: actions/cache@v4
+        with:
+          path: .hf-cache
+          key: compose-huggingface-llm-guard-${{ hashFiles('scanner/requirements.txt') }}
+      - name: Let the scanner container (uid 1000) use the cache
+        run: mkdir -p "$HF_CACHE" && chmod -R a+rwX "$HF_CACHE"
+      - name: Build and start the stack (first run downloads the scanner model)
+        run: $COMPOSE up --detach --build --wait --wait-timeout 900
+      - name: Image sizes
+        run: docker image ls --format '{{.Repository}}:{{.Tag}} {{.Size}}' | grep agentgate
+      - name: Only the app port is published, and only on loopback
+        run: |
+          $COMPOSE ps --format json | node -e '
+            const lines = require("fs").readFileSync(0, "utf8").trim().split("\n");
+            const published = lines.flatMap((line) => JSON.parse(line).Publishers ?? [])
+              .filter((p) => p.PublishedPort > 0);
+            console.log(JSON.stringify(published));
+            const ok = published.length === 1 && published[0].URL === "127.0.0.1"
+              && published[0].TargetPort === 3000;
+            if (!ok) { console.error("Expected exactly 127.0.0.1:3000 to be published."); process.exit(1); }'
+      - name: The app answers
+        run: |
+          curl -sf -o /dev/null http://127.0.0.1:3000/models
+          curl -sf -o /dev/null http://127.0.0.1:3000/api/models/pull
+      - name: Required evaluation suite inside the app container, against the scanner container
+        run: $COMPOSE exec -T --workdir /app app npm run eval
+      - name: Logs on failure
+        if: failure()
+        run: $COMPOSE logs --no-color --tail 200
+      - name: Stop and remove the stack
+        if: always()
+        run: $COMPOSE down --volumes

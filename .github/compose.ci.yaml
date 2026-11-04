@@ -1,0 +1,6 @@
+# CI only, layered on compose.yaml: the scanner model comes from the runner's cache instead of a
+# fresh 700 MB download on every run. Not for local use; `docker compose up` needs nothing extra.
+services:
+  scanner:
+    volumes:
+      - ${HF_CACHE:?set HF_CACHE to the runner's Hugging Face cache}:/home/scanner/.cache/huggingface

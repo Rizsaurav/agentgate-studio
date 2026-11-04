@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3';
 import {
   DocumentService,
   ProtectionPipeline,
+  ScannerUnavailableError,
   SqliteDocuments,
   SqliteProjects,
   SqliteSecurityEvents,
@@ -54,4 +55,15 @@ export class MemoryBackend implements SecretBackend {
   async delete(account: string) {
     this.values.delete(account);
   }
+}
+
+/** Scanner that throws a scanner-unavailable error only for matching texts. */
+export function scannerThatThrowsOn(needle: string): InjectionScanner {
+  return {
+    scan: async (texts) => {
+      if (texts.some((text) => text.includes(needle)))
+        throw new ScannerUnavailableError('scanner unavailable');
+      return texts.map(() => ({ injection: false, score: 0 }));
+    },
+  };
 }
