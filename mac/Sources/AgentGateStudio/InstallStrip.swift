@@ -15,6 +15,11 @@ struct InstallStrip: View {
     } else if let failure = app.failure {
       bar(step: failure.step, failed: true, message: failure.message, progress: nil, trailing: AnyView(
         Button("Dismiss") { app.dismissFailure() }.controlSize(.small)))
+    } else if app.update == nil, let model = app.active {
+      // Idle: the loaded model, with every step done. Each dot still opens what was recorded at install.
+      bar(step: .ready, failed: false, message: model.readiness == .ready
+            ? "\(model.name) is loaded and ready for agent sessions." : "\(model.name) is loaded. It can chat but cannot call tools.",
+          progress: nil, trailing: AnyView(EmptyView()))
     } else if let update = app.update {
       let progress = update.totalBytes > 0 ? Double(update.completedBytes) / Double(update.totalBytes) : nil
       bar(step: update.step, failed: false, message: update.message, progress: update.step == .download ? progress : nil,
@@ -136,7 +141,7 @@ struct StepSheet: View {
         Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)
       }
       Text(blurb).font(.system(size: 12)).foregroundStyle(Theme.muted)
-      let lines = app.stepLog[step] ?? []
+      let lines = app.stepLog[step] ?? recorded
       if lines.isEmpty {
         Text("Nothing ran for this step in this session.").foregroundStyle(Theme.muted)
       }
@@ -157,6 +162,22 @@ struct StepSheet: View {
     .frame(minWidth: 480, idealWidth: 560, minHeight: 240, idealHeight: 320)
     .background(Theme.bg)
     .preferredColorScheme(.dark)
+  }
+
+  /// What the install recorded for the loaded model, shown when this session did not run the install.
+  private var recorded: [String] {
+    guard let model = app.active else { return [] }
+    let mb = Double(model.bytes) / 1_048_576
+    switch step {
+    case .hardware: return [app.profile?.summary ?? "Not read yet."]
+    case .compatibility, .quantization: return [model.reason]
+    case .download: return ["\(model.file), \(String(format: "%.0f", mb)) MB", "SHA-256 \(model.sha256.prefix(16))… matched the catalog."]
+    case .configure:
+      return ["\(model.config.context / 1024)K context, \(model.config.gpuLayers > 0 ? "all layers on the GPU" : "CPU only"), \(model.config.kvCacheType) KV cache, \(model.config.threads) threads."]
+    case .load: return ["\(model.name) was loaded with \(model.backend.rawValue)."]
+    case .test: return [model.readiness == .ready ? "Answered a short question and called a tool." : "Answered a short question. It could not call a tool reliably."]
+    case .ready: return ["Verified \(model.verifiedAt.formatted(date: .abbreviated, time: .shortened))."]
+    }
   }
 
   /// Who does the step: all are fixed code, and the agent only steps in after a failure.
