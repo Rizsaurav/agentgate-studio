@@ -1,0 +1,139 @@
+{
+  "" : {
+    "diagnostics" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/AgentGateCoreTests-primary.dia",
+    "emit-module-dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/AgentGateCoreTests-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/AgentGateCoreTests-primary-emit-module.dia",
+    "pch" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/AgentGateCoreTests-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/AgentGateCoreTests-primary.swiftdeps"
+  },
+  "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/DerivedSources/test_entry_point.swift" : {
+    "const-values" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/test_entry_point.swiftconstvalues",
+    "dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/test_entry_point.d",
+    "diagnostics" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/test_entry_point.dia",
+    "index-unit-output-path" : "/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/test_entry_point.o",
+    "llvm-bc" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/test_entry_point.bc",
+    "object" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/test_entry_point.o",
+    "swift-dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/test_entry_point.swiftdeps",
+    "swiftmodule" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/test_entry_point~partial.swiftmodule"
+  },
+  "/Users/saurav/Desktop/files/harness/mac/Tests/AgentGateCoreTests/DownloaderTests.swift" : {
+    "const-values" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/DownloaderTests.swiftconstvalues",
+    "dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/DownloaderTests.d",
+    "diagnostics" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/DownloaderTests.dia",
+    "index-unit-output-path" : "/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/DownloaderTests.o",
+    "llvm-bc" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/DownloaderTests.bc",
+    "object" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/DownloaderTests.o",
+    "swift-dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/DownloaderTests.swiftdeps",
+    "swiftmodule" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/DownloaderTests~partial.swiftmodule"
+  },
+  "/Users/saurav/Desktop/files/harness/mac/Tests/AgentGateCoreTests/EngineRegistryTests.swift" : {
+    "const-values" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/EngineRegistryTests.swiftconstvalues",
+    "dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/EngineRegistryTests.d",
+    "diagnostics" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/EngineRegistryTests.dia",
+    "index-unit-output-path" : "/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/EngineRegistryTests.o",
+    "llvm-bc" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/EngineRegistryTests.bc",
+    "object" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/EngineRegistryTests.o",
+    "swift-dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/EngineRegistryTests.swiftdeps",
+    "swiftmodule" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/EngineRegistryTests~partial.swiftmodule"
+  },
+  "/Users/saurav/Desktop/files/harness/mac/Tests/AgentGateCoreTests/HardwareProbeTests.swift" : {
+    "const-values" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/HardwareProbeTests.swiftconstvalues",
+    "dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/HardwareProbeTests.d",
+    "diagnostics" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/HardwareProbeTests.dia",
+    "index-unit-output-path" : "/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/HardwareProbeTests.o",
+    "llvm-bc" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/HardwareProbeTests.bc",
+    "object" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/HardwareProbeTests.o",
+    "swift-dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/HardwareProbeTests.swiftdeps",
+    "swiftmodule" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/HardwareProbeTests~partial.swiftmodule"
+  },
+  "/Users/saurav/Desktop/files/harness/mac/Tests/AgentGateCoreTests/InstallMatrixLiveTests.swift" : {
+    "const-values" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/InstallMatrixLiveTests.swiftconstvalues",
+    "dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/InstallMatrixLiveTests.d",
+    "diagnostics" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/InstallMatrixLiveTests.dia",
+    "index-unit-output-path" : "/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/InstallMatrixLiveTests.o",
+    "llvm-bc" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/InstallMatrixLiveTests.bc",
+    "object" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/InstallMatrixLiveTests.o",
+    "swift-dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/InstallMatrixLiveTests.swiftdeps",
+    "swiftmodule" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/InstallMatrixLiveTests~partial.swiftmodule"
+  },
+  "/Users/saurav/Desktop/files/harness/mac/Tests/AgentGateCoreTests/InstallMatrixTests.swift" : {
+    "const-values" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/InstallMatrixTests.swiftconstvalues",
+    "dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/InstallMatrixTests.d",
+    "diagnostics" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/InstallMatrixTests.dia",
+    "index-unit-output-path" : "/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/InstallMatrixTests.o",
+    "llvm-bc" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/InstallMatrixTests.bc",
+    "object" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/InstallMatrixTests.o",
+    "swift-dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/InstallMatrixTests.swiftdeps",
+    "swiftmodule" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/InstallMatrixTests~partial.swiftmodule"
+  },
+  "/Users/saurav/Desktop/files/harness/mac/Tests/AgentGateCoreTests/LiveInstallTests.swift" : {
+    "const-values" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/LiveInstallTests.swiftconstvalues",
+    "dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/LiveInstallTests.d",
+    "diagnostics" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/LiveInstallTests.dia",
+    "index-unit-output-path" : "/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/LiveInstallTests.o",
+    "llvm-bc" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/LiveInstallTests.bc",
+    "object" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/LiveInstallTests.o",
+    "swift-dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/LiveInstallTests.swiftdeps",
+    "swiftmodule" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/LiveInstallTests~partial.swiftmodule"
+  },
+  "/Users/saurav/Desktop/files/harness/mac/Tests/AgentGateCoreTests/MemoryBudgetTests.swift" : {
+    "const-values" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/MemoryBudgetTests.swiftconstvalues",
+    "dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/MemoryBudgetTests.d",
+    "diagnostics" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/MemoryBudgetTests.dia",
+    "index-unit-output-path" : "/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/MemoryBudgetTests.o",
+    "llvm-bc" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/MemoryBudgetTests.bc",
+    "object" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/MemoryBudgetTests.o",
+    "swift-dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/MemoryBudgetTests.swiftdeps",
+    "swiftmodule" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/MemoryBudgetTests~partial.swiftmodule"
+  },
+  "/Users/saurav/Desktop/files/harness/mac/Tests/AgentGateCoreTests/PlannerTests.swift" : {
+    "const-values" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/PlannerTests.swiftconstvalues",
+    "dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/PlannerTests.d",
+    "diagnostics" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/PlannerTests.dia",
+    "index-unit-output-path" : "/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/PlannerTests.o",
+    "llvm-bc" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/PlannerTests.bc",
+    "object" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/PlannerTests.o",
+    "swift-dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/PlannerTests.swiftdeps",
+    "swiftmodule" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/PlannerTests~partial.swiftmodule"
+  },
+  "/Users/saurav/Desktop/files/harness/mac/Tests/AgentGateCoreTests/RepairTests.swift" : {
+    "const-values" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/RepairTests.swiftconstvalues",
+    "dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/RepairTests.d",
+    "diagnostics" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/RepairTests.dia",
+    "index-unit-output-path" : "/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/RepairTests.o",
+    "llvm-bc" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/RepairTests.bc",
+    "object" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/RepairTests.o",
+    "swift-dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/RepairTests.swiftdeps",
+    "swiftmodule" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/RepairTests~partial.swiftmodule"
+  },
+  "/Users/saurav/Desktop/files/harness/mac/Tests/AgentGateCoreTests/TestHTTPServer.swift" : {
+    "const-values" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/TestHTTPServer.swiftconstvalues",
+    "dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/TestHTTPServer.d",
+    "diagnostics" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/TestHTTPServer.dia",
+    "index-unit-output-path" : "/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/TestHTTPServer.o",
+    "llvm-bc" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/TestHTTPServer.bc",
+    "object" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/TestHTTPServer.o",
+    "swift-dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/TestHTTPServer.swiftdeps",
+    "swiftmodule" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/TestHTTPServer~partial.swiftmodule"
+  },
+  "/Users/saurav/Desktop/files/harness/mac/Tests/AgentGateCoreTests/TierTests.swift" : {
+    "const-values" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/TierTests.swiftconstvalues",
+    "dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/TierTests.d",
+    "diagnostics" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/TierTests.dia",
+    "index-unit-output-path" : "/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/TierTests.o",
+    "llvm-bc" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/TierTests.bc",
+    "object" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/TierTests.o",
+    "swift-dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/TierTests.swiftdeps",
+    "swiftmodule" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/TierTests~partial.swiftmodule"
+  },
+  "/Users/saurav/Desktop/files/harness/mac/Tests/AgentGateCoreTests/WorkspaceStoreTests.swift" : {
+    "const-values" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/WorkspaceStoreTests.swiftconstvalues",
+    "dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/WorkspaceStoreTests.d",
+    "diagnostics" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/WorkspaceStoreTests.dia",
+    "index-unit-output-path" : "/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/WorkspaceStoreTests.o",
+    "llvm-bc" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/WorkspaceStoreTests.bc",
+    "object" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/WorkspaceStoreTests.o",
+    "swift-dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/WorkspaceStoreTests.swiftdeps",
+    "swiftmodule" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateCoreTests-p.build/Objects-normal/arm64/WorkspaceStoreTests~partial.swiftmodule"
+  }
+}

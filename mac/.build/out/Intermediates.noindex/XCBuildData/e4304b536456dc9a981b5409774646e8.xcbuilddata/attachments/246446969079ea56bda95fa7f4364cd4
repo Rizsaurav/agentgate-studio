@@ -1,0 +1,99 @@
+{
+  "" : {
+    "diagnostics" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/AgentGateStudio-primary.dia",
+    "emit-module-dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/AgentGateStudio-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/AgentGateStudio-primary-emit-module.dia",
+    "pch" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/AgentGateStudio-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/AgentGateStudio-primary.swiftdeps"
+  },
+  "/Users/saurav/Desktop/files/harness/mac/Sources/AgentGateStudio/AgentGateStudioApp.swift" : {
+    "const-values" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/AgentGateStudioApp.swiftconstvalues",
+    "dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/AgentGateStudioApp.d",
+    "diagnostics" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/AgentGateStudioApp.dia",
+    "index-unit-output-path" : "/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/AgentGateStudioApp.o",
+    "llvm-bc" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/AgentGateStudioApp.bc",
+    "object" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/AgentGateStudioApp.o",
+    "swift-dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/AgentGateStudioApp.swiftdeps",
+    "swiftmodule" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/AgentGateStudioApp~partial.swiftmodule"
+  },
+  "/Users/saurav/Desktop/files/harness/mac/Sources/AgentGateStudio/AppModel.swift" : {
+    "const-values" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/AppModel.swiftconstvalues",
+    "dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/AppModel.d",
+    "diagnostics" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/AppModel.dia",
+    "index-unit-output-path" : "/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/AppModel.o",
+    "llvm-bc" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/AppModel.bc",
+    "object" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/AppModel.o",
+    "swift-dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/AppModel.swiftdeps",
+    "swiftmodule" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/AppModel~partial.swiftmodule"
+  },
+  "/Users/saurav/Desktop/files/harness/mac/Sources/AgentGateStudio/InstallStrip.swift" : {
+    "const-values" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/InstallStrip.swiftconstvalues",
+    "dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/InstallStrip.d",
+    "diagnostics" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/InstallStrip.dia",
+    "index-unit-output-path" : "/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/InstallStrip.o",
+    "llvm-bc" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/InstallStrip.bc",
+    "object" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/InstallStrip.o",
+    "swift-dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/InstallStrip.swiftdeps",
+    "swiftmodule" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/InstallStrip~partial.swiftmodule"
+  },
+  "/Users/saurav/Desktop/files/harness/mac/Sources/AgentGateStudio/ModelsPage.swift" : {
+    "const-values" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/ModelsPage.swiftconstvalues",
+    "dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/ModelsPage.d",
+    "diagnostics" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/ModelsPage.dia",
+    "index-unit-output-path" : "/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/ModelsPage.o",
+    "llvm-bc" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/ModelsPage.bc",
+    "object" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/ModelsPage.o",
+    "swift-dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/ModelsPage.swiftdeps",
+    "swiftmodule" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/ModelsPage~partial.swiftmodule"
+  },
+  "/Users/saurav/Desktop/files/harness/mac/Sources/AgentGateStudio/SecurityPage.swift" : {
+    "const-values" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/SecurityPage.swiftconstvalues",
+    "dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/SecurityPage.d",
+    "diagnostics" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/SecurityPage.dia",
+    "index-unit-output-path" : "/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/SecurityPage.o",
+    "llvm-bc" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/SecurityPage.bc",
+    "object" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/SecurityPage.o",
+    "swift-dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/SecurityPage.swiftdeps",
+    "swiftmodule" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/SecurityPage~partial.swiftmodule"
+  },
+  "/Users/saurav/Desktop/files/harness/mac/Sources/AgentGateStudio/SessionPage.swift" : {
+    "const-values" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/SessionPage.swiftconstvalues",
+    "dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/SessionPage.d",
+    "diagnostics" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/SessionPage.dia",
+    "index-unit-output-path" : "/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/SessionPage.o",
+    "llvm-bc" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/SessionPage.bc",
+    "object" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/SessionPage.o",
+    "swift-dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/SessionPage.swiftdeps",
+    "swiftmodule" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/SessionPage~partial.swiftmodule"
+  },
+  "/Users/saurav/Desktop/files/harness/mac/Sources/AgentGateStudio/Shell.swift" : {
+    "const-values" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/Shell.swiftconstvalues",
+    "dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/Shell.d",
+    "diagnostics" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/Shell.dia",
+    "index-unit-output-path" : "/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/Shell.o",
+    "llvm-bc" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/Shell.bc",
+    "object" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/Shell.o",
+    "swift-dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/Shell.swiftdeps",
+    "swiftmodule" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/Shell~partial.swiftmodule"
+  },
+  "/Users/saurav/Desktop/files/harness/mac/Sources/AgentGateStudio/Theme.swift" : {
+    "const-values" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/Theme.swiftconstvalues",
+    "dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/Theme.d",
+    "diagnostics" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/Theme.dia",
+    "index-unit-output-path" : "/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/Theme.o",
+    "llvm-bc" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/Theme.bc",
+    "object" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/Theme.o",
+    "swift-dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/Theme.swiftdeps",
+    "swiftmodule" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/Theme~partial.swiftmodule"
+  },
+  "/Users/saurav/Desktop/files/harness/mac/Sources/AgentGateStudio/WorkspacePages.swift" : {
+    "const-values" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/WorkspacePages.swiftconstvalues",
+    "dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/WorkspacePages.d",
+    "diagnostics" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/WorkspacePages.dia",
+    "index-unit-output-path" : "/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/WorkspacePages.o",
+    "llvm-bc" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/WorkspacePages.bc",
+    "object" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/WorkspacePages.o",
+    "swift-dependencies" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/WorkspacePages.swiftdeps",
+    "swiftmodule" : "/Users/saurav/Desktop/files/harness/mac/.build/out/Intermediates.noindex/AgentGateStudio.build/Debug/AgentGateStudio-p.build/Objects-normal/arm64/WorkspacePages~partial.swiftmodule"
+  }
+}

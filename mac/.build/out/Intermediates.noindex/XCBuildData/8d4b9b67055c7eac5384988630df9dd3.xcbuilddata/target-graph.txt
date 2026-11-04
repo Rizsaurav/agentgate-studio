@@ -1,0 +1,14 @@
+Target dependency graph (5 targets)
+Target 'AllIncludingTests' in project 'Aggregate'
+➜ Explicit dependency on target 'AgentGateCoreTests-product' in project 'AgentGateStudio'
+➜ Dependency on target 'AgentGateCoreTests-product' in project 'AgentGateStudio' via transitive dependency through 'AgentGateCoreTests-test-runner'
+➜ Explicit dependency on target 'AgentGateStudio-product' in project 'AgentGateStudio'
+➜ Explicit dependency on target 'AgentGateCore' in project 'AgentGateStudio'
+➜ Explicit dependency on target 'AgentGateStudio_AgentGateCore' in project 'AgentGateStudio'
+Target 'AgentGateStudio-product' in project 'AgentGateStudio'
+➜ Explicit dependency on target 'AgentGateCore' in project 'AgentGateStudio'
+Target 'AgentGateCoreTests-product' in project 'AgentGateStudio'
+➜ Explicit dependency on target 'AgentGateCore' in project 'AgentGateStudio'
+Target 'AgentGateCore' in project 'AgentGateStudio'
+➜ Explicit dependency on target 'AgentGateStudio_AgentGateCore' in project 'AgentGateStudio'
+Target 'AgentGateStudio_AgentGateCore' in project 'AgentGateStudio' (no dependencies)
