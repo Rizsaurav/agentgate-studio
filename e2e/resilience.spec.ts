@@ -144,7 +144,9 @@ test('scanner outage fails closed in the browser: ingestion and tasks are refuse
     .fill('How many days do I have to return a bicycle?');
   await page.getByRole('button', { name: 'Run task' }).click();
   await expect(
-    page.getByText(/Blocked by security rule scanner-unavailable/),
+    page
+      .getByRole('alert')
+      .filter({ hasText: /Blocked by security rule scanner-unavailable/ }),
   ).toBeVisible({ timeout: 60_000 });
 });
 
@@ -163,6 +165,8 @@ test('main pages fit a 390px phone without horizontal scrolling', async ({
       'A very long project name that must wrap instead of forcing the page to scroll sideways',
     );
   await page.getByRole('button', { name: /Create project/ }).click();
+  // The redirect to the new project must finish before the URL is read and the page is left.
+  await page.waitForURL(/\/projects\/[^/]+$/);
   const projectPath = page.url().replace(server.url, '');
   for (const path of [
     '/',
@@ -172,11 +176,19 @@ test('main pages fit a 390px phone without horizontal scrolling', async ({
     '/evaluations',
   ]) {
     await page.goto(server.url + path);
-    const overflow = await page.evaluate(
-      () =>
-        document.documentElement.scrollWidth -
-        document.documentElement.clientWidth,
-    );
-    expect(overflow, `${path} overflows horizontally`).toBeLessThanOrEqual(0);
+    // A page may still be navigating right after it loads; measure again until it settles.
+    await expect
+      .poll(
+        () =>
+          page
+            .evaluate(
+              () =>
+                document.documentElement.scrollWidth -
+                document.documentElement.clientWidth,
+            )
+            .catch(() => Number.NaN),
+        { message: `${path} overflows horizontally` },
+      )
+      .toBeLessThanOrEqual(0);
   }
 });
