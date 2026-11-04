@@ -39,6 +39,7 @@ final class AppModel {
   /// What each install step reported, for the dialog behind each dot in the status bar.
   private(set) var stepLog: [InstallStep: [String]] = [:]
   var stepDetail: InstallStep?
+  var agentPanelOpen = false
   private(set) var failure: InstallFailure?
   private(set) var installing: CatalogModel?
   /// A repair waiting for the user's yes or no.

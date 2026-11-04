@@ -225,7 +225,7 @@ private actor Asked {
     let body = try OpenRouterAssistant.requestBody(report, removable: ["old"])
     let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
     #expect(json["model"] as? String == "deepseek/deepseek-v4.1-flash")
-    #expect(json["max_tokens"] as? Int == 400)
+    #expect(json["max_tokens"] as? Int == 1500)
     let text = String(decoding: body, as: UTF8.self)
     #expect(!text.contains("Bearer"))
   }
@@ -258,5 +258,75 @@ private actor Asked {
     #expect(try box.read() == "secret-2")
     try box.delete()
     #expect(try box.read() == nil)
+  }
+}
+
+private actor Sequence: RepairAssistant {
+  let replies: [String]
+  var index = 0
+  var reports: [FailureReport] = []
+  init(_ replies: [String]) { self.replies = replies }
+  func propose(for report: FailureReport, removable: [String]) async throws -> String {
+    reports.append(report)
+    defer { index = min(index + 1, replies.count - 1) }
+    return replies[index]
+  }
+}
+
+@Suite struct RepairInvestigationTests {
+  @Test func parametersAreValidated() throws {
+    let ok = try RepairProposal.parse(
+      #"{"explanation":"x","operations":[{"op":"setContext","to":"8192"},{"op":"setQuantization","to":"Q4_K_M"}]}"#, removable: [])
+    #expect(ok.operations == [.setContext(8192), .setQuantization(.q4_K_M)])
+    #expect(throws: RepairProposal.Invalid.badValue("setContext")) {
+      try RepairProposal.parse(#"{"explanation":"x","operations":[{"op":"setContext","to":"999999"}]}"#, removable: [])
+    }
+    #expect(throws: RepairProposal.Invalid.badValue("setQuantization")) {
+      try RepairProposal.parse(#"{"explanation":"x","operations":[{"op":"setQuantization","to":"Q1"}]}"#, removable: [])
+    }
+  }
+
+  @Test func repliesAreEitherAProbeOrAProposal() throws {
+    #expect(try RepairReply.parse(#"{"explanation":"look","probe":"diskFree"}"#, removable: []) == .probe(.diskFree))
+    #expect(throws: RepairProposal.Invalid.self) { try RepairReply.parse(#"{"explanation":"x","probe":"rm -rf /"}"#, removable: []) }
+    #expect(throws: RepairProposal.Invalid.self) { try RepairReply.parse("hello", removable: []) }
+  }
+
+  @Test func approvalAppliesToChosenQuantization() {
+    #expect(RepairOperation.setQuantization(.q4_K_M).needsApproval(downloadBytes: 0))
+    #expect(!RepairOperation.setContext(8192).needsApproval(downloadBytes: 0))
+  }
+
+  @Test func theAssistantInvestigatesThenDecidesAndEverythingIsLogged() async throws {
+    let rig = try RepairRunnerTests.Rig()
+    defer { try? FileManager.default.removeItem(at: rig.dir) }
+    let assistant = Sequence([
+      #"{"explanation":"Check the disk.","probe":"diskFree"}"#,
+      #"{"explanation":"Check the folder.","probe":"modelsFolder"}"#,
+      #"{"explanation":"Remove the old model.","operations":[{"op":"freeDisk","modelId":"old-model"}]}"#,
+    ])
+    var pipeline = InstallPipeline()
+    pipeline.store = rig.store
+    let runner = RepairRunner(pipeline: pipeline, audit: rig.audit, assistant: assistant) { _, _ in false }
+    _ = try? await runner.install(rig.model) { _ in }
+    let reports = await assistant.reports
+    #expect(reports.count >= 3)
+    #expect(reports[1].findings.first?.hasPrefix("diskFree:") == true)
+    #expect(reports[2].findings.count == 2)
+    let entries = rig.audit.entries()
+    #expect(entries.filter { $0.reason.hasPrefix("probe ") }.count == 2)
+    #expect(entries.contains { $0.operation == "freeDisk" && $0.outcome == .denied })
+    #expect(try rig.store.load("old-model") != nil)
+  }
+
+  @Test func probesAreLimited() async throws {
+    let rig = try RepairRunnerTests.Rig()
+    defer { try? FileManager.default.removeItem(at: rig.dir) }
+    let assistant = Sequence([#"{"explanation":"again","probe":"diskFree"}"#])
+    var pipeline = InstallPipeline()
+    pipeline.store = rig.store
+    let runner = RepairRunner(pipeline: pipeline, audit: rig.audit, assistant: assistant) { _, _ in false }
+    _ = try? await runner.install(rig.model) { _ in }
+    #expect(rig.audit.entries().filter { $0.reason.hasPrefix("probe ") }.count <= RepairRunner.maxProbes)
   }
 }

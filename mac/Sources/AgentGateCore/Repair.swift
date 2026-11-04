@@ -14,6 +14,10 @@ public enum RepairOperation: Sendable, Equatable, Hashable {
   case freeDisk(modelId: String)
   /// Stop, and remove the incomplete files of this install.
   case cancelAndCleanUp
+  /// Plan again with at most this context size (one of the sizes the planner offers).
+  case setContext(Int)
+  /// Plan again with at most this quantization.
+  case setQuantization(Quantization)
 
   public var name: String {
     switch self {
@@ -23,15 +27,17 @@ public enum RepairOperation: Sendable, Equatable, Hashable {
     case .restartRuntime: "restartRuntime"
     case .freeDisk: "freeDisk"
     case .cancelAndCleanUp: "cancelAndCleanUp"
+    case .setContext: "setContext"
+    case .setQuantization: "setQuantization"
     }
   }
 
   /// A repair that deletes files, changes the model's quality, or downloads over 1 GB is the user's call.
   public func needsApproval(downloadBytes: UInt64) -> Bool {
     switch self {
-    case .freeDisk, .lowerQuantization: true
+    case .freeDisk, .lowerQuantization, .setQuantization: true
     case .retryDownload: downloadBytes > MemoryBudget.gib
-    case .reduceContext, .restartRuntime, .cancelAndCleanUp: false
+    case .reduceContext, .restartRuntime, .cancelAndCleanUp, .setContext: false
     }
   }
 
@@ -43,6 +49,8 @@ public enum RepairOperation: Sendable, Equatable, Hashable {
     case .restartRuntime: "Start the model engine again."
     case .freeDisk(let id): "Delete the installed model \(id) to free disk space."
     case .cancelAndCleanUp: "Stop and remove the incomplete files."
+    case .setContext(let size): "Use a \(size / 1024)K context."
+    case .setQuantization(let quant): "Use the \(quant.rawValue) version of the model."
     }
   }
 }
@@ -99,6 +107,8 @@ public struct FailureReport: Sendable, Equatable, Codable {
   public var logTail: String
   public var hardware: String
   public var triedAlready: [String]
+  /// What the read-only probes the assistant asked for found, in order.
+  public var findings: [String] = []
 
   public static let logLimit = 2000
 
@@ -140,7 +150,7 @@ public struct RepairProposal: Sendable, Equatable {
   public var operations: [RepairOperation]
 
   public enum Invalid: Error, Equatable, CustomStringConvertible {
-    case notJSON, unknownOperation(String), tooMany, badModel(String), empty
+    case notJSON, unknownOperation(String), tooMany, badModel(String), empty, badValue(String)
 
     public var description: String {
       switch self {
@@ -149,6 +159,7 @@ public struct RepairProposal: Sendable, Equatable {
       case .tooMany: "The answer proposed too many operations."
       case .badModel(let id): "'\(id)' is not an installed model that may be removed."
       case .empty: "The answer proposed nothing."
+      case .badValue(let name): "'\(name)' needs a value the planner offers."
       }
     }
   }
@@ -157,23 +168,33 @@ public struct RepairProposal: Sendable, Equatable {
   public static let maxExplanation = 600
 
   private struct Raw: Decodable {
-    struct Op: Decodable { var op: String; var modelId: String? }
+    struct Op: Decodable { var op: String; var modelId: String?; var to: String? }
     var explanation: String
-    var operations: [Op]
+    var operations: [Op]?
+    var probe: String?
   }
 
   /// Parses an assistant reply. `removable` is the installed models it may name for `freeDisk`.
   public static func parse(_ json: String, removable: Set<String>) throws -> RepairProposal {
     guard let raw = try? JSONDecoder().decode(Raw.self, from: Data(json.utf8)) else { throw Invalid.notJSON }
-    guard !raw.operations.isEmpty else { throw Invalid.empty }
-    guard raw.operations.count <= maxOperations else { throw Invalid.tooMany }
-    let operations = try raw.operations.map { entry -> RepairOperation in
+    let listed = raw.operations ?? []
+    guard !listed.isEmpty else { throw Invalid.empty }
+    guard listed.count <= maxOperations else { throw Invalid.tooMany }
+    let operations = try listed.map { entry -> RepairOperation in
       switch entry.op {
       case "retryDownload": return .retryDownload
       case "lowerQuantization": return .lowerQuantization
       case "reduceContext": return .reduceContext
       case "restartRuntime": return .restartRuntime
       case "cancelAndCleanUp": return .cancelAndCleanUp
+      case "setContext":
+        guard let text = entry.to, let size = Int(text), ModelPlanner.contexts.contains(size) else {
+          throw Invalid.badValue("setContext")
+        }
+        return .setContext(size)
+      case "setQuantization":
+        guard let text = entry.to, let quant = Quantization(rawValue: text) else { throw Invalid.badValue("setQuantization") }
+        return .setQuantization(quant)
       case "freeDisk":
         guard let id = entry.modelId, removable.contains(id) else { throw Invalid.badModel(entry.modelId ?? "") }
         return .freeDisk(modelId: id)
@@ -181,6 +202,56 @@ public struct RepairProposal: Sendable, Equatable {
       }
     }
     return RepairProposal(explanation: String(raw.explanation.prefix(maxExplanation)), operations: operations)
+  }
+}
+
+/// A read-only look at this Mac that the assistant may ask for before deciding. Fixed code runs each one.
+public enum RepairProbe: String, Sendable, CaseIterable {
+  case diskFree, modelsFolder, memory, network
+
+  public func run(store: ModelStore, hardware: String) async -> String {
+    switch self {
+    case .diskFree:
+      let free = (try? HardwareProbe.current(modelsDirectory: store.root).freeDiskBytes) ?? 0
+      return "Free disk: \(ModelPlanner.gb(free))."
+    case .modelsFolder:
+      let ids = (try? FileManager.default.contentsOfDirectory(atPath: store.root.path)) ?? []
+      let lines = ids.sorted().prefix(20).map { id -> String in
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: store.folder(id).path)) ?? []
+        let bytes = files.reduce(UInt64(0)) { total, name in
+          let size = (try? FileManager.default.attributesOfItem(atPath: store.folder(id).appendingPathComponent(name).path)[.size] as? UInt64) ?? 0
+          return total + size
+        }
+        return "\(id): \(files.count) files, \(ModelPlanner.gb(bytes))" + (files.contains { $0.hasSuffix(".part") } ? ", has a partial download" : "")
+      }
+      return lines.isEmpty ? "The models folder is empty." : lines.joined(separator: "\n")
+    case .memory:
+      return "\(hardware). Memory in use by other programs is not measured."
+    case .network:
+      var request = URLRequest(url: URL(string: "https://huggingface.co")!, timeoutInterval: 6)
+      request.httpMethod = "HEAD"
+      do {
+        let (_, response) = try await URLSession.shared.data(for: request)
+        return "huggingface.co answered HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)."
+      } catch {
+        return "huggingface.co could not be reached: \(error.localizedDescription)"
+      }
+    }
+  }
+}
+
+/// What an assistant answered: a probe to run first, or the repairs to apply.
+public enum RepairReply: Sendable, Equatable {
+  case probe(RepairProbe)
+  case proposal(RepairProposal)
+
+  public static func parse(_ json: String, removable: Set<String>) throws -> RepairReply {
+    struct Peek: Decodable { var probe: String? }
+    if let name = (try? JSONDecoder().decode(Peek.self, from: Data(json.utf8)))?.probe {
+      guard let probe = RepairProbe(rawValue: name) else { throw RepairProposal.Invalid.unknownOperation(String(name.prefix(40))) }
+      return .probe(probe)
+    }
+    return .proposal(try RepairProposal.parse(json, removable: removable))
   }
 }
 

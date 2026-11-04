@@ -161,3 +161,31 @@ extension InstallMatrixLiveTests {
     #expect(kill(pid, 0) != 0)
   }
 }
+
+/// One real request to the pinned OpenRouter model. Needs OPENROUTER_API_KEY and costs a fraction of a cent.
+@Suite(.serialized, .timeLimit(.minutes(1))) struct RepairAgentLiveTests {
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["AGENTGATE_LIVE"] == "1"
+                 && ProcessInfo.processInfo.environment["OPENROUTER_API_KEY"] != nil))
+  func theRealModelFollowsTheReplyFormat() async throws {
+    let key = ProcessInfo.processInfo.environment["OPENROUTER_API_KEY"]
+    let assistant = OpenRouterAssistant(apiKey: { key })
+    var report = FailureReport(
+      step: "Load", failureClass: .outOfMemory, message: "The model did not fit in memory.",
+      logTail: "ggml_metal: failed to allocate buffer, size = 9000.00 MiB", hardware: "Apple M2 · 8 GB · 40 GB free",
+      triedAlready: [])
+    var steps: [String] = []
+    for _ in 0...RepairRunner.maxProbes {
+      let reply = try await assistant.propose(for: report, removable: [])
+      switch try RepairReply.parse(reply, removable: []) {
+      case .probe(let probe):
+        steps.append("probe \(probe.rawValue)")
+        report.findings.append("\(probe.rawValue): checked")
+      case .proposal(let proposal):
+        steps.append("fix \(proposal.operations.map(\.name))")
+        print("AGENT STEPS:", steps, "|", proposal.explanation)
+        return
+      }
+    }
+    Issue.record("The model kept probing: \(steps)")
+  }
+}

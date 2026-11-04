@@ -60,6 +60,7 @@ public enum RepairError: Error, Sendable, CustomStringConvertible {
 /// default for the failure class, and when none applies it stops.
 public struct RepairRunner: Sendable {
   public static let maxOperations = 8
+  public static let maxProbes = 3
 
   public var pipeline = InstallPipeline()
   public var audit = AuditLog()
@@ -129,13 +130,24 @@ public struct RepairRunner: Sendable {
     }
   }
 
-  /// The assistant's validated answer, or the fixed default when there is none.
+  /// The assistant's validated answer, or the fixed default when there is none. The assistant may ask for
+  /// read-only probes first (at most 3), each logged.
   private func propose(_ report: FailureReport, tried: [RepairOperation], model: CatalogModel) async throws -> RepairProposal {
     let removable = ((try? pipeline.store.list()) ?? []).map(\.id).filter { $0 != model.id }
     if let assistant {
+      var report = report
       do {
-        let reply = try await assistant.propose(for: report, removable: removable)
-        return try RepairProposal.parse(reply, removable: Set(removable))
+        for _ in 0...Self.maxProbes {
+          let reply = try await assistant.propose(for: report, removable: removable)
+          switch try RepairReply.parse(reply, removable: Set(removable)) {
+          case .proposal(let proposal): return proposal
+          case .probe(let probe):
+            guard report.findings.count < Self.maxProbes else { throw RepairProposal.Invalid.tooMany }
+            let found = await probe.run(store: pipeline.store, hardware: report.hardware)
+            try record(model, nil, "probe \(probe.rawValue): \(found.prefix(120))", .done)
+            report.findings.append("\(probe.rawValue): \(found)")
+          }
+        }
       } catch {
         try record(model, nil, "Assistant answer not used: \(error)", .rejected)
       }
@@ -156,6 +168,14 @@ public struct RepairRunner: Sendable {
     case .reduceContext:
       guard let current = failure.plan?.context, let next = ModelPlanner.contexts.first(where: { $0 < current }) else { return false }
       limits.maxContext = next
+      return true
+    case .setContext(let size):
+      guard let current = failure.plan?.context, size < current else { return false }
+      limits.maxContext = size
+      return true
+    case .setQuantization(let quant):
+      guard let current = failure.plan?.quant, quant != current, !(quant < limits.lowestQuant) else { return false }
+      limits.highestQuant = quant
       return true
     case .lowerQuantization:
       guard let current = failure.plan?.quant,

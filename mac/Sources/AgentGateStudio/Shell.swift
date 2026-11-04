@@ -32,6 +32,7 @@ struct Shell: View {
     .preferredColorScheme(.dark)
     .ignoresSafeArea()
     .sheet(isPresented: $app.paletteOpen) { CommandPalette().environment(app) }
+    .sheet(isPresented: $app.agentPanelOpen) { AgentPanel().environment(app) }
     .sheet(item: $app.stepDetail) { StepSheet(step: $0).environment(app) }
     .sheet(isPresented: $app.activityOpen) { ActivitySheet().environment(app) }
   }

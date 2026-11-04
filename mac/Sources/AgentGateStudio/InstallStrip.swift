@@ -44,9 +44,12 @@ struct InstallStrip: View {
             steps(current, failed: failed, compact: true)
           }
           Spacer(minLength: 8)
-          Text(app.agentOn ? "Agent watching" : "Agent off")
-            .font(.caption).foregroundStyle(app.agentOn ? Theme.accent : .secondary).fixedSize()
-            .help("Every step runs as fixed code. The agent only acts when a step fails, and you approve anything that deletes or changes the model.")
+          Button { app.agentPanelOpen = true } label: {
+            Text(app.agentOn ? "Agent watching" : "Agent off")
+              .font(.caption).foregroundStyle(app.agentOn ? Theme.accent : .secondary).fixedSize()
+          }
+          .buttonStyle(.plain)
+          .help("Open the repair agent: what it does and what it has done")
           trailing
         }
         Text(message).font(.callout).foregroundStyle(failed ? .red : .secondary).lineLimit(2)
