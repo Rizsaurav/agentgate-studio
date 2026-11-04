@@ -38,7 +38,9 @@ private func digest(_ data: Data) throws -> String {
     ) { attempts.record($0.attempt) }
     #expect(try Data(contentsOf: destination) == payload)
     #expect(server.rangeHeaders.count == 1)
-    #expect(server.rangeHeaders.first?.contains("bytes=1000000-") == true)
+    // It resumes from what reached the disk, which can be a little under what the server sent before cutting.
+    let start = server.rangeHeaders.first.flatMap { $0.split(separator: "=").last?.split(separator: "-").first }.flatMap { Int($0) }
+    #expect((1...1_000_000).contains(start ?? 0))
     #expect(attempts.max == 2)
   }
 

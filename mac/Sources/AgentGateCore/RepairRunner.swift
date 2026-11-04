@@ -61,6 +61,10 @@ public enum RepairError: Error, Sendable, CustomStringConvertible {
 public struct RepairRunner: Sendable {
   public static let maxOperations = 8
   public static let maxProbes = 3
+  /// A repair that has already run this many times is not proposed again.
+  public static let maxRepeats = 2
+  static let maxRepeatRejections = 2
+  static let defaultSource = "https://huggingface.co"
 
   public var pipeline = InstallPipeline()
   public var audit = AuditLog()
@@ -95,7 +99,7 @@ public struct RepairRunner: Sendable {
         }
         let hardware = (try? HardwareProbe.current(modelsDirectory: pipeline.store.root).summary) ?? "unknown"
         let report = FailureReport.make(failure, hardware: hardware, tried: tried, modelsRoot: pipeline.store.root)
-        let proposal = try await propose(report, tried: tried, model: model)
+        let proposal = try await propose(report, tried: tried, model: model, source: host ?? Self.defaultSource)
         var applied = false
         for operation in proposal.operations where tried.count < Self.maxOperations {
           let reason = proposal.explanation
@@ -133,20 +137,33 @@ public struct RepairRunner: Sendable {
 
   /// The assistant's validated answer, or the fixed default when there is none. The assistant may ask for
   /// read-only probes first (at most 3), each logged.
-  private func propose(_ report: FailureReport, tried: [RepairOperation], model: CatalogModel) async throws -> RepairProposal {
+  private func propose(
+    _ report: FailureReport, tried: [RepairOperation], model: CatalogModel, source: String
+  ) async throws -> RepairProposal {
     let removable = ((try? pipeline.store.list()) ?? []).map(\.id).filter { $0 != model.id }
     if let assistant {
       var report = report
+      var rejectedRepeats = 0
       do {
-        for _ in 0...Self.maxProbes {
+        for _ in 0...(Self.maxProbes + Self.maxRepeatRejections) {
           let reply = try await assistant.propose(for: report, removable: removable)
           switch try RepairReply.parse(reply, removable: Set(removable)) {
           case .proposal(var proposal):
+            // A fix that has failed twice will not work a third time: make the assistant change approach.
+            let repeated = proposal.operations.allSatisfy { op in tried.filter { $0 == op }.count >= Self.maxRepeats }
+            if repeated, rejectedRepeats < Self.maxRepeatRejections {
+              rejectedRepeats += 1
+              let names = proposal.operations.map(\.name).joined(separator: ", ")
+              try record(model, nil, "repeat refused: \(names) already failed \(Self.maxRepeats) times", .rejected)
+              report.findings.append("Refused: \(names) already failed \(Self.maxRepeats) times. Search the web, switch mirror, or change settings instead.")
+              continue
+            }
+            if repeated { throw RepairProposal.Invalid.tooMany }
             if !proposal.references.isEmpty { proposal.explanation += " Sources: " + proposal.references.joined(separator: ", ") }
             return proposal
           case .probe(let probe):
             guard report.findings.count < Self.maxProbes else { throw RepairProposal.Invalid.tooMany }
-            let found = await probe.run(store: pipeline.store, hardware: report.hardware)
+            let found = await probe.run(store: pipeline.store, hardware: report.hardware, source: source)
             try record(model, nil, "probe \(probe.rawValue): \(found.prefix(120))", .done)
             report.findings.append("\(probe.rawValue): \(found)")
           case .search(let query):

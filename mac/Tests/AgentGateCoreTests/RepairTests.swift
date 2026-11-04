@@ -205,16 +205,17 @@ private actor Asked {
     #expect(entries.map(\.outcome) == [.rejected])
   }
 
-  @Test func repairsStopAfterTheOperationLimit() async throws {
+  @Test func aRepairThatAlreadyFailedTwiceIsNotRunAgain() async throws {
     let rig = try Rig()
     defer { try? FileManager.default.removeItem(at: rig.dir) }
-    // Retrying cannot cure a full disk; an assistant that keeps asking for it is cut off.
+    // An assistant that keeps asking for the same fix is made to stop, not looped to the limit.
     let reply = #"{"explanation":"Try again.","operations":[{"op":"restartRuntime"}]}"#
     let error = await rig.run(rig.runner(reply: reply) { _, _ in true })
-    let description = try #require(error).description
-    #expect(description.contains("Stopped after \(RepairRunner.maxOperations)"))
-    #expect(rig.audit.entries().filter { $0.outcome == .done }.count == RepairRunner.maxOperations)
-  }
+    #expect(error != nil)
+    let entries = rig.audit.entries()
+    #expect(entries.filter { $0.outcome == .done && $0.operation == "restartRuntime" }.count == RepairRunner.maxRepeats)
+    #expect(entries.contains { $0.reason.hasPrefix("repeat refused") })
+}
 }
 
 @Suite(.serialized) struct OpenRouterAssistantTests {

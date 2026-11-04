@@ -230,7 +230,8 @@ public struct RepairProposal: Sendable, Equatable {
 public enum RepairProbe: String, Sendable, CaseIterable {
   case diskFree, modelsFolder, memory, network
 
-  public func run(store: ModelStore, hardware: String) async -> String {
+  /// `source` is the download server the install is actually using.
+  public func run(store: ModelStore, hardware: String, source: String) async -> String {
     switch self {
     case .diskFree:
       let free = (try? HardwareProbe.current(modelsDirectory: store.root).freeDiskBytes) ?? 0
@@ -249,13 +250,14 @@ public enum RepairProbe: String, Sendable, CaseIterable {
     case .memory:
       return "\(hardware). Memory in use by other programs is not measured."
     case .network:
-      var request = URLRequest(url: URL(string: "https://huggingface.co")!, timeoutInterval: 6)
+      guard let url = URL(string: source) else { return "The download source is not a valid address." }
+      var request = URLRequest(url: url, timeoutInterval: 6)
       request.httpMethod = "HEAD"
       do {
         let (_, response) = try await URLSession.shared.data(for: request)
-        return "huggingface.co answered HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)."
+        return "The download server \(url.host ?? source) answered HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)."
       } catch {
-        return "huggingface.co could not be reached: \(error.localizedDescription)"
+        return "The download server \(url.host ?? source) could not be reached: \(error.localizedDescription)"
       }
     }
   }
