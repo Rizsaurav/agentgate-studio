@@ -6,7 +6,13 @@ struct InstallStrip: View {
   @Environment(AppModel.self) private var app
 
   var body: some View {
-    if let failure = app.failure {
+    if let repair = app.pendingRepair {
+      bar(step: app.update?.step ?? .download, failed: true, message: "\(repair.report.message) Proposed repair: \(repair.operation.summary)",
+          progress: nil, trailing: AnyView(HStack {
+            Button("Decline") { app.answerRepair(false) }.controlSize(.small)
+            Button("Approve") { app.answerRepair(true) }.controlSize(.small).buttonStyle(.borderedProminent)
+          }))
+    } else if let failure = app.failure {
       bar(step: failure.step, failed: true, message: failure.message, progress: nil, trailing: AnyView(
         Button("Dismiss") { app.dismissFailure() }.controlSize(.small)))
     } else if let update = app.update {

@@ -37,6 +37,9 @@ final class AppModel {
   private(set) var update: InstallUpdate?
   private(set) var failure: InstallFailure?
   private(set) var installing: CatalogModel?
+  /// A repair waiting for the user's yes or no.
+  private(set) var pendingRepair: (operation: RepairOperation, report: FailureReport)?
+  private var repairAnswer: CheckedContinuation<Bool, Never>?
   var errorMessage: String?
   private(set) var workspace = WorkspaceStore.Snapshot()
   private(set) var thinking = false
@@ -128,7 +131,8 @@ final class AppModel {
           runtime = try await pipeline.load(done, update: report)
           active = done
         } else {
-          let (done, runtime) = try await pipeline.install(model, update: report)
+          let runner = RepairRunner { operation, failure in await self.askToRepair(operation, failure) }
+          let (done, runtime) = try await runner.install(model, update: report)
           self.runtime = runtime
           installed = try store.list()
           active = done
@@ -136,6 +140,11 @@ final class AppModel {
         return true
       } catch let failure as InstallFailure {
         self.failure = failure
+        update = nil
+      } catch RepairError.unrepaired(let failure, let why) {
+        var shown = failure
+        shown.message += " \(why)"
+        self.failure = shown
         update = nil
       } catch {
         failure = InstallFailure(step: update?.step ?? .load, message: String(describing: error), cause: error, logTail: nil)
@@ -147,7 +156,23 @@ final class AppModel {
     return task
   }
 
-  func cancelInstall() { installTask?.cancel() }
+  func cancelInstall() {
+    answerRepair(false)
+    installTask?.cancel()
+  }
+
+  private func askToRepair(_ operation: RepairOperation, _ report: FailureReport) async -> Bool {
+    await withCheckedContinuation { continuation in
+      pendingRepair = (operation, report)
+      repairAnswer = continuation
+    }
+  }
+
+  func answerRepair(_ approved: Bool) {
+    pendingRepair = nil
+    repairAnswer?.resume(returning: approved)
+    repairAnswer = nil
+  }
 
   func dismissFailure() { failure = nil }
 
