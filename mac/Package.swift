@@ -9,7 +9,7 @@ let package = Package(
   ],
   targets: [
     // Model manager logic, free of UI so it is unit-tested directly.
-    .target(name: "AgentGateCore"),
+    .target(name: "AgentGateCore", resources: [.copy("Resources/catalog.json")]),
     .executableTarget(name: "AgentGateStudio", dependencies: ["AgentGateCore"]),
     .testTarget(name: "AgentGateCoreTests", dependencies: ["AgentGateCore"]),
   ]

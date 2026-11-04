@@ -1,0 +1,750 @@
+{
+ "version": 1,
+ "tiers": {
+  "fast": {
+   "share": 0.5,
+   "candidates": [
+    "qwen3-4b-2507",
+    "llama-3.2-3b",
+    "qwen3-1.7b",
+    "qwen3-0.6b"
+   ]
+  },
+  "balanced": {
+   "share": 0.75,
+   "candidates": [
+    "qwen3-30b-a3b-2507",
+    "qwen3-14b",
+    "qwen3-8b",
+    "qwen3-4b-2507",
+    "llama-3.2-3b",
+    "qwen3-1.7b"
+   ]
+  },
+  "smart": {
+   "share": 1.0,
+   "candidates": [
+    "qwen3-32b",
+    "mistral-small-3.2-24b",
+    "qwen3-30b-a3b-2507",
+    "qwen3-14b",
+    "qwen3-8b",
+    "qwen3-4b-2507",
+    "llama-3.2-3b",
+    "qwen3-1.7b",
+    "qwen3-0.6b"
+   ]
+  }
+ },
+ "models": [
+  {
+   "id": "qwen3-0.6b",
+   "name": "Qwen3 0.6B",
+   "publisher": "Qwen",
+   "licence": "apache-2.0",
+   "toolCalling": true,
+   "contextMax": 40960,
+   "architecture": {
+    "layers": 28,
+    "kvHeads": 8,
+    "headDim": 128
+   },
+   "gguf": {
+    "repo": "Qwen/Qwen3-0.6B-GGUF",
+    "files": [
+     {
+      "quant": "Q8_0",
+      "file": "Qwen3-0.6B-Q8_0.gguf",
+      "bytes": 639446688,
+      "sha256": "9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031"
+     }
+    ]
+   },
+   "source": {
+    "repo": "Qwen/Qwen3-0.6B",
+    "bytes": 1503300328
+   },
+   "mlx": [
+    {
+     "bits": 8,
+     "repo": "mlx-community/Qwen3-0.6B-8bit",
+     "bytes": 633442994
+    },
+    {
+     "bits": 6,
+     "repo": "mlx-community/Qwen3-0.6B-6bit",
+     "bytes": 484446846
+    },
+    {
+     "bits": 4,
+     "repo": "mlx-community/Qwen3-0.6B-4bit",
+     "bytes": 335450584
+    }
+   ]
+  },
+  {
+   "id": "qwen3-1.7b",
+   "name": "Qwen3 1.7B",
+   "publisher": "Qwen",
+   "licence": "apache-2.0",
+   "toolCalling": true,
+   "contextMax": 40960,
+   "architecture": {
+    "layers": 28,
+    "kvHeads": 8,
+    "headDim": 128
+   },
+   "gguf": {
+    "repo": "Qwen/Qwen3-1.7B-GGUF",
+    "files": [
+     {
+      "quant": "Q8_0",
+      "file": "Qwen3-1.7B-Q8_0.gguf",
+      "bytes": 1834426016,
+      "sha256": "061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a"
+     }
+    ]
+   },
+   "source": {
+    "repo": "Qwen/Qwen3-1.7B",
+    "bytes": 4063515592
+   },
+   "mlx": [
+    {
+     "bits": 8,
+     "repo": "mlx-community/Qwen3-1.7B-8bit",
+     "bytes": 1828306541
+    },
+    {
+     "bits": 6,
+     "repo": "mlx-community/Qwen3-1.7B-6bit",
+     "bytes": 1398193581
+    },
+    {
+     "bits": 4,
+     "repo": "mlx-community/Qwen3-1.7B-4bit",
+     "bytes": 968080210
+    }
+   ]
+  },
+  {
+   "id": "llama-3.2-3b",
+   "name": "Llama 3.2 3B",
+   "publisher": "Meta",
+   "licence": "llama3.2",
+   "toolCalling": true,
+   "contextMax": 131072,
+   "architecture": {
+    "layers": 28,
+    "kvHeads": 8,
+    "headDim": 128
+   },
+   "gguf": {
+    "repo": "unsloth/Llama-3.2-3B-Instruct-GGUF",
+    "files": [
+     {
+      "quant": "Q8_0",
+      "file": "Llama-3.2-3B-Instruct-Q8_0.gguf",
+      "bytes": 3421898816,
+      "sha256": "f34112a11b7dad74ab517dedf6dcf00d624c9adac2dc0c72c719ca0478554ef2"
+     },
+     {
+      "quant": "Q6_K",
+      "file": "Llama-3.2-3B-Instruct-Q6_K.gguf",
+      "bytes": 2643853760,
+      "sha256": "a48f9d72a278835e0b0c00c6c115a3edd1703f5f15713b5f3194bc8b392ea631"
+     },
+     {
+      "quant": "Q5_K_M",
+      "file": "Llama-3.2-3B-Instruct-Q5_K_M.gguf",
+      "bytes": 2322153920,
+      "sha256": "8d422c0d21ed241ed701e2a5d4a1d2b580b0d406ba8b3e09605ffe980f2836ed"
+     },
+     {
+      "quant": "Q4_K_M",
+      "file": "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+      "bytes": 2019377600,
+      "sha256": "6c99cc00ae910f6a532a80022cb4bc1939094527a089c29294b841c0bd87f74d"
+     },
+     {
+      "quant": "Q3_K_M",
+      "file": "Llama-3.2-3B-Instruct-Q3_K_M.gguf",
+      "bytes": 1687159232,
+      "sha256": "aa48f1dfafebc0bd0631ffff625804e3641f5e61e8c91c465a556195fbd80376"
+     }
+    ]
+   },
+   "source": {
+    "repo": "unsloth/Llama-3.2-3B-Instruct",
+    "bytes": 6425529048
+   },
+   "mlx": [
+    {
+     "bits": 8,
+     "repo": "mlx-community/Llama-3.2-3B-Instruct-8bit",
+     "bytes": 3413784042
+    },
+    {
+     "bits": 4,
+     "repo": "mlx-community/Llama-3.2-3B-Instruct-4bit",
+     "bytes": 1807496278
+    }
+   ]
+  },
+  {
+   "id": "phi-4-mini",
+   "name": "Phi-4 mini",
+   "publisher": "Microsoft",
+   "licence": "mit",
+   "toolCalling": true,
+   "contextMax": 131072,
+   "architecture": {
+    "layers": 32,
+    "kvHeads": 8,
+    "headDim": 128
+   },
+   "gguf": {
+    "repo": "unsloth/Phi-4-mini-instruct-GGUF",
+    "files": [
+     {
+      "quant": "Q8_0",
+      "file": "Phi-4-mini-instruct.Q8_0.gguf",
+      "bytes": 4084611040,
+      "sha256": "26188c6050d525376a88b04514c236c5e28a36730f1e936f2a00314212b7ba42"
+     },
+     {
+      "quant": "Q6_K",
+      "file": "Phi-4-mini-instruct-Q6_K.gguf",
+      "bytes": 3155622880,
+      "sha256": "72b8446a3db55617950bef48d296659050867cca41bd7a7be4622010c9589400"
+     },
+     {
+      "quant": "Q5_K_M",
+      "file": "Phi-4-mini-instruct-Q5_K_M.gguf",
+      "bytes": 2848127968,
+      "sha256": "b5a981febb25f218762d52411f5a4af6aad8b3a203bb1004a576545350ad08e3"
+     },
+     {
+      "quant": "Q4_K_M",
+      "file": "Phi-4-mini-instruct-Q4_K_M.gguf",
+      "bytes": 2491874272,
+      "sha256": "88c00229914083cd112853aab84ed51b87bdf6b9ce42f532d8c85c7c63b1730a"
+     },
+     {
+      "quant": "Q3_K_M",
+      "file": "Phi-4-mini-instruct-Q3_K_M.gguf",
+      "bytes": 2117532640,
+      "sha256": "8eb40b196ca664365bb0012eac556e9700345fcf68b41cfc35e8bf4a47687653"
+     }
+    ]
+   },
+   "source": {
+    "repo": "microsoft/Phi-4-mini-instruct",
+    "bytes": 7672066216
+   }
+  },
+  {
+   "id": "gemma-3-4b",
+   "name": "Gemma 3 4B",
+   "publisher": "Google",
+   "licence": "gemma",
+   "toolCalling": false,
+   "contextMax": 131072,
+   "architecture": {
+    "layers": 34,
+    "kvHeads": 4,
+    "headDim": 256
+   },
+   "gguf": {
+    "repo": "unsloth/gemma-3-4b-it-GGUF",
+    "files": [
+     {
+      "quant": "Q8_0",
+      "file": "gemma-3-4b-it-Q8_0.gguf",
+      "bytes": 4130402176,
+      "sha256": "81bf0583ab5bad155a5a3b15d155a880a1a1e4f7de2de5c06f10f64ac49f8336"
+     },
+     {
+      "quant": "Q6_K",
+      "file": "gemma-3-4b-it-Q6_K.gguf",
+      "bytes": 3190740096,
+      "sha256": "df3fb9a1449296d26258c0771d5280ceb71559ad98e2db658799a05218ed9fa1"
+     },
+     {
+      "quant": "Q5_K_M",
+      "file": "gemma-3-4b-it-Q5_K_M.gguf",
+      "bytes": 2829698176,
+      "sha256": "974e5c2f13c321fc3258b6fbf2ce326a09d8ace511aa6846df1db62baf7df7d4"
+     },
+     {
+      "quant": "Q4_K_M",
+      "file": "gemma-3-4b-it-Q4_K_M.gguf",
+      "bytes": 2489894016,
+      "sha256": "04a43a22e8d2003deda5acc262f68ec1005fa76c735a9962a8c77042a74a7d19"
+     },
+     {
+      "quant": "Q3_K_M",
+      "file": "gemma-3-4b-it-Q3_K_M.gguf",
+      "bytes": 2098459776,
+      "sha256": "cd0dc2ce517f0c2764a7a7d1274c935335fa56092bb62b39e06546fb599c382d"
+     }
+    ]
+   },
+   "source": {
+    "repo": "unsloth/gemma-3-4b-it",
+    "bytes": 8600277880
+   }
+  },
+  {
+   "id": "qwen3-4b-2507",
+   "name": "Qwen3 4B Instruct",
+   "publisher": "Qwen",
+   "licence": "apache-2.0",
+   "toolCalling": true,
+   "contextMax": 131072,
+   "architecture": {
+    "layers": 36,
+    "kvHeads": 8,
+    "headDim": 128
+   },
+   "gguf": {
+    "repo": "unsloth/Qwen3-4B-Instruct-2507-GGUF",
+    "files": [
+     {
+      "quant": "Q8_0",
+      "file": "Qwen3-4B-Instruct-2507-Q8_0.gguf",
+      "bytes": 4280405600,
+      "sha256": "391c1e410fd9f4cf2de2b510273b56a84c19ce18f4fa3bfb3774031dac4ef068"
+     },
+     {
+      "quant": "Q6_K",
+      "file": "Qwen3-4B-Instruct-2507-Q6_K.gguf",
+      "bytes": 3306261600,
+      "sha256": "cd7b21b38b3e71400587c184b6a9b04d3beb4d13fdae6464d4075dee4f1bc5ad"
+     },
+     {
+      "quant": "Q5_K_M",
+      "file": "Qwen3-4B-Instruct-2507-Q5_K_M.gguf",
+      "bytes": 2889514080,
+      "sha256": "5bde5e9d883622acb02bf77fe7dcbc56a8b9a9ad4be78a72ca23a532658b4ecb"
+     },
+     {
+      "quant": "Q4_K_M",
+      "file": "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+      "bytes": 2497281120,
+      "sha256": "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597"
+     },
+     {
+      "quant": "Q3_K_M",
+      "file": "Qwen3-4B-Instruct-2507-Q3_K_M.gguf",
+      "bytes": 2075618400,
+      "sha256": "9c6e0763577125a994a9bea0bbd7a737ac4498b8a6a4e0f788727553af1806c9"
+     }
+    ]
+   },
+   "source": {
+    "repo": "Qwen/Qwen3-4B-Instruct-2507",
+    "bytes": 8044982000
+   },
+   "mlx": [
+    {
+     "bits": 8,
+     "repo": "mlx-community/Qwen3-4B-Instruct-2507-8bit",
+     "bytes": 4274158989
+    },
+    {
+     "bits": 6,
+     "repo": "mlx-community/Qwen3-4B-Instruct-2507-6bit",
+     "bytes": 3268590771
+    },
+    {
+     "bits": 4,
+     "repo": "mlx-community/Qwen3-4B-Instruct-2507-4bit",
+     "bytes": 2263022417
+    }
+   ]
+  },
+  {
+   "id": "qwen3-8b",
+   "name": "Qwen3 8B",
+   "publisher": "Qwen",
+   "licence": "apache-2.0",
+   "toolCalling": true,
+   "contextMax": 40960,
+   "architecture": {
+    "layers": 36,
+    "kvHeads": 8,
+    "headDim": 128
+   },
+   "gguf": {
+    "repo": "Qwen/Qwen3-8B-GGUF",
+    "files": [
+     {
+      "quant": "Q8_0",
+      "file": "Qwen3-8B-Q8_0.gguf",
+      "bytes": 8709518112,
+      "sha256": "408b955510e196121c1c375201744783b5c9a43c7956d73fc78df54c66e883d6"
+     },
+     {
+      "quant": "Q6_K",
+      "file": "Qwen3-8B-Q6_K.gguf",
+      "bytes": 6725899040,
+      "sha256": "cb042ccd76795a8830d6be6bd4165245847cc68e41797b13bd61aed4c2cfbce6"
+     },
+     {
+      "quant": "Q5_K_M",
+      "file": "Qwen3-8B-Q5_K_M.gguf",
+      "bytes": 5851112224,
+      "sha256": "068bae163faa96ad48032daf4e071a6a28fe67d8dcc95367609c2ff165e52738"
+     },
+     {
+      "quant": "Q4_K_M",
+      "file": "Qwen3-8B-Q4_K_M.gguf",
+      "bytes": 5027783488,
+      "sha256": "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785"
+     }
+    ]
+   },
+   "source": {
+    "repo": "Qwen/Qwen3-8B",
+    "bytes": 16381516776
+   },
+   "mlx": [
+    {
+     "bits": 8,
+     "repo": "mlx-community/Qwen3-8B-8bit",
+     "bytes": 8703048996
+    },
+    {
+     "bits": 6,
+     "repo": "mlx-community/Qwen3-8B-6bit",
+     "bytes": 6655441678
+    },
+    {
+     "bits": 4,
+     "repo": "mlx-community/Qwen3-8B-4bit",
+     "bytes": 4607835174
+    }
+   ]
+  },
+  {
+   "id": "gemma-3-12b",
+   "name": "Gemma 3 12B",
+   "publisher": "Google",
+   "licence": "gemma",
+   "toolCalling": false,
+   "contextMax": 131072,
+   "architecture": {
+    "layers": 48,
+    "kvHeads": 8,
+    "headDim": 256
+   },
+   "gguf": {
+    "repo": "unsloth/gemma-3-12b-it-GGUF",
+    "files": [
+     {
+      "quant": "Q8_0",
+      "file": "gemma-3-12b-it-Q8_0.gguf",
+      "bytes": 12510212576,
+      "sha256": "a774cd9c6f289a6159f4a3f92a7ebca887e15073f92016d53c3593cb440a5982"
+     },
+     {
+      "quant": "Q6_K",
+      "file": "gemma-3-12b-it-Q6_K.gguf",
+      "bytes": 9660811616,
+      "sha256": "5a99903816f50b6b7d63fe96e1ed51d6e03c795051e99146719f3e066a863069"
+     },
+     {
+      "quant": "Q5_K_M",
+      "file": "gemma-3-12b-it-Q5_K_M.gguf",
+      "bytes": 8445036896,
+      "sha256": "ea6d227c4983534b4661a0ada08328c21afa07c1e3c316fb55c172776cc808b3"
+     },
+     {
+      "quant": "Q4_K_M",
+      "file": "gemma-3-12b-it-Q4_K_M.gguf",
+      "bytes": 7300778336,
+      "sha256": "15b8fd9d8672cd4240c178c217ca781409291f34e353d2e913b29c7602ceb3ff"
+     },
+     {
+      "quant": "Q3_K_M",
+      "file": "gemma-3-12b-it-Q3_K_M.gguf",
+      "bytes": 6008818016,
+      "sha256": "d8ab409bfc66b1d48ed7d651cc1a8c56fcc9b347d03aa0ee833f5654b576a885"
+     }
+    ]
+   },
+   "source": {
+    "repo": "unsloth/gemma-3-12b-it",
+    "bytes": 24374793024
+   }
+  },
+  {
+   "id": "qwen3-14b",
+   "name": "Qwen3 14B",
+   "publisher": "Qwen",
+   "licence": "apache-2.0",
+   "toolCalling": true,
+   "contextMax": 40960,
+   "architecture": {
+    "layers": 40,
+    "kvHeads": 8,
+    "headDim": 128
+   },
+   "gguf": {
+    "repo": "Qwen/Qwen3-14B-GGUF",
+    "files": [
+     {
+      "quant": "Q8_0",
+      "file": "Qwen3-14B-Q8_0.gguf",
+      "bytes": 15698533728,
+      "sha256": "a0dfe649137410b7d82f06a209240508e218f32f5b6fd81b69d6932160cfcd9d"
+     },
+     {
+      "quant": "Q6_K",
+      "file": "Qwen3-14B-Q6_K.gguf",
+      "bytes": 12121937248,
+      "sha256": "ec1f1d1421d7636a23e17645cac6fda39ee4b5f1f11e42eb09238089705ef699"
+     },
+     {
+      "quant": "Q5_K_M",
+      "file": "Qwen3-14B-Q5_K_M.gguf",
+      "bytes": 10514569568,
+      "sha256": "e7c9aba1129ca2936be9eca01419d9f86af40e08caa01230d5574b34d08e3e31"
+     },
+     {
+      "quant": "Q4_K_M",
+      "file": "Qwen3-14B-Q4_K_M.gguf",
+      "bytes": 9001752960,
+      "sha256": "500a8806e85ee9c83f3ae08420295592451379b4f8cf2d0f41c15dffeb6b81f0"
+     }
+    ]
+   },
+   "source": {
+    "repo": "Qwen/Qwen3-14B",
+    "bytes": 29536665640
+   },
+   "mlx": [
+    {
+     "bits": 8,
+     "repo": "mlx-community/Qwen3-14B-8bit",
+     "bytes": 15691839954
+    },
+    {
+     "bits": 6,
+     "repo": "mlx-community/Qwen3-14B-6bit",
+     "bytes": 11999868948
+    },
+    {
+     "bits": 4,
+     "repo": "mlx-community/Qwen3-14B-4bit",
+     "bytes": 8307898514
+    }
+   ]
+  },
+  {
+   "id": "gpt-oss-20b",
+   "name": "gpt-oss 20B",
+   "publisher": "OpenAI",
+   "licence": "apache-2.0",
+   "toolCalling": true,
+   "contextMax": 131072,
+   "architecture": {
+    "layers": 24,
+    "kvHeads": 8,
+    "headDim": 64
+   },
+   "gguf": {
+    "repo": "ggml-org/gpt-oss-20b-GGUF",
+    "files": [
+     {
+      "quant": "MXFP4",
+      "file": "gpt-oss-20b-MXFP4.gguf",
+      "bytes": 12109566624,
+      "sha256": "27cd6c432c7672cb812a92f611cf3ba7bbc35928262bb1e1253ff4ee6ae35901"
+     }
+    ]
+   }
+  },
+  {
+   "id": "mistral-small-3.2-24b",
+   "name": "Mistral Small 3.2 24B",
+   "publisher": "Mistral",
+   "licence": "apache-2.0",
+   "toolCalling": true,
+   "contextMax": 131072,
+   "architecture": {
+    "layers": 40,
+    "kvHeads": 8,
+    "headDim": 128
+   },
+   "gguf": {
+    "repo": "unsloth/Mistral-Small-3.2-24B-Instruct-2506-GGUF",
+    "files": [
+     {
+      "quant": "Q8_0",
+      "file": "Mistral-Small-3.2-24B-Instruct-2506-Q8_0.gguf",
+      "bytes": 25054793248,
+      "sha256": "b2a40e5ef4eab8837d0462c303e8147ec754e2963e41916b551107d2b0ca6527"
+     },
+     {
+      "quant": "Q6_K",
+      "file": "Mistral-Small-3.2-24B-Instruct-2506-Q6_K.gguf",
+      "bytes": 19345952288,
+      "sha256": "e92f341791f7da41021d9ae7fac00a1c02aa007a09cb2ecabea748f73a206217"
+     },
+     {
+      "quant": "Q5_K_M",
+      "file": "Mistral-Small-3.2-24B-Instruct-2506-Q5_K_M.gguf",
+      "bytes": 16763997728,
+      "sha256": "423446013d1d9a63eb09d84f9d4fe0a1a81b57b6530260afd07a070b4e74845a"
+     },
+     {
+      "quant": "Q4_K_M",
+      "file": "Mistral-Small-3.2-24B-Instruct-2506-Q4_K_M.gguf",
+      "bytes": 14333922848,
+      "sha256": "a3cc56310807ed0d145eaf9f018ccda9ae7ad8edb41ec870aa2454b0d4700b3c"
+     },
+     {
+      "quant": "Q3_K_M",
+      "file": "Mistral-Small-3.2-24B-Instruct-2506-Q3_K_M.gguf",
+      "bytes": 11474095648,
+      "sha256": "830d8937494e80e64b0ab03ed69a7f29b80dbe5c4d0656517be6620f231a3fdd"
+     }
+    ]
+   }
+  },
+  {
+   "id": "qwen3-30b-a3b-2507",
+   "name": "Qwen3 30B A3B Instruct",
+   "publisher": "Qwen",
+   "licence": "apache-2.0",
+   "toolCalling": true,
+   "contextMax": 131072,
+   "architecture": {
+    "layers": 48,
+    "kvHeads": 4,
+    "headDim": 128
+   },
+   "gguf": {
+    "repo": "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF",
+    "files": [
+     {
+      "quant": "Q8_0",
+      "file": "Qwen3-30B-A3B-Instruct-2507-Q8_0.gguf",
+      "bytes": 32483932576,
+      "sha256": "47514861adaa7ae7f32818fe54595c7cbed2753417ba78df53054fcf7b9dcd88"
+     },
+     {
+      "quant": "Q6_K",
+      "file": "Qwen3-30B-A3B-Instruct-2507-Q6_K.gguf",
+      "bytes": 25092532640,
+      "sha256": "b1a3ed3bc584d58d25253c408cbbf894f974dffa2df74e016469289e686ef701"
+     },
+     {
+      "quant": "Q5_K_M",
+      "file": "Qwen3-30B-A3B-Instruct-2507-Q5_K_M.gguf",
+      "bytes": 21725581728,
+      "sha256": "74cf6e525344a184e59f8dbd1d18e59587f1a03eaff66f6b1fbd0ee3a53a3d68"
+     },
+     {
+      "quant": "Q4_K_M",
+      "file": "Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf",
+      "bytes": 18556686752,
+      "sha256": "6c997b8af17debdfb01d890214400ccbab00db6acc0ba8da5de1cc906c4774d0"
+     },
+     {
+      "quant": "Q3_K_M",
+      "file": "Qwen3-30B-A3B-Instruct-2507-Q3_K_M.gguf",
+      "bytes": 14711847328,
+      "sha256": "e145c9d2f5d11c9583eb099aa75100b7ab943e77d5240c9a2cd936f81c89ef43"
+     }
+    ]
+   },
+   "source": {
+    "repo": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+    "bytes": 61066575656
+   },
+   "mlx": [
+    {
+     "bits": 8,
+     "repo": "mlx-community/Qwen3-30B-A3B-Instruct-2507-8bit",
+     "bytes": 32440736503
+    },
+    {
+     "bits": 6,
+     "repo": "mlx-community/Qwen3-30B-A3B-Instruct-2507-6bit",
+     "bytes": 24807758602
+    },
+    {
+     "bits": 4,
+     "repo": "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit",
+     "bytes": 17181071994
+    }
+   ]
+  },
+  {
+   "id": "qwen3-32b",
+   "name": "Qwen3 32B",
+   "publisher": "Qwen",
+   "licence": "apache-2.0",
+   "toolCalling": true,
+   "contextMax": 40960,
+   "architecture": {
+    "layers": 64,
+    "kvHeads": 8,
+    "headDim": 128
+   },
+   "gguf": {
+    "repo": "Qwen/Qwen3-32B-GGUF",
+    "files": [
+     {
+      "quant": "Q8_0",
+      "file": "Qwen3-32B-Q8_0.gguf",
+      "bytes": 34817718912,
+      "sha256": "2c50eb8aad05047dbf24fa014eb621adf552e14176cabe0c5db4ef38c91e2169"
+     },
+     {
+      "quant": "Q6_K",
+      "file": "Qwen3-32B-Q6_K.gguf",
+      "bytes": 26883306112,
+      "sha256": "c4c7c3cb6da260df1fe1d3cfd090a32dc7cc348f1278158be18e301f390d6f6e"
+     },
+     {
+      "quant": "Q5_K_M",
+      "file": "Qwen3-32B-Q5_K_M.gguf",
+      "bytes": 23214831232,
+      "sha256": "82ec20068a0cc9388ffc93eb968015b0941931d0ff65a216baba5b4824d2a966"
+     },
+     {
+      "quant": "Q4_K_M",
+      "file": "Qwen3-32B-Q4_K_M.gguf",
+      "bytes": 19762149024,
+      "sha256": "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689"
+     }
+    ]
+   },
+   "source": {
+    "repo": "Qwen/Qwen3-32B",
+    "bytes": 65524328560
+   },
+   "mlx": [
+    {
+     "bits": 8,
+     "repo": "mlx-community/Qwen3-32B-8bit",
+     "bytes": 34810574466
+    },
+    {
+     "bits": 6,
+     "repo": "mlx-community/Qwen3-32B-6bit",
+     "bytes": 26620212610
+    },
+    {
+     "bits": 4,
+     "repo": "mlx-community/Qwen3-32B-4bit",
+     "bytes": 18429850874
+    }
+   ]
+  }
+ ]
+}
