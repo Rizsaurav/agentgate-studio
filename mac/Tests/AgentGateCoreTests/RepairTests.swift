@@ -216,3 +216,47 @@ private actor Asked {
     #expect(rig.audit.entries().filter { $0.outcome == .done }.count == RepairRunner.maxOperations)
   }
 }
+
+@Suite(.serialized) struct OpenRouterAssistantTests {
+  private let report = FailureReport(
+    step: "Download", failureClass: .network, message: "x", logTail: "", hardware: "Apple M5", triedAlready: [])
+
+  @Test func requestsPinTheCheapModelAndCarryOnlyTheReport() throws {
+    let body = try OpenRouterAssistant.requestBody(report, removable: ["old"])
+    let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+    #expect(json["model"] as? String == "deepseek/deepseek-v4.1-flash")
+    #expect(json["max_tokens"] as? Int == 400)
+    let text = String(decoding: body, as: UTF8.self)
+    #expect(!text.contains("Bearer"))
+  }
+
+  @Test func theReplyIsReturnedAndStillValidatedByTheCaller() async throws {
+    let content = #"{"explanation":"The network dropped.","operations":[{"op":"retryDownload"}]}"#
+    let envelope = try JSONSerialization.data(withJSONObject: ["choices": [["message": ["content": content]]]])
+    let server = try TestHTTPServer(body: envelope, servedPath: "/v1/chat/completions")
+    defer { server.stop() }
+    let assistant = OpenRouterAssistant(baseURL: server.url("/v1"), apiKey: { "test-key" })
+    let reply = try await assistant.propose(for: report, removable: [])
+    #expect(try RepairProposal.parse(reply, removable: []).operations == [.retryDownload])
+  }
+
+  @Test func missingKeyAndServerErrorsAreReported() async throws {
+    let none = OpenRouterAssistant(apiKey: { nil })
+    await #expect(throws: OpenRouterAssistant.Failure.noKey) { try await none.propose(for: report, removable: []) }
+    let server = try TestHTTPServer(body: Data(), fault: .answer(status: 401), servedPath: "/v1/chat/completions")
+    defer { server.stop() }
+    let rejected = OpenRouterAssistant(baseURL: server.url("/v1"), apiKey: { "bad" })
+    await #expect(throws: OpenRouterAssistant.Failure.http(401)) { try await rejected.propose(for: report, removable: []) }
+  }
+
+  @Test func keychainRoundTripsAndDeletes() throws {
+    let box = Keychain(service: "AGENTGATE Studio tests", account: UUID().uuidString)
+    defer { try? box.delete() }
+    #expect(try box.read() == nil)
+    try box.save("secret-1")
+    try box.save("secret-2")
+    #expect(try box.read() == "secret-2")
+    try box.delete()
+    #expect(try box.read() == nil)
+  }
+}

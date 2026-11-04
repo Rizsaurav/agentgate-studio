@@ -40,6 +40,11 @@ final class AppModel {
   /// A repair waiting for the user's yes or no.
   private(set) var pendingRepair: (operation: RepairOperation, report: FailureReport)?
   private var repairAnswer: CheckedContinuation<Bool, Never>?
+  /// Whether the repair agent (OpenRouter) is connected. The key itself never leaves the Keychain.
+  private(set) var agentOn = OpenRouterAssistant.isConnected
+  var setupSkipped = UserDefaults.standard.bool(forKey: "setupSkipped") {
+    didSet { UserDefaults.standard.set(setupSkipped, forKey: "setupSkipped") }
+  }
   var errorMessage: String?
   private(set) var workspace = WorkspaceStore.Snapshot()
   private(set) var thinking = false
@@ -131,7 +136,9 @@ final class AppModel {
           runtime = try await pipeline.load(done, update: report)
           active = done
         } else {
-          let runner = RepairRunner { operation, failure in await self.askToRepair(operation, failure) }
+          let runner = RepairRunner(assistant: agentOn ? OpenRouterAssistant() : nil) { operation, failure in
+            await self.askToRepair(operation, failure)
+          }
           let (done, runtime) = try await runner.install(model, update: report)
           self.runtime = runtime
           installed = try store.list()
@@ -154,6 +161,29 @@ final class AppModel {
     }
     installTask = task
     return task
+  }
+
+  /// Saves the key in the Keychain. Returns false (with a message) if it could not be saved.
+  func connectAgent(key: String) -> Bool {
+    let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return false }
+    do {
+      try OpenRouterAssistant.keychain.save(trimmed)
+      agentOn = true
+      return true
+    } catch {
+      errorMessage = String(describing: error)
+      return false
+    }
+  }
+
+  func disconnectAgent() {
+    do {
+      try OpenRouterAssistant.keychain.delete()
+      agentOn = false
+    } catch {
+      errorMessage = String(describing: error)
+    }
   }
 
   func cancelInstall() {

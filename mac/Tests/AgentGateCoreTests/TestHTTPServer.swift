@@ -22,6 +22,8 @@ final class TestHTTPServer: @unchecked Sendable {
   }
 
   let body: Data
+  /// The only path answered; anything else gets 404.
+  let servedPath: String
   private let listener: NWListener
   private let queue = DispatchQueue(label: "test-http")
   private let lock = NSLock()
@@ -32,8 +34,9 @@ final class TestHTTPServer: @unchecked Sendable {
   private var held: [NWConnection] = []
   var port: UInt16 { listener.port?.rawValue ?? 0 }
 
-  init(body: Data, cutAfter: Int? = nil, fault: Fault? = nil) throws {
+  init(body: Data, cutAfter: Int? = nil, fault: Fault? = nil, servedPath: String = "/model.gguf") throws {
     self.body = body
+    self.servedPath = servedPath
     self.fault = fault ?? cutAfter.map { .cutFirst(after: $0) } ?? .none
     let params = NWParameters.tcp
     params.requiredLocalEndpoint = NWEndpoint.hostPort(host: "127.0.0.1", port: .any)
@@ -58,7 +61,7 @@ final class TestHTTPServer: @unchecked Sendable {
       let request = String(decoding: data ?? Data(), as: UTF8.self)
       let path = request.split(separator: " ").dropFirst().first.map(String.init) ?? "/"
       lock.withLock { requestCount += 1 }
-      guard path == "/model.gguf" else {
+      guard path == servedPath else {
         send(connection, head: "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n", body: Data())
         return
       }

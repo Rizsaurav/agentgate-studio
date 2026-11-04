@@ -22,66 +22,73 @@ struct PageScroll<Content: View>: View {
 struct WorkspacePage: View {
   @Environment(AppModel.self) private var app
   @State private var name = ""
+  @FocusState private var nameFocused: Bool
 
   var body: some View {
     PageScroll {
-      VStack(alignment: .leading, spacing: 36) {
-        PageHeading(
-          eyebrow: "Your local workspace", title: "A place for your next idea.",
-          detail: "Continue a conversation, bring your context, and put your models to work.")
-        HStack(alignment: .top, spacing: 40) {
-          VStack(alignment: .leading, spacing: 14) {
-            HStack {
-              Text("Projects").font(.system(size: 16, weight: .semibold))
-              Spacer()
-              Text("\(app.projects.count) saved locally").font(.system(size: 12)).foregroundStyle(Theme.muted)
-            }
-            if app.projects.isEmpty {
-              Card {
-                VStack(spacing: 10) {
-                  IconTile(symbol: "house")
-                  Text("Start with a project").font(.system(size: 15, weight: .semibold))
-                  Text("A persistent home for conversations, models, and shared context.")
-                    .font(.system(size: 13)).foregroundStyle(Theme.muted)
-                }
-                .frame(maxWidth: .infinity).padding(.vertical, 30)
-              }
-            }
-            ForEach(app.projects) { project in
-              ProjectListRow(project: project, sessions: app.sessions(in: project.id).count) {
-                app.route = .project(project.id)
-              }
-            }
-          }
-          Card(padding: 26) {
-            VStack(alignment: .leading, spacing: 16) {
-              Text("Make room for something new").font(.system(size: 11)).foregroundStyle(Theme.muted)
-              Text("New project").font(.system(size: 19, weight: .semibold))
-              VStack(alignment: .leading, spacing: 10) {
-                Text("Project name").font(.system(size: 14, weight: .medium))
-                TextField("e.g. Reference RAG", text: $name).field().onSubmit(create)
-                  .accessibilityLabel("Project name")
-              }
-              Text("A local workspace for your project. You can reopen it later.")
-                .font(.system(size: 13)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
-              Button(action: create) { Label("Create project", systemImage: "arrow.up.right").labelStyle(TrailingIcon()) }
-                .buttonStyle(PrimaryButtonStyle())
-                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
-          }
-          .frame(width: 320)
-        }
+      VStack(alignment: .leading, spacing: 28) {
+        Text("Projects").font(.system(size: 30, weight: .bold)).tracking(-0.6)
+        if !setupDone { SetupCard() }
         HStack(spacing: 10) {
-          Image(systemName: "key").foregroundStyle(Theme.muted)
-          Text("Saved locally. Models run on this Mac in the engine built into the app.")
-            .font(.system(size: 12)).foregroundStyle(Theme.muted)
+          TextField(app.projects.isEmpty ? "Name your first project" : "New project", text: $name)
+            .field().onSubmit(create).accessibilityLabel("Project name").focused($nameFocused)
+          Button(action: create) { Label("Create project", systemImage: "plus").labelStyle(.iconOnly) }
+            .buttonStyle(PrimaryButtonStyle())
+            .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+            .help("Create project")
+        }
+        VStack(spacing: 2) {
+          ForEach(app.projects) { project in
+            ProjectListRow(project: project, sessions: app.sessions(in: project.id).count) {
+              app.route = .project(project.id)
+            }
+          }
+        }
+      }
+      .frame(maxWidth: 640, alignment: .leading)
+    }
+    .onAppear { nameFocused = true }
+  }
+
+  private var setupDone: Bool { !app.installed.isEmpty && (app.agentOn || app.setupSkipped) }
+
+  private func create() {
+    if app.createProject(named: name) { name = "" }
+  }
+}
+
+/// First-run checklist: a model, then the optional repair agent. Disappears once both are settled.
+private struct SetupCard: View {
+  @Environment(AppModel.self) private var app
+  @State private var key = ""
+
+  var body: some View {
+    Card(padding: 8) {
+      VStack(spacing: 0) {
+        row(done: !app.installed.isEmpty, title: app.active?.name ?? app.installed.first?.name ?? "Model") {
+          Button("Choose a model") { app.route = .models }.buttonStyle(PrimaryButtonStyle())
+        }
+        Divider().overlay(Theme.line)
+        row(done: app.agentOn, title: "Repair agent") {
+          HStack(spacing: 8) {
+            SecureField("OpenRouter key", text: $key).field().frame(width: 190).accessibilityLabel("OpenRouter key")
+            Button("Connect") { if app.connectAgent(key: key) { key = "" } }
+              .buttonStyle(PrimaryButtonStyle()).disabled(key.isEmpty)
+            Button("Not now") { app.setupSkipped = true }.buttonStyle(.plain).foregroundStyle(Theme.muted)
+          }
         }
       }
     }
   }
 
-  private func create() {
-    if app.createProject(named: name) { name = "" }
+  private func row<Trailing: View>(done: Bool, title: String, @ViewBuilder trailing: () -> Trailing) -> some View {
+    HStack(spacing: 12) {
+      Image(systemName: done ? "checkmark.circle.fill" : "circle").foregroundStyle(done ? Theme.accent : Theme.muted)
+      Text(title).font(.system(size: 14, weight: .medium))
+      Spacer()
+      if !done { trailing() }
+    }
+    .padding(12)
   }
 }
 
@@ -134,41 +141,19 @@ struct ProjectPage: View {
         VStack(alignment: .leading, spacing: 30) {
           Button { app.route = .workspace } label: { Text("← All projects").font(.system(size: 13)) }
             .buttonStyle(.plain).foregroundStyle(Theme.muted)
-          PageHeading(
-            eyebrow: "Project workspace", title: project.name,
-            detail: "\(plural(app.sessions(in: projectId).count, "session")) · Models run on this Mac")
+          Text(project.name).font(.system(size: 30, weight: .bold)).tracking(-0.6)
           HStack(alignment: .top, spacing: 36) {
             VStack(alignment: .leading, spacing: 14) {
-              HStack {
-                Text("Agent sessions").font(.system(size: 16, weight: .semibold))
-                Spacer()
-                Text("Persisted on this computer").font(.system(size: 12)).foregroundStyle(Theme.muted)
-              }
               let sessions = app.sessions(in: projectId)
-              if sessions.isEmpty {
-                Card {
-                  VStack(spacing: 12) {
-                    IconTile(symbol: "bubble.left", size: 58)
-                    Text("Your next conversation starts here.").font(.system(size: 15, weight: .semibold))
-                    Text("Choose an installed model to start. Install one from Models if the list is empty.")
-                      .font(.system(size: 13)).foregroundStyle(Theme.muted).multilineTextAlignment(.center)
-                      .frame(maxWidth: 340)
-                  }
-                  .frame(maxWidth: .infinity).padding(.vertical, 26)
-                }
-              }
               ForEach(sessions) { session in
                 SessionListRow(session: session) { app.route = .session(session.id) }
               }
             }
             Card(padding: 24) {
               VStack(alignment: .leading, spacing: 14) {
-                Text("New conversation").font(.system(size: 16, weight: .semibold))
                 if app.installed.isEmpty {
-                  Text("No model is installed yet.").font(.system(size: 13)).foregroundStyle(Theme.muted)
-                  Button("Install a model") { app.route = .models }.buttonStyle(PrimaryButtonStyle())
+                  Button("Choose a model") { app.route = .models }.buttonStyle(PrimaryButtonStyle())
                 } else {
-                  Text("Model").font(.system(size: 14, weight: .medium))
                   Menu {
                     ForEach(app.installed) { model in
                       Button("\(model.name) · \(model.quant.rawValue)") { modelId = model.id }
@@ -187,7 +172,7 @@ struct ProjectPage: View {
                   .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
                   .accessibilityLabel("Model")
                   .onAppear { if modelId.isEmpty { modelId = app.active?.id ?? app.installed.first?.id ?? "" } }
-                  Button("Start session") {
+                  Button("New chat") {
                     if let model = app.installed.first(where: { $0.id == modelId }) {
                       app.startSession(in: projectId, with: model)
                     }
