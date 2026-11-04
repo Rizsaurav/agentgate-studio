@@ -9,9 +9,9 @@ struct AgentGateStudioApp: App {
 
   var body: some Scene {
     WindowGroup("AGENTGATE Studio") {
-      ContentView()
+      Shell()
         .environment(app)
-        .frame(minWidth: 820, minHeight: 560)
+        .frame(minWidth: 1080, minHeight: 680)
         .task {
           // Engines left running by a crash or a forced quit are stopped before anything loads.
           EngineRegistry().reapOrphans()
@@ -21,7 +21,17 @@ struct AgentGateStudioApp: App {
           app.stopRuntime()
         }
     }
-    .windowToolbarStyle(.unified)
+    .windowStyle(.hiddenTitleBar)
+    .commands {
+      // The web app's shortcuts, as menu commands so they work from anywhere in the window.
+      CommandMenu("Go") {
+        Button("Find a Project or View…") { app.paletteOpen = true }.keyboardShortcut("k")
+        Divider()
+        Button("Workspace") { app.route = .workspace }.keyboardShortcut("1")
+        Button("Security & Verification") { app.route = .security }.keyboardShortcut("2")
+        Button("Models & Providers") { app.route = .models }.keyboardShortcut("3")
+      }
+    }
   }
 }
 
@@ -32,38 +42,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.regular)
     NSApp.activate(ignoringOtherApps: true)
-    // A kill or Ctrl-C ends the app through the normal quit path, which stops the engine.
+    // A kill or Ctrl-C stops this app's engines and exits. It does not go through
+    // NSApp.terminate, which a sheet or dialog can refuse, leaving the engine running.
     for sig in [SIGTERM, SIGINT] {
       signal(sig, SIG_IGN)
       let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
-      source.setEventHandler { NSApp.terminate(nil) }
+      source.setEventHandler {
+        EngineRegistry().reapOrphans()
+        exit(0)
+      }
       source.resume()
       signalSources.append(source)
     }
   }
 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
-}
-
-struct ContentView: View {
-  @Environment(AppModel.self) private var app
-
-  var body: some View {
-    VStack(spacing: 0) {
-      if let error = app.loadError {
-        Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red).padding()
-      }
-      ChatView()
-      InstallStrip()
-    }
-    .toolbar {
-      ToolbarItem(placement: .navigation) { ModelPicker() }
-      ToolbarItem(placement: .status) {
-        if let profile = app.profile {
-          Label(profile.summary, systemImage: "cpu").labelStyle(.titleAndIcon).foregroundStyle(.secondary)
-            .font(.callout)
-        }
-      }
-    }
-  }
 }

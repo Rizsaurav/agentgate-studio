@@ -2,7 +2,7 @@ import AgentGateCore
 import Foundation
 import Observation
 
-/// One row in the model selector.
+/// One row in the model lists.
 struct ModelOption: Identifiable, Equatable {
   enum State: Equatable {
     case ready
@@ -17,8 +17,18 @@ struct ModelOption: Identifiable, Equatable {
   var id: String { model.id }
 }
 
+enum Route: Hashable {
+  case workspace
+  case project(UUID)
+  case session(UUID)
+  case security
+  case models
+}
+
 @MainActor @Observable
 final class AppModel {
+  var route: Route = .workspace
+  var paletteOpen = false
   private(set) var profile: HardwareProfile?
   private(set) var catalog: Catalog?
   private(set) var tiers: [Tier: ModelPlan] = [:]
@@ -27,27 +37,68 @@ final class AppModel {
   private(set) var update: InstallUpdate?
   private(set) var failure: InstallFailure?
   private(set) var installing: CatalogModel?
-  private(set) var loadError: String?
-  var messages: [ChatMessage] = []
+  var errorMessage: String?
+  private(set) var workspace = WorkspaceStore.Snapshot()
   private(set) var thinking = false
   private(set) var generating = false
 
   private let pipeline = InstallPipeline()
   private let store = ModelStore()
+  private let workspaceStore = WorkspaceStore()
   private var runtime: LlamaRuntime?
-  private var installTask: Task<Void, Never>?
+  private var installTask: Task<Bool, Never>?
 
   func start() {
     do {
-      catalog = try Catalog.bundled()
+      let catalog = try Catalog.bundled()
+      self.catalog = catalog
       let profile = try HardwareProbe.current(modelsDirectory: store.root)
       self.profile = profile
-      tiers = ModelPlanner.tiers(catalog!, for: profile)
+      tiers = ModelPlanner.tiers(catalog, for: profile)
       installed = try store.list()
+      workspace = try workspaceStore.load()
     } catch {
-      loadError = String(describing: error)
+      errorMessage = String(describing: error)
     }
   }
+
+  // MARK: Workspace
+
+  var projects: [Project] { workspace.projects.sorted { $0.createdAt > $1.createdAt } }
+
+  func project(_ id: UUID) -> Project? { workspace.projects.first { $0.id == id } }
+
+  func session(_ id: UUID) -> Session? { workspace.sessions.first { $0.id == id } }
+
+  func sessions(in project: UUID) -> [Session] {
+    workspace.sessions.filter { $0.projectId == project }.sorted { $0.createdAt > $1.createdAt }
+  }
+
+  func createProject(named name: String) -> Bool {
+    do {
+      let project = Project(id: UUID(), name: try WorkspaceStore.validName(name), createdAt: Date())
+      workspace.projects.append(project)
+      try persist()
+      route = .project(project.id)
+      return true
+    } catch {
+      errorMessage = String(describing: error)
+      return false
+    }
+  }
+
+  func startSession(in project: UUID, with model: InstalledModel) {
+    let session = Session(
+      id: UUID(), projectId: project, modelId: model.id, modelName: model.name, createdAt: Date(), messages: [])
+    workspace.sessions.append(session)
+    do { try persist() } catch { errorMessage = String(describing: error) }
+    route = .session(session.id)
+    if active?.id != model.id, let entry = catalog?.model(model.id) { select(entry) }
+  }
+
+  private func persist() throws { try workspaceStore.save(workspace) }
+
+  // MARK: Models
 
   func option(_ model: CatalogModel) -> ModelOption {
     if let done = installed.first(where: { $0.id == model.id }) {
@@ -62,47 +113,45 @@ final class AppModel {
 
   var allOptions: [ModelOption] { catalog?.models.map(option) ?? [] }
 
-  /// Selecting installs if needed, then loads the model for chat.
-  func select(_ model: CatalogModel) {
-    guard installing == nil else { return }
+  /// Installs the model if needed, then loads it. One install or load at a time.
+  @discardableResult
+  func select(_ model: CatalogModel) -> Task<Bool, Never>? {
+    if let installTask, installing != nil { return installTask }
     failure = nil
     installing = model
     stopRuntime()
-    installTask = Task {
+    let task = Task { () -> Bool in
       defer { installing = nil }
       do {
         let report: @Sendable (InstallUpdate) -> Void = { update in Task { @MainActor in self.update = update } }
         if let done = installed.first(where: { $0.id == model.id }) {
           runtime = try await pipeline.load(done, update: report)
-          activate(done)
+          active = done
         } else {
           let (done, runtime) = try await pipeline.install(model, update: report)
           self.runtime = runtime
           installed = try store.list()
-          activate(done)
+          active = done
         }
+        return true
       } catch let failure as InstallFailure {
         self.failure = failure
         update = nil
       } catch {
-        self.failure = InstallFailure(step: update?.step ?? .load, message: String(describing: error), cause: error, logTail: nil)
+        failure = InstallFailure(step: update?.step ?? .load, message: String(describing: error), cause: error, logTail: nil)
         update = nil
       }
+      return false
     }
+    installTask = task
+    return task
   }
 
-  func cancelInstall() {
-    installTask?.cancel()
-  }
+  func cancelInstall() { installTask?.cancel() }
 
   func dismissFailure() { failure = nil }
 
   func dismissUpdate() { update = nil }
-
-  private func activate(_ model: InstalledModel) {
-    active = model
-    messages = []
-  }
 
   func remove(_ model: InstalledModel) {
     if active?.id == model.id {
@@ -113,38 +162,57 @@ final class AppModel {
       try store.remove(model.id)
       installed = try store.list()
     } catch {
-      loadError = String(describing: error)
-    }
-  }
-
-  func send(_ text: String) {
-    guard let runtime, let active, !generating else { return }
-    messages.append(ChatMessage(role: .user, content: text))
-    messages.append(ChatMessage(role: .assistant, content: ""))
-    let index = messages.count - 1
-    let history = Array(messages.dropLast())
-    generating = true
-    Task {
-      defer { generating = false; thinking = false }
-      do {
-        let client = ChatClient(baseURL: runtime.baseURL, apiKey: runtime.apiKey, model: active.id)
-        for try await chunk in client.stream(history) {
-          switch chunk {
-          case .thinking: thinking = true
-          case .text(let text):
-            thinking = false
-            messages[index].content += text
-          }
-        }
-      } catch {
-        messages[index].content += messages[index].content.isEmpty ? "" : "\n\n"
-        messages[index].content += "Error: \(error)"
-      }
+      errorMessage = String(describing: error)
     }
   }
 
   func stopRuntime() {
     runtime?.stop()
     runtime = nil
+  }
+
+  // MARK: Chat
+
+  /// Sends a task in a session, loading the session's model first when another one is loaded.
+  func send(_ text: String, in sessionId: UUID) {
+    guard !generating, let index = workspace.sessions.firstIndex(where: { $0.id == sessionId }) else { return }
+    let session = workspace.sessions[index]
+    workspace.sessions[index].messages.append(ChatMessage(role: .user, content: text))
+    workspace.sessions[index].messages.append(ChatMessage(role: .assistant, content: ""))
+    let history = Array(workspace.sessions[index].messages.dropLast())
+    generating = true
+    Task {
+      defer {
+        generating = false
+        thinking = false
+        try? persist()
+      }
+      if active?.id != session.modelId {
+        guard let entry = catalog?.model(session.modelId), let task = select(entry), await task.value else {
+          append("The model for this session could not be loaded.", to: sessionId)
+          return
+        }
+      }
+      guard let runtime else { return }
+      do {
+        let client = ChatClient(baseURL: runtime.baseURL, apiKey: runtime.apiKey, model: session.modelId)
+        for try await chunk in client.stream(history) {
+          switch chunk {
+          case .thinking: thinking = true
+          case .text(let text):
+            thinking = false
+            append(text, to: sessionId)
+          }
+        }
+      } catch {
+        append("\n\nError: \(error)", to: sessionId)
+      }
+    }
+  }
+
+  private func append(_ text: String, to sessionId: UUID) {
+    guard let index = workspace.sessions.firstIndex(where: { $0.id == sessionId }),
+          let last = workspace.sessions[index].messages.indices.last else { return }
+    workspace.sessions[index].messages[last].content += text
   }
 }

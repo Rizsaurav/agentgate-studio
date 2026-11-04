@@ -32,7 +32,7 @@ struct LiveInstallTests {
     // The chat path the app uses streams a real answer.
     var answer = ""
     let client = ChatClient(baseURL: runtime.baseURL, apiKey: runtime.apiKey, model: model.id)
-    for try await chunk in client.stream([ChatMessage(role: .user, content: "Name one planet. One word.")], maxTokens: 256) {
+    for try await chunk in client.stream([ChatMessage(role: .user, content: "Name one planet. One word.")], maxTokens: 1024) {
       if case .text(let text) = chunk { answer += text }
     }
     #expect(!answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
