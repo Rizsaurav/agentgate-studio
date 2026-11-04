@@ -187,7 +187,8 @@ final class AppModel {
         thinking = false
         try? persist()
       }
-      if active?.id != session.modelId {
+      // Load the session's model, or reload it if its engine has died since the last message.
+      if active?.id != session.modelId || runtime?.isRunning != true {
         guard let entry = catalog?.model(session.modelId), let task = select(entry), await task.value else {
           append("The model for this session could not be loaded.", to: sessionId)
           return

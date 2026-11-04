@@ -44,6 +44,7 @@ public final class LlamaRuntime: @unchecked Sendable {
   public let alias: String
   private let process: Process
   private let log: LogTail
+  private let output: FileHandle?
 
   /// Where the bundled engine lives: the app's Resources, or `AGENTGATE_LLAMA_DIR` when run from source.
   public static func binaryDirectory() -> URL? {
@@ -51,7 +52,8 @@ public final class LlamaRuntime: @unchecked Sendable {
     return Bundle.main.resourceURL?.appendingPathComponent("runtime/llama")
   }
 
-  private init(baseURL: URL, apiKey: String, alias: String, process: Process, log: LogTail) {
+  private init(baseURL: URL, apiKey: String, alias: String, process: Process, log: LogTail, output: FileHandle?) {
+    self.output = output
     self.baseURL = baseURL
     self.apiKey = apiKey
     self.alias = alias
@@ -60,9 +62,26 @@ public final class LlamaRuntime: @unchecked Sendable {
   }
 
   /// Starts the engine and waits until the model is loaded and answering health checks.
+  ///
+  /// The port is chosen just before the engine binds it, so another process can take it in between.
+  /// When the engine reports that, it is started again on a new port, at most three times in all.
   public static func start(
     model: URL, alias: String, config: RuntimeConfig, binaries: URL? = binaryDirectory(),
     loadTimeout: TimeInterval = 300
+  ) async throws -> LlamaRuntime {
+    var attempt = 1
+    while true {
+      do {
+        return try await startOnce(model: model, alias: alias, config: config, binaries: binaries, loadTimeout: loadTimeout)
+      } catch RuntimeError.exited(let code, let tail) where attempt < 3 && tail.contains("couldn't bind") {
+        _ = code
+        attempt += 1
+      }
+    }
+  }
+
+  static func startOnce(
+    model: URL, alias: String, config: RuntimeConfig, binaries: URL?, loadTimeout: TimeInterval
   ) async throws -> LlamaRuntime {
     guard let server = binaries?.appendingPathComponent("llama-server"),
           FileManager.default.isExecutableFile(atPath: server.path) else {
@@ -86,11 +105,17 @@ public final class LlamaRuntime: @unchecked Sendable {
     let pipe = Pipe()
     process.standardOutput = pipe
     process.standardError = pipe
-    pipe.fileHandleForReading.readabilityHandler = { log.append($0.availableData) }
+    pipe.fileHandleForReading.readabilityHandler = { handle in
+      let data = handle.availableData
+      // Empty data means the engine closed its output. The handler is called again at once, forever,
+      // unless it is removed: that spun a CPU core and could stall stop().
+      if data.isEmpty { handle.readabilityHandler = nil } else { log.append(data) }
+    }
     try process.run()
     try? EngineRegistry().record(process.processIdentifier)
     let runtime = LlamaRuntime(
-      baseURL: URL(string: "http://127.0.0.1:\(port)")!, apiKey: key, alias: alias, process: process, log: log)
+      baseURL: URL(string: "http://127.0.0.1:\(port)")!, apiKey: key, alias: alias, process: process, log: log,
+      output: pipe.fileHandleForReading)
     do {
       try await runtime.waitUntilHealthy(timeout: loadTimeout)
     } catch {
@@ -102,17 +127,26 @@ public final class LlamaRuntime: @unchecked Sendable {
 
   public var isRunning: Bool { process.isRunning }
 
+  public var processIdentifier: Int32 { process.processIdentifier }
+
   /// The last lines the engine printed, for the repair assistant.
   public var logTail: String { log.text }
 
   public func stop() {
+    defer {
+      output?.readabilityHandler = nil
+      EngineRegistry().forget(process.processIdentifier)
+    }
     guard process.isRunning else { return }
     process.terminate()
-    let deadline = Date().addingTimeInterval(5)
+    var deadline = Date().addingTimeInterval(5)
     while process.isRunning, Date() < deadline { usleep(50_000) }
-    if process.isRunning { kill(process.processIdentifier, SIGKILL) }
-    process.waitUntilExit()
-    EngineRegistry().forget(process.processIdentifier)
+    if process.isRunning {
+      kill(process.processIdentifier, SIGKILL)
+      // Polled, not waitUntilExit(): that one blocks for as long as the process lingers.
+      deadline = Date().addingTimeInterval(5)
+      while process.isRunning, Date() < deadline { usleep(50_000) }
+    }
   }
 
   deinit { stop() }
@@ -148,7 +182,8 @@ public final class LlamaRuntime: @unchecked Sendable {
   }
 
   func exitError() -> RuntimeError {
-    process.waitUntilExit()
+    // The process has already ended; give its last output a moment to arrive.
+    usleep(100_000)
     return outOfMemory ? .outOfMemory : .exited(code: process.terminationStatus, logTail: log.text)
   }
 

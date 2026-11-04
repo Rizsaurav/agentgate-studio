@@ -151,6 +151,14 @@ public struct InstallPipeline: Sendable {
     _ model: InstalledModel, update: @escaping @Sendable (InstallUpdate) -> Void
   ) async throws -> LlamaRuntime {
     update(InstallUpdate(step: .load, message: "Loading \(model.name) into memory…"))
+    // A cheap check that catches a truncated or replaced file; the full checksum ran at install.
+    let size = (try? FileManager.default.attributesOfItem(atPath: store.fileURL(model).path)[.size] as? UInt64) ?? 0
+    guard size == model.bytes else {
+      throw InstallFailure(
+        step: .load,
+        message: "The model file changed since it was installed (\(size) bytes, expected \(model.bytes)). Remove it and install it again.",
+        cause: DownloadError.sizeMismatch(expected: model.bytes, got: size), logTail: nil)
+    }
     do {
       let runtime = try await LlamaRuntime.start(
         model: store.fileURL(model), alias: model.id, config: model.config, binaries: binaries)
