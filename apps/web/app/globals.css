@@ -979,6 +979,65 @@ select {
     margin-top: 0;
   }
 }
+/* CI/CD strip on the project page: one row per workflow, failures open in place. */
+.ci-section {
+  margin-bottom: 32px;
+}
+.ci-connect {
+  display: grid;
+  gap: 8px;
+  max-width: 640px;
+}
+.ci-connect-row,
+.ci-fix {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.ci-connect-row input,
+.ci-fix select {
+  flex: 1 1 240px;
+  min-width: 0;
+  max-width: 100%;
+}
+.ci-runs {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  /* minmax(0, …) lets a long log line wrap instead of widening the page on a phone. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+.ci-runs > li {
+  min-width: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.ci-run-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+.ci-workflow {
+  overflow-wrap: anywhere;
+}
+.ci-branch {
+  overflow-wrap: anywhere;
+}
+.ci-age {
+  margin-left: auto;
+}
+.ci-failure pre {
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 @media (max-width: 800px) {
   .app-shell {
     grid-template-columns: 1fr;
