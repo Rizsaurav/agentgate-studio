@@ -18,9 +18,15 @@ public enum RepairOperation: Sendable, Equatable, Hashable {
   case setContext(Int)
   /// Plan again with at most this quantization.
   case setQuantization(Quantization)
+  /// Download from this mirror instead. Checksums are still checked against the catalog, so a mirror
+  /// cannot change what is installed. Only mirrors on `mirrors` are accepted.
+  case useMirror(String)
   /// A shell command the assistant wants run to look at something. It is never a repair on its own:
   /// the same rules as the agent's terminal apply, the user approves it, and its output goes back to the assistant.
   case runCommand(String)
+
+  /// The only download mirrors an assistant may choose.
+  public static let mirrors = ["https://hf-mirror.com"]
 
   public var name: String {
     switch self {
@@ -33,13 +39,14 @@ public enum RepairOperation: Sendable, Equatable, Hashable {
     case .setContext: "setContext"
     case .setQuantization: "setQuantization"
     case .runCommand: "runCommand"
+    case .useMirror: "useMirror"
     }
   }
 
   /// A repair that deletes files, changes the model's quality, or downloads over 1 GB is the user's call.
   public func needsApproval(downloadBytes: UInt64) -> Bool {
     switch self {
-    case .freeDisk, .lowerQuantization, .setQuantization, .runCommand: true
+    case .freeDisk, .lowerQuantization, .setQuantization, .runCommand, .useMirror: true
     case .retryDownload: downloadBytes > MemoryBudget.gib
     case .reduceContext, .restartRuntime, .cancelAndCleanUp, .setContext: false
     }
@@ -56,6 +63,7 @@ public enum RepairOperation: Sendable, Equatable, Hashable {
     case .setContext(let size): "Use a \(size / 1024)K context."
     case .setQuantization(let quant): "Use the \(quant.rawValue) version of the model."
     case .runCommand(let command): "Run: \(command)"
+    case .useMirror(let host): "Download from \(host) instead. The file is still checked against its published checksum."
     }
   }
 }
@@ -153,6 +161,8 @@ public enum Redaction {
 public struct RepairProposal: Sendable, Equatable {
   public var explanation: String
   public var operations: [RepairOperation]
+  /// Web pages the assistant relied on (https only, at most 3), shown with the repair.
+  public var references: [String] = []
 
   public enum Invalid: Error, Equatable, CustomStringConvertible {
     case notJSON, unknownOperation(String), tooMany, badModel(String), empty, badValue(String)
@@ -177,6 +187,7 @@ public struct RepairProposal: Sendable, Equatable {
     var explanation: String
     var operations: [Op]?
     var probe: String?
+    var references: [String]?
   }
 
   /// Parses an assistant reply. `removable` is the installed models it may name for `freeDisk`.
@@ -192,6 +203,9 @@ public struct RepairProposal: Sendable, Equatable {
       case "reduceContext": return .reduceContext
       case "restartRuntime": return .restartRuntime
       case "cancelAndCleanUp": return .cancelAndCleanUp
+      case "useMirror":
+        guard let host = entry.to, RepairOperation.mirrors.contains(host) else { throw Invalid.badValue("useMirror") }
+        return .useMirror(host)
       case "setContext":
         guard let text = entry.to, let size = Int(text), ModelPlanner.contexts.contains(size) else {
           throw Invalid.badValue("setContext")
@@ -206,7 +220,9 @@ public struct RepairProposal: Sendable, Equatable {
       default: throw Invalid.unknownOperation(String(entry.op.prefix(40)))
       }
     }
-    return RepairProposal(explanation: String(raw.explanation.prefix(maxExplanation)), operations: operations)
+    let references = (raw.references ?? []).filter { $0.hasPrefix("https://") && $0.count <= 300 }.prefix(3)
+    return RepairProposal(
+      explanation: String(raw.explanation.prefix(maxExplanation)), operations: operations, references: Array(references))
   }
 }
 
@@ -250,10 +266,16 @@ public enum RepairReply: Sendable, Equatable {
   case probe(RepairProbe)
   /// A command to run in the models folder, after the rules and the user agree.
   case command(String)
+  /// A question to look up on the web.
+  case search(String)
   case proposal(RepairProposal)
 
   public static func parse(_ json: String, removable: Set<String>) throws -> RepairReply {
-    struct Peek: Decodable { var probe: String?; var command: String? }
+    struct Peek: Decodable { var probe: String?; var command: String?; var search: String? }
+    if let query = (try? JSONDecoder().decode(Peek.self, from: Data(json.utf8)))?.search {
+      guard !query.isEmpty, query.count <= 200 else { throw RepairProposal.Invalid.badValue("search") }
+      return .search(query)
+    }
     if let command = (try? JSONDecoder().decode(Peek.self, from: Data(json.utf8)))?.command {
       guard !command.isEmpty, command.count <= 300 else { throw RepairProposal.Invalid.badValue("command") }
       return .command(command)
@@ -270,4 +292,10 @@ public enum RepairReply: Sendable, Equatable {
 /// its reply is untrusted text that `RepairProposal.parse` checks before anything runs.
 public protocol RepairAssistant: Sendable {
   func propose(for report: FailureReport, removable: [String]) async throws -> String
+  /// Looks something up on the web. The answer includes its sources. Assistants without search say so.
+  func search(_ query: String) async throws -> String
+}
+
+extension RepairAssistant {
+  public func search(_ query: String) async throws -> String { "Web search is not available." }
 }

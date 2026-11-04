@@ -380,3 +380,52 @@ private actor Asked2 { var operations: [RepairOperation] = []; func add(_ o: Rep
     }
   }
 }
+
+
+@Suite struct RepairMirrorAndSearchTests {
+  @Test func onlyListedMirrorsAreAccepted() throws {
+    let ok = try RepairProposal.parse(#"{"explanation":"x","operations":[{"op":"useMirror","to":"https://hf-mirror.com"}]}"#, removable: [])
+    #expect(ok.operations == [.useMirror("https://hf-mirror.com")])
+    #expect(throws: RepairProposal.Invalid.badValue("useMirror")) {
+      try RepairProposal.parse(#"{"explanation":"x","operations":[{"op":"useMirror","to":"https://evil.example"}]}"#, removable: [])
+    }
+    #expect(RepairOperation.useMirror("https://hf-mirror.com").needsApproval(downloadBytes: 0))
+  }
+
+  @Test func referencesMustBeHTTPSAndFew() throws {
+    let json = #"{"explanation":"x","operations":[{"op":"retryDownload"}],"references":["http://a.example","https://b.example/1","https://c.example","https://d.example","https://e.example"]}"#
+    #expect(try RepairProposal.parse(json, removable: []).references == ["https://b.example/1", "https://c.example", "https://d.example"])
+  }
+
+  @Test func aSearchReplyIsRecognisedAndBounded() throws {
+    #expect(try RepairReply.parse(#"{"explanation":"look","search":"hf 503 resume"}"#, removable: []) == .search("hf 503 resume"))
+    #expect(throws: RepairProposal.Invalid.self) {
+      try RepairReply.parse(#"{"explanation":"x","search":"\#(String(repeating: "a", count: 300))"}"#, removable: [])
+    }
+  }
+
+  @Test func searchFindingsAndSourcesReachTheNextRound() async throws {
+    let rig = try RepairRunnerTests.Rig()
+    defer { try? FileManager.default.removeItem(at: rig.dir) }
+    let assistant = SearchingAssistant()
+    var pipeline = InstallPipeline()
+    pipeline.store = rig.store
+    let runner = RepairRunner(pipeline: pipeline, audit: rig.audit, assistant: assistant) { _, _ in true }
+    _ = try? await runner.install(rig.model) { _ in }
+    let reports = await assistant.reports
+    #expect(reports.count >= 2)
+    #expect(reports[1].findings.first?.contains("Sources: https://example.com/fix") == true)
+    #expect(rig.audit.entries().contains { $0.reason.hasPrefix("search ") })
+  }
+}
+
+private actor SearchingAssistant: RepairAssistant {
+  var reports: [FailureReport] = []
+  func propose(for report: FailureReport, removable: [String]) async throws -> String {
+    reports.append(report)
+    return report.findings.isEmpty
+      ? #"{"explanation":"look it up","search":"huggingface 503 download"}"#
+      : #"{"explanation":"Done.","operations":[{"op":"cancelAndCleanUp"}],"references":["https://example.com/fix"]}"#
+  }
+  nonisolated func search(_ query: String) async throws -> String { "Try the mirror. Sources: https://example.com/fix" }
+}

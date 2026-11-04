@@ -80,14 +80,15 @@ public struct RepairRunner: Sendable {
   }
 
   public func install(
-    _ model: CatalogModel, limits start: ModelPlanner.Limits = InstallPipeline.supported,
+    _ model: CatalogModel, limits start: ModelPlanner.Limits = InstallPipeline.supported, host: String? = nil,
     update: @escaping @Sendable (InstallUpdate) -> Void
   ) async throws -> (InstalledModel, LlamaRuntime) {
     var limits = start
+    var host = host
     var tried: [RepairOperation] = []
     while true {
       do {
-        return try await pipeline.install(model, limits: limits, update: update)
+        return try await pipeline.install(model, limits: limits, host: host, update: update)
       } catch let failure as InstallFailure {
         guard tried.count < Self.maxOperations else {
           throw RepairError.unrepaired(failure, why: "Stopped after \(Self.maxOperations) repair attempts.")
@@ -108,7 +109,7 @@ public struct RepairRunner: Sendable {
           }
           tried.append(operation)
           do {
-            guard try perform(operation, failure: failure, model: model, limits: &limits) else {
+            guard try perform(operation, failure: failure, model: model, limits: &limits, host: &host) else {
               try record(model, operation, "Does not apply here.", .notApplicable)
               continue
             }
@@ -140,12 +141,20 @@ public struct RepairRunner: Sendable {
         for _ in 0...Self.maxProbes {
           let reply = try await assistant.propose(for: report, removable: removable)
           switch try RepairReply.parse(reply, removable: Set(removable)) {
-          case .proposal(let proposal): return proposal
+          case .proposal(var proposal):
+            if !proposal.references.isEmpty { proposal.explanation += " Sources: " + proposal.references.joined(separator: ", ") }
+            return proposal
           case .probe(let probe):
             guard report.findings.count < Self.maxProbes else { throw RepairProposal.Invalid.tooMany }
             let found = await probe.run(store: pipeline.store, hardware: report.hardware)
             try record(model, nil, "probe \(probe.rawValue): \(found.prefix(120))", .done)
             report.findings.append("\(probe.rawValue): \(found)")
+          case .search(let query):
+            guard report.findings.count < Self.maxProbes else { throw RepairProposal.Invalid.tooMany }
+            let clean = Redaction.clean(query, root: pipeline.store.root, label: "<models>")
+            let found = (try? await assistant.search(clean)) ?? "The search failed."
+            try record(model, nil, "search \"\(clean.prefix(80))\": \(found.prefix(160))", .done)
+            report.findings.append("search \"\(clean)\": \(String(found.prefix(1500)))")
           case .command(let command):
             guard report.findings.count < Self.maxProbes else { throw RepairProposal.Invalid.tooMany }
             let found = try await look(command, report: report, model: model)
@@ -215,10 +224,14 @@ public struct RepairRunner: Sendable {
   /// Runs one operation. Returns false when it does not apply (nothing changed).
   private func perform(
     _ operation: RepairOperation, failure: InstallFailure, model: CatalogModel,
-    limits: inout ModelPlanner.Limits
+    limits: inout ModelPlanner.Limits, host: inout String?
   ) throws -> Bool {
     switch operation {
     case .retryDownload, .restartRuntime:
+      return true
+    case .useMirror(let mirror):
+      guard RepairOperation.mirrors.contains(mirror), host != mirror else { return false }
+      host = mirror
       return true
     case .runCommand:
       return false  // Commands are looks, run before a proposal; they are never applied as repairs.

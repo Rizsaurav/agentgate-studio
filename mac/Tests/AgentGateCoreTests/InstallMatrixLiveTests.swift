@@ -180,6 +180,9 @@ extension InstallMatrixLiveTests {
       case .probe(let probe):
         steps.append("probe \(probe.rawValue)")
         report.findings.append("\(probe.rawValue): checked")
+      case .search(let query):
+        steps.append("search \(query)")
+        report.findings.append("search: not run in this test")
       case .command(let command):
         steps.append("command \(command)")
         report.findings.append("command \(command): not run in this test")
@@ -190,5 +193,54 @@ extension InstallMatrixLiveTests {
       }
     }
     Issue.record("The model kept probing: \(steps)")
+  }
+}
+
+
+/// The whole repair loop against a tiny real model (1.2 MB) in a temporary folder: the main download
+/// server is a fake that always fails, and the real agent has to find a way. Needs OPENROUTER_API_KEY,
+/// network access, and costs a fraction of a cent. Nothing is written outside the temporary folder.
+@Suite(.serialized, .timeLimit(.minutes(3))) struct AutonomousRepairLiveTests {
+  static let tiny: CatalogModel = {
+    var model = try! Catalog.bundled().model("qwen3-0.6b")!
+    model.id = "tiny-test"
+    model.name = "Tiny test model"
+    model.gguf = .init(repo: "ggml-org/test-model-stories260K", files: [
+      .init(quant: .q8_0, file: "stories260K-f32.gguf", bytes: 1_185_376,
+            sha256: "270cba1bd5109f42d03350f60406024560464db173c0e387d91f0426d3bd256d"),
+    ])
+    return model
+  }()
+
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["AGENTGATE_LIVE"] == "1"
+                 && ProcessInfo.processInfo.environment["OPENROUTER_API_KEY"] != nil))
+  func theAgentFindsAWayWhenTheMainServerKeepsFailing() async throws {
+    let server = try TestHTTPServer(body: Data(), fault: .answer(status: 503), servedPath: "/ggml-org/test-model-stories260K/resolve/main/stories260K-f32.gguf")
+    defer { server.stop() }
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("autonomy-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: dir) }
+    var pipeline = InstallPipeline()
+    pipeline.store = ModelStore(root: dir.appendingPathComponent("models"))
+    let audit = AuditLog(file: dir.appendingPathComponent("audit.json"))
+    let runner = RepairRunner(pipeline: pipeline, audit: audit, assistant: OpenRouterAssistant()) { _, _ in true }
+    _ = try? await runner.install(Self.tiny, host: "http://127.0.0.1:\(server.port)") { _ in }
+    let entries = audit.entries()
+    for entry in entries { print("AUDIT", entry.outcome.rawValue, entry.operation, entry.reason.prefix(140)) }
+    // The tiny file was fetched and verified, whatever the toy model did afterwards.
+    let file = pipeline.store.folder("tiny-test").appendingPathComponent("stories260K-f32.gguf")
+    #expect(FileManager.default.fileExists(atPath: file.path))
+    #expect(try Downloader.sha256(of: file) == Self.tiny.gguf.files[0].sha256)
+    #expect(entries.contains { $0.operation == "useMirror" && $0.outcome == .done })
+  }
+}
+
+@Suite(.serialized, .timeLimit(.minutes(1))) struct RepairSearchLiveTests {
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["AGENTGATE_LIVE"] == "1"
+                 && ProcessInfo.processInfo.environment["OPENROUTER_API_KEY"] != nil))
+  func webSearchReturnsAnswerWithSources() async throws {
+    let key = ProcessInfo.processInfo.environment["OPENROUTER_API_KEY"]
+    let answer = try await OpenRouterAssistant(apiKey: { key }).search("llama.cpp llama-server Metal out of memory fix macOS")
+    print("SEARCH:", answer.prefix(400))
+    #expect(answer.contains("Sources: https://"))
   }
 }

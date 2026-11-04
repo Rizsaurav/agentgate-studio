@@ -70,7 +70,7 @@ public struct InstallPipeline: Sendable {
   public init() {}
 
   public func install(
-    _ model: CatalogModel, limits: ModelPlanner.Limits = supported,
+    _ model: CatalogModel, limits: ModelPlanner.Limits = supported, host: String? = nil,
     update: @escaping @Sendable (InstallUpdate) -> Void
   ) async throws -> (InstalledModel, LlamaRuntime) {
     var planned: ModelPlan?
@@ -106,7 +106,7 @@ public struct InstallPipeline: Sendable {
     let destination = store.folder(model.id).appendingPathComponent(file.file)
     try await at(.download, "Downloading \(file.file)…") {
       // AGENTGATE_MODEL_HOST points downloads at another server, to test failures. Normally unset.
-      let host = ProcessInfo.processInfo.environment["AGENTGATE_MODEL_HOST"] ?? "https://huggingface.co"
+      let host = host ?? ProcessInfo.processInfo.environment["AGENTGATE_MODEL_HOST"] ?? "https://huggingface.co"
       let url = URL(string: "\(host)/\(model.gguf.repo)/resolve/main/\(file.file)")!
       if FileManager.default.fileExists(atPath: destination.path),
          try Downloader.sha256(of: destination) == file.sha256 {
