@@ -172,6 +172,10 @@ CREATE INDEX sessions_by_project ON sessions(project_id, created_at DESC, id);
 CREATE INDEX security_events_by_run ON security_events(run_id, created_at, id);
 CREATE INDEX chunks_by_document ON chunks(document_id, seq);`;
 
+/** Which guardrail an evaluation case measures, for the false-positive and detection rates. */
+const EVAL_MEASURES = `
+ALTER TABLE eval_results ADD COLUMN measures TEXT CHECK(measures IN ('false-positive','detection'));`;
+
 /** Ordered migrations; PRAGMA user_version is the number applied. Never edit an applied entry. */
 const MIGRATIONS = [
   PROJECTS,
@@ -182,6 +186,7 @@ const MIGRATIONS = [
   AGENT,
   WITHHELD_PASSAGES,
   LOOKUP_INDEXES,
+  EVAL_MEASURES,
 ];
 
 /** Single owner of the application database file, schema, and migrations. */

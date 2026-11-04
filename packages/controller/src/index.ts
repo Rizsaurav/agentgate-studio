@@ -68,9 +68,11 @@ export {
   EvalService,
   SqliteEvals,
   configurationIdentity,
+  guardrailRates,
   latestFailedRunLog,
   listGithubRuns,
 } from './evals';
+export type { GuardrailRate, GuardrailRates } from './evals';
 export { condenseLog, failureSignature } from './ci-log';
 export { ModelPuller, modelNameSchema } from './local-models';
 export type { PullState } from './local-models';
