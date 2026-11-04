@@ -58,14 +58,20 @@ struct InstallStrip: View {
   @ViewBuilder private func steps(_ current: InstallStep, failed: Bool, compact: Bool) -> some View {
     if compact {
       HStack(spacing: 6) {
-        StepPill(step: current, state: failed ? .failed : current == .ready ? .done : .active)
+        Button { app.stepDetail = current } label: {
+          StepPill(step: current, state: failed ? .failed : current == .ready ? .done : .active)
+        }
+        .buttonStyle(.plain)
         Text("Step \(current.rawValue + 1) of \(InstallStep.allCases.count)").font(.caption).foregroundStyle(.secondary)
       }
       .fixedSize()
     } else {
       HStack(spacing: 12) {
         ForEach(InstallStep.allCases, id: \.self) { step in
-          StepPill(step: step, state: state(step, current: current, failed: failed))
+          Button { app.stepDetail = step } label: {
+            StepPill(step: step, state: state(step, current: current, failed: failed))
+          }
+          .buttonStyle(.plain).help("What happened at \(step.title)")
         }
       }
       .fixedSize()
@@ -112,6 +118,58 @@ private struct StepPill: View {
     case .active: "in progress"
     case .done: "done"
     case .failed: "failed"
+    }
+  }
+}
+
+/// What one install step did, in the words the installer used while it ran.
+struct StepSheet: View {
+  @Environment(AppModel.self) private var app
+  @Environment(\.dismiss) private var dismiss
+  let step: InstallStep
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      HStack {
+        Text(step.title).font(.system(size: 17, weight: .semibold))
+        Spacer()
+        Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)
+      }
+      Text(blurb).font(.system(size: 12)).foregroundStyle(Theme.muted)
+      let lines = app.stepLog[step] ?? []
+      if lines.isEmpty {
+        Text("Nothing ran for this step in this session.").foregroundStyle(Theme.muted)
+      }
+      ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+        Text(line).font(.system(size: 13, design: .monospaced)).textSelection(.enabled)
+      }
+      if let failure = app.failure, failure.step == step {
+        Divider().overlay(Theme.line)
+        Text(failure.message).foregroundStyle(Theme.danger).textSelection(.enabled)
+        if let tail = failure.logTail, !tail.isEmpty {
+          Text(String(tail.suffix(1500))).font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.muted)
+            .textSelection(.enabled)
+        }
+      }
+      Spacer(minLength: 0)
+    }
+    .padding(22)
+    .frame(minWidth: 480, idealWidth: 560, minHeight: 240, idealHeight: 320)
+    .background(Theme.bg)
+    .preferredColorScheme(.dark)
+  }
+
+  /// Who does the step: all are fixed code, and the agent only steps in after a failure.
+  private var blurb: String {
+    switch step {
+    case .hardware: "Fixed code reads this Mac's chip, memory and disk."
+    case .compatibility: "Fixed code checks the model fits in memory and on disk."
+    case .quantization: "Fixed code picks the best quality that fits. No model is involved."
+    case .download: "Fixed code downloads, resumes and checks the file's checksum."
+    case .configure: "Fixed code sets context size and GPU use for this Mac."
+    case .load: "The bundled engine loads the model into memory."
+    case .test: "A short reply, then a tool call, prove the model works."
+    case .ready: "Installed and checked."
     }
   }
 }

@@ -138,3 +138,26 @@ extension InstallMatrixLiveTests {
     #expect(!servers.map { Int($0.port) }.contains(runtime.baseURL.port ?? 0))
   }
 }
+
+/// The bundled agent harness itself, with no model: it must start, demand its password, and stop.
+@Suite(.serialized, .timeLimit(.minutes(1))) struct AgentServerLiveTests {
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["AGENTGATE_LIVE"] == "1"))
+  func startsBehindAPasswordAndStopsClean() async throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("agent-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let server = try await AgentServer.start(
+      folder: folder, engineURL: URL(string: "http://127.0.0.1:9")!, engineKey: "k", model: "m",
+      binaries: URL(fileURLWithPath: ProcessInfo.processInfo.environment["AGENTGATE_OPENCODE_DIR"] ?? ""))
+    #expect(server.isRunning)
+    var open = URLRequest(url: server.baseURL.appendingPathComponent("session/status"))
+    open.httpMethod = "GET"
+    let (_, response) = try await URLSession.shared.data(for: open)
+    #expect((response as? HTTPURLResponse)?.statusCode == 401)
+    let id = try await server.client.createSession(title: "t")
+    #expect(!id.isEmpty)
+    let pid = server.processIdentifier
+    server.stop()
+    #expect(kill(pid, 0) != 0)
+  }
+}

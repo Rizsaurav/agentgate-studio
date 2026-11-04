@@ -5,6 +5,7 @@ struct SessionPage: View {
   @Environment(AppModel.self) private var app
   let sessionId: UUID
   @State private var draft = ""
+  @FocusState private var composerFocused: Bool
 
   var body: some View {
     if let session = app.session(sessionId), let project = app.project(session.projectId) {
@@ -67,6 +68,8 @@ struct SessionPage: View {
       TextField("Ask anything about your project…", text: $draft, axis: .vertical)
         .textFieldStyle(.plain).font(.system(size: 14)).lineLimit(3...8)
         .accessibilityLabel("Task")
+        .focused($composerFocused)
+        .onAppear { composerFocused = true }
         .onSubmit { send() }
       HStack {
         modelMenu(session)

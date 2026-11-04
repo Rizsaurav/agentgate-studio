@@ -1,7 +1,8 @@
 import Foundation
 
 /// The steps the user watches, in order.
-public enum InstallStep: Int, CaseIterable, Sendable, Codable, Comparable {
+public enum InstallStep: Int, CaseIterable, Sendable, Codable, Comparable, Identifiable {
+  public var id: Int { rawValue }
   case hardware, compatibility, quantization, download, configure, load, test, ready
 
   public var title: String {

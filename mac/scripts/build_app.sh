@@ -5,6 +5,7 @@ set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
 ./scripts/fetch_runtime.sh
+./scripts/fetch_opencode.sh
 swift build -c release --product AgentGateStudio
 BIN=$(swift build -c release --show-bin-path)
 APP="$ROOT/dist/AGENTGATE Studio.app"
@@ -13,6 +14,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/runtime"
 cp "$BIN/AgentGateStudio" "$APP/Contents/MacOS/AgentGateStudio"
 cp -R "$BIN/AgentGateStudio_AgentGateCore.bundle" "$APP/Contents/Resources/"
 cp -R "$ROOT/dist/runtime/llama" "$APP/Contents/Resources/runtime/llama"
+cp -R "$ROOT/dist/runtime/opencode" "$APP/Contents/Resources/runtime/opencode"
 VERSION=$(git -C "$ROOT" describe --tags --always 2>/dev/null || echo dev)
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

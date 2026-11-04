@@ -187,7 +187,7 @@ public final class LlamaRuntime: @unchecked Sendable {
     return outOfMemory ? .outOfMemory : .exited(code: process.terminationStatus, logTail: log.text)
   }
 
-  static func freePort() throws -> Int {
+  public static func freePort() throws -> Int {
     let fd = socket(AF_INET, SOCK_STREAM, 0)
     guard fd >= 0 else { throw RuntimeError.noFreePort }
     defer { close(fd) }
@@ -240,16 +240,19 @@ public struct EngineRegistry: Sendable {
     try? FileManager.default.removeItem(at: folder.appendingPathComponent(String(pid)))
   }
 
-  /// Stops recorded engines that are still running `binaries/llama-server`. Returns the pids stopped.
+  /// Stops recorded engines and agent servers that are still running our bundled binaries.
+  /// Returns the pids stopped.
   @discardableResult
-  public func reapOrphans(binaries: URL? = LlamaRuntime.binaryDirectory()) -> [Int32] {
-    guard let binaries,
-          let entries = try? FileManager.default.contentsOfDirectory(atPath: folder.path) else { return [] }
-    let server = binaries.appendingPathComponent("llama-server").resolvingSymlinksInPath().path
+  public func reapOrphans(
+    binaries: URL? = LlamaRuntime.binaryDirectory(), agent: URL? = AgentServer.binaryDirectory()
+  ) -> [Int32] {
+    guard let entries = try? FileManager.default.contentsOfDirectory(atPath: folder.path) else { return [] }
+    let ours = [binaries?.appendingPathComponent("llama-server"), agent?.appendingPathComponent("opencode")]
+      .compactMap { $0?.resolvingSymlinksInPath().path }
     var stopped: [Int32] = []
     for entry in entries {
       guard let pid = Int32(entry) else { continue }
-      if Self.executablePath(pid) == server {
+      if let path = Self.executablePath(pid), ours.contains(path) {
         kill(pid, SIGTERM)
         stopped.append(pid)
       }

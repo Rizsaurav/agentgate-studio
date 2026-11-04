@@ -22,6 +22,7 @@ struct Shell: View {
           .font(.system(size: 13)).padding(.horizontal, 28).padding(.vertical, 8).background(Theme.danger.opacity(0.08))
         }
         page.frame(maxWidth: .infinity, maxHeight: .infinity)
+        AgentStrip()
         InstallStrip()
       }
       .background(Theme.bg)
@@ -31,6 +32,8 @@ struct Shell: View {
     .preferredColorScheme(.dark)
     .ignoresSafeArea()
     .sheet(isPresented: $app.paletteOpen) { CommandPalette().environment(app) }
+    .sheet(item: $app.stepDetail) { StepSheet(step: $0).environment(app) }
+    .sheet(isPresented: $app.activityOpen) { ActivitySheet().environment(app) }
   }
 
   @ViewBuilder private var page: some View {

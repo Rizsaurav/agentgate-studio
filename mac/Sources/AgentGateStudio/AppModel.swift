@@ -36,6 +36,9 @@ final class AppModel {
   private(set) var installed: [InstalledModel] = []
   private(set) var active: InstalledModel?
   private(set) var update: InstallUpdate?
+  /// What each install step reported, for the dialog behind each dot in the status bar.
+  private(set) var stepLog: [InstallStep: [String]] = [:]
+  var stepDetail: InstallStep?
   private(set) var failure: InstallFailure?
   private(set) var installing: CatalogModel?
   /// A repair waiting for the user's yes or no.
@@ -176,12 +179,18 @@ final class AppModel {
   func select(_ model: CatalogModel) -> Task<Bool, Never>? {
     if let installTask, installing != nil { return installTask }
     failure = nil
+    stepLog = [:]
     installing = model
     stopRuntime()
     let task = Task { () -> Bool in
       defer { installing = nil }
       do {
-        let report: @Sendable (InstallUpdate) -> Void = { update in Task { @MainActor in self.update = update } }
+        let report: @Sendable (InstallUpdate) -> Void = { update in
+          Task { @MainActor in
+            self.update = update
+            self.log(update)
+          }
+        }
         if let done = installed.first(where: { $0.id == model.id }) {
           runtime = try await pipeline.load(done, update: report)
           active = done
@@ -236,6 +245,17 @@ final class AppModel {
     }
   }
 
+  /// Keeps what a step said. Download progress replaces its own last line instead of piling up.
+  private func log(_ update: InstallUpdate) {
+    var lines = stepLog[update.step, default: []]
+    if update.step == .download, update.totalBytes > 0, let last = lines.last, last.hasPrefix("Downloading ") {
+      lines[lines.count - 1] = update.message
+    } else if lines.last != update.message {
+      lines.append(update.message)
+    }
+    stepLog[update.step] = Array(lines.suffix(40))
+  }
+
   func cancelInstall() {
     answerRepair(false)
     installTask?.cancel()
@@ -276,44 +296,161 @@ final class AppModel {
     runtime = nil
   }
 
-  // MARK: Chat
+  // MARK: Agent
 
-  /// Sends a task in a session, loading the session's model first when another one is loaded.
+  /// One thing the agent did or asked to do, kept for the activity view.
+  struct ActivityItem: Identifiable, Equatable {
+    var id: String
+    var tool: String
+    var detail: String
+    var status: String
+    var output: String
+    var date = Date()
+  }
+
+  private(set) var activity: [ActivityItem] = []
+  private(set) var pendingPermission: AgentEvent.Permission?
+  var activityOpen = false
+  private var agent: AgentServer?
+  private var eventTask: Task<Void, Never>?
+  private var streamingSession: UUID?
+  private var agentConnected = false
+  private var parts: [(id: String, messageID: String, text: String)] = []
+  private var roles: [String: String] = [:]
+
+  /// Sends a task in a session. The agent harness runs it in the project's folder with the session's model.
   func send(_ text: String, in sessionId: UUID) {
     guard !generating, let index = workspace.sessions.firstIndex(where: { $0.id == sessionId }) else { return }
     let session = workspace.sessions[index]
+    guard let folder = project(session.projectId)?.folder else {
+      errorMessage = "This project has no folder. Open a folder to let the agent work."
+      return
+    }
     workspace.sessions[index].messages.append(ChatMessage(role: .user, content: text))
     workspace.sessions[index].messages.append(ChatMessage(role: .assistant, content: ""))
-    let history = Array(workspace.sessions[index].messages.dropLast())
     generating = true
+    thinking = true
+    streamingSession = sessionId
+    parts = []
+    roles = [:]
+    activity = []
     Task {
-      defer {
-        generating = false
-        thinking = false
-        try? persist()
-      }
-      // Load the session's model, or reload it if its engine has died since the last message.
-      if active?.id != session.modelId || runtime?.isRunning != true {
-        guard let entry = catalog?.model(session.modelId), let task = select(entry), await task.value else {
-          append("The model for this session could not be loaded.", to: sessionId)
-          return
-        }
-      }
-      guard let runtime else { return }
       do {
-        let client = ChatClient(baseURL: runtime.baseURL, apiKey: runtime.apiKey, model: session.modelId)
-        for try await chunk in client.stream(history) {
-          switch chunk {
-          case .thinking: thinking = true
-          case .text(let text):
-            thinking = false
-            append(text, to: sessionId)
+        // Load the session's model, or reload it if its engine has died since the last message.
+        if active?.id != session.modelId || runtime?.isRunning != true {
+          guard let entry = catalog?.model(session.modelId), let task = select(entry), await task.value else {
+            throw AgentError.missingBinary("The model for this session could not be loaded.")
           }
         }
+        guard let runtime else { return }
+        let server = try await agentServer(folder: URL(fileURLWithPath: folder), runtime: runtime)
+        var agentId = workspace.sessions.first { $0.id == sessionId }?.agentSession
+        if agentId == nil {
+          agentId = try await server.client.createSession(title: String(text.prefix(60)))
+          if let i = workspace.sessions.firstIndex(where: { $0.id == sessionId }) { workspace.sessions[i].agentSession = agentId }
+        }
+        // Wait for the event stream, so no question from the agent is missed.
+        for _ in 0..<100 where !agentConnected { try await Task.sleep(nanoseconds: 50_000_000) }
+        try await server.client.prompt(session: agentId!, text: text, model: session.modelId)
+        try await watchForQuestions(server)
       } catch {
-        append("\n\nError: \(error)", to: sessionId)
+        append("\(error)", to: sessionId)
+        finishTurn()
       }
     }
+  }
+
+  /// A backstop for the event stream: while a turn runs, look for a pending question every two seconds.
+  /// A turn is capped at 30 minutes.
+  private func watchForQuestions(_ server: AgentServer) async throws {
+    for _ in 0..<900 where generating {
+      try await Task.sleep(nanoseconds: 2_000_000_000)
+      if pendingPermission == nil, let first = try await server.client.pendingPermissions().first {
+        pendingPermission = first
+      }
+    }
+  }
+
+  func stopAgent() {
+    guard generating, let id = streamingSession,
+          let agentId = workspace.sessions.first(where: { $0.id == id })?.agentSession, let agent else { return }
+    Task { try? await agent.client.abort(session: agentId) }
+  }
+
+  /// Answers the agent's question about a command or edit. Anything but a yes is a no.
+  func answerPermission(allow: Bool) {
+    guard let permission = pendingPermission, let agent else { return }
+    pendingPermission = nil
+    Task {
+      do { try await agent.client.reply(permission: permission.id, allow: allow) }
+      catch { errorMessage = String(describing: error) }
+    }
+  }
+
+  private func agentServer(folder: URL, runtime: LlamaRuntime) async throws -> AgentServer {
+    if let agent, agent.isRunning, agent.folder == folder, agent.engineKey == runtime.apiKey { return agent }
+    stopAgentServer()
+    agentConnected = false
+    let server = try await AgentServer.start(
+      folder: folder, engineURL: runtime.baseURL, engineKey: runtime.apiKey, model: runtime.alias)
+    agent = server
+    eventTask = Task { [weak self] in
+      do {
+        for try await event in server.client.events() { self?.handle(event) }
+      } catch {
+        self?.errorMessage = "Lost the connection to the agent: \(error)"
+      }
+      self?.finishTurn()
+    }
+    return server
+  }
+
+  func stopAgentServer() {
+    eventTask?.cancel()
+    eventTask = nil
+    agent?.stop()
+    agent = nil
+  }
+
+  private func handle(_ event: AgentEvent) {
+    switch event {
+    case .message(let id, let role): roles[id] = role
+    case .text(let id, let message, let text):
+      if let i = parts.firstIndex(where: { $0.id == id }) { parts[i].text = text } else { parts.append((id, message, text)) }
+      showAnswer()
+    case .textDelta(let id, let message, let delta):
+      if let i = parts.firstIndex(where: { $0.id == id }) { parts[i].text += delta } else { parts.append((id, message, delta)) }
+      showAnswer()
+    case .tool(let tool):
+      let item = ActivityItem(id: tool.id, tool: tool.name, detail: tool.detail, status: tool.status, output: tool.output)
+      if let i = activity.firstIndex(where: { $0.id == tool.id }) { activity[i] = item } else { activity.append(item) }
+    case .permission(let permission): pendingPermission = permission
+    case .connected: agentConnected = true
+    case .busy: thinking = true
+    case .idle: finishTurn()
+    case .failed(let message):
+      if let id = streamingSession { append("\n\nError: \(message)", to: id) }
+      finishTurn()
+    }
+  }
+
+  /// The answer is every assistant text part so far; the user's own text echoes back and is skipped.
+  private func showAnswer() {
+    guard let id = streamingSession, let index = workspace.sessions.firstIndex(where: { $0.id == id }),
+          let last = workspace.sessions[index].messages.indices.last else { return }
+    let text = parts.filter { roles[$0.messageID] == "assistant" }.map(\.text).joined(separator: "\n\n")
+    guard !text.isEmpty else { return }
+    thinking = false
+    workspace.sessions[index].messages[last].content = text
+  }
+
+  private func finishTurn() {
+    guard generating else { return }
+    generating = false
+    thinking = false
+    pendingPermission = nil
+    streamingSession = nil
+    do { try persist() } catch { errorMessage = String(describing: error) }
   }
 
   private func append(_ text: String, to sessionId: UUID) {
