@@ -218,12 +218,12 @@ private actor Asked {
 }
 }
 
-@Suite(.serialized) struct OpenRouterAssistantTests {
+@Suite(.serialized) struct AgentAssistantTests {
   private let report = FailureReport(
     step: "Download", failureClass: .network, message: "x", logTail: "", hardware: "Apple M5", triedAlready: [])
 
   @Test func requestsPinTheCheapModelAndCarryOnlyTheReport() throws {
-    let body = try OpenRouterAssistant.requestBody(report, removable: ["old"])
+    let body = try AgentAssistant().requestBody(report, removable: ["old"])
     let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
     #expect(json["model"] as? String == "deepseek/deepseek-v4.1-flash")
     #expect(json["max_tokens"] as? Int == 1500)
@@ -236,18 +236,18 @@ private actor Asked {
     let envelope = try JSONSerialization.data(withJSONObject: ["choices": [["message": ["content": content]]]])
     let server = try TestHTTPServer(body: envelope, servedPath: "/v1/chat/completions")
     defer { server.stop() }
-    let assistant = OpenRouterAssistant(baseURL: server.url("/v1"), apiKey: { "test-key" })
+    let assistant = AgentAssistant(baseURL: server.url("/v1"), apiKey: { "test-key" })
     let reply = try await assistant.propose(for: report, removable: [])
     #expect(try RepairProposal.parse(reply, removable: []).operations == [.retryDownload])
   }
 
   @Test func missingKeyAndServerErrorsAreReported() async throws {
-    let none = OpenRouterAssistant(apiKey: { nil })
-    await #expect(throws: OpenRouterAssistant.Failure.noKey) { try await none.propose(for: report, removable: []) }
+    let none = AgentAssistant(apiKey: { nil })
+    await #expect(throws: AgentAssistant.Failure.noKey) { try await none.propose(for: report, removable: []) }
     let server = try TestHTTPServer(body: Data(), fault: .answer(status: 401), servedPath: "/v1/chat/completions")
     defer { server.stop() }
-    let rejected = OpenRouterAssistant(baseURL: server.url("/v1"), apiKey: { "bad" })
-    await #expect(throws: OpenRouterAssistant.Failure.http(401)) { try await rejected.propose(for: report, removable: []) }
+    let rejected = AgentAssistant(baseURL: server.url("/v1"), apiKey: { "bad" })
+    await #expect(throws: AgentAssistant.Failure.http(401)) { try await rejected.propose(for: report, removable: []) }
   }
 
   @Test func keychainRoundTripsAndDeletes() throws {
@@ -429,4 +429,62 @@ private actor SearchingAssistant: RepairAssistant {
       : #"{"explanation":"Done.","operations":[{"op":"cancelAndCleanUp"}],"references":["https://example.com/fix"]}"#
   }
   nonisolated func search(_ query: String) async throws -> String { "Try the mirror. Sources: https://example.com/fix" }
+}
+
+@Suite struct AgentProfileTests {
+  @Test func addedAgentsAreValidated() throws {
+    let ok = try AgentProfile.custom(name: "GPT", baseURL: "https://api.openai.com/v1/", model: "gpt-4.1-mini")
+    #expect(ok.baseURL == "https://api.openai.com/v1" && !ok.isOpenRouter && !ok.isBuiltIn)
+    #expect(try AgentProfile.custom(name: "Local", baseURL: "http://127.0.0.1:8080/v1", model: "qwen").baseURL.hasPrefix("http://127"))
+    for bad in [("", "https://x.example", "m"), ("A", "http://evil.example/v1", "m"), ("A", "not a url", "m"),
+                ("A", "https://x.example", "has space"), ("A", "https://x.example", "")] {
+      #expect(throws: AgentProfileError.self) { try AgentProfile.custom(name: bad.0, baseURL: bad.1, model: bad.2) }
+    }
+  }
+
+  @Test func storeKeepsKeysOutOfTheFileAndRemovesThem() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("agents-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let store = AgentStore(file: dir.appendingPathComponent("agents.json"))
+    let profile = try AgentProfile.custom(name: "Test", baseURL: "https://api.example.com/v1", model: "m1")
+    defer { try? profile.keychain.delete() }
+    try store.add(profile, key: "super-secret-key")
+    #expect(store.all().map(\.id) == [AgentProfile.builtIn.id, profile.id])
+    #expect(try String(contentsOf: store.file, encoding: .utf8).contains("super-secret-key") == false)
+    #expect(try profile.keychain.read() == "super-secret-key")
+    #expect(AgentStore.isConnected(profile))
+    try store.remove(profile.id)
+    #expect(store.all().count == 1)
+    #expect(try profile.keychain.read() == nil)
+  }
+
+  @Test func theBuiltInAgentCannotBeAddedOrRemovedAsCustom() {
+    let store = AgentStore(file: FileManager.default.temporaryDirectory.appendingPathComponent("a-\(UUID().uuidString).json"))
+    #expect(throws: AgentProfileError.self) { try store.add(.builtIn, key: "k") }
+  }
+
+  @Test func everyAgentGetsAPlaybookThatMatchesTheToolbox() throws {
+    let text = RepairPlaybook.instructions
+    for probe in RepairProbe.allCases { #expect(text.contains(probe.rawValue)) }
+    for entry in RepairOperation.catalogue {
+      #expect(text.contains(entry.name))
+      // Each documented operation really is accepted by the validator.
+      let json = #"{"explanation":"x","operations":[\#(entry.example)]}"#
+      #expect(throws: Never.self) { try RepairProposal.parse(json, removable: ["old"]) }
+    }
+    #expect(text.contains("search") && text.contains("command") && text.contains("references"))
+  }
+
+  @Test func aCustomAgentUsesItsOwnModelAndLosesOpenRouterOnlyOptions() async throws {
+    let profile = try AgentProfile.custom(name: "GPT", baseURL: "https://api.openai.com/v1", model: "gpt-4.1-mini")
+    let report = FailureReport(step: "Download", failureClass: .network, message: "x", logTail: "", hardware: "m", triedAlready: [])
+    let body = try AgentAssistant(profile: profile, apiKey: { "k" }).requestBody(report, removable: [])
+    let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+    #expect(json["model"] as? String == "gpt-4.1-mini")
+    #expect(json["reasoning"] == nil)
+    #expect(try await AgentAssistant(profile: profile, apiKey: { "k" }).search("x").contains("not available"))
+    let builtIn = try JSONSerialization.jsonObject(with: AgentAssistant(apiKey: { "k" }).requestBody(report, removable: [])) as? [String: Any]
+    #expect(builtIn?["model"] as? String == "deepseek/deepseek-v4.1-flash")
+    #expect(builtIn?["reasoning"] != nil)
+  }
 }

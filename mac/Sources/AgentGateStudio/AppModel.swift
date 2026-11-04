@@ -46,7 +46,13 @@ final class AppModel {
   private(set) var pendingRepair: (operation: RepairOperation, report: FailureReport)?
   private var repairAnswer: CheckedContinuation<Bool, Never>?
   /// Whether the repair agent (OpenRouter) is connected. The key itself never leaves the Keychain.
-  private(set) var agentOn = OpenRouterAssistant.isConnected
+  let agentStore = AgentStore()
+  private(set) var agents: [AgentProfile] = AgentStore().all()
+  private(set) var activeAgentID = UserDefaults.standard.string(forKey: "activeAgent") ?? AgentProfile.builtIn.id
+  private(set) var agentKeys: Set<String> = []
+  var activeAgent: AgentProfile { agents.first { $0.id == activeAgentID } ?? .builtIn }
+  /// Whether the chosen agent has a key, so it can supervise installs. Checks existence only; never reads the key.
+  var agentOn: Bool { agentKeys.contains(activeAgent.id) }
   var setupSkipped = UserDefaults.standard.bool(forKey: "setupSkipped") {
     didSet { UserDefaults.standard.set(setupSkipped, forKey: "setupSkipped") }
   }
@@ -69,6 +75,7 @@ final class AppModel {
       self.profile = profile
       tiers = ModelPlanner.tiers(catalog, for: profile)
       installed = try store.list()
+      refreshAgents()
       workspace = try workspaceStore.load()
     } catch {
       errorMessage = String(describing: error)
@@ -196,7 +203,7 @@ final class AppModel {
           runtime = try await pipeline.load(done, update: report)
           active = done
         } else {
-          let runner = RepairRunner(assistant: agentOn ? OpenRouterAssistant() : nil) { operation, failure in
+          let runner = RepairRunner(assistant: agentOn ? AgentAssistant(profile: activeAgent) : nil) { operation, failure in
             await self.askToRepair(operation, failure)
           }
           let (done, runtime) = try await runner.install(model, update: report)
@@ -223,13 +230,18 @@ final class AppModel {
     return task
   }
 
-  /// Saves the key in the Keychain. Returns false (with a message) if it could not be saved.
+  private func refreshAgents() {
+    agents = agentStore.all()
+    agentKeys = Set(agents.filter(AgentStore.isConnected).map(\.id))
+  }
+
+  /// Saves the built-in agent's key in the Keychain. Returns false (with a message) if it could not be saved.
   func connectAgent(key: String) -> Bool {
     let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return false }
     do {
-      try OpenRouterAssistant.keychain.save(trimmed)
-      agentOn = true
+      try AgentProfile.builtIn.keychain.save(trimmed)
+      refreshAgents()
       return true
     } catch {
       errorMessage = String(describing: error)
@@ -239,8 +251,38 @@ final class AppModel {
 
   func disconnectAgent() {
     do {
-      try OpenRouterAssistant.keychain.delete()
-      agentOn = false
+      try AgentProfile.builtIn.keychain.delete()
+      refreshAgents()
+    } catch {
+      errorMessage = String(describing: error)
+    }
+  }
+
+  /// Adds an agent on any OpenAI-compatible provider and makes it the active one.
+  func addAgent(name: String, address: String, model: String, key: String) -> Bool {
+    do {
+      let profile = try AgentProfile.custom(name: name, baseURL: address, model: model)
+      try agentStore.add(profile, key: key.trimmingCharacters(in: .whitespacesAndNewlines))
+      refreshAgents()
+      selectAgent(profile.id)
+      return true
+    } catch {
+      errorMessage = String(describing: error)
+      return false
+    }
+  }
+
+  func selectAgent(_ id: String) {
+    guard agents.contains(where: { $0.id == id }) else { return }
+    activeAgentID = id
+    UserDefaults.standard.set(id, forKey: "activeAgent")
+  }
+
+  func removeAgent(_ id: String) {
+    do {
+      try agentStore.remove(id)
+      if activeAgentID == id { selectAgent(AgentProfile.builtIn.id) }
+      refreshAgents()
     } catch {
       errorMessage = String(describing: error)
     }

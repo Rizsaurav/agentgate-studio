@@ -168,7 +168,7 @@ extension InstallMatrixLiveTests {
                  && ProcessInfo.processInfo.environment["OPENROUTER_API_KEY"] != nil))
   func theRealModelFollowsTheReplyFormat() async throws {
     let key = ProcessInfo.processInfo.environment["OPENROUTER_API_KEY"]
-    let assistant = OpenRouterAssistant(apiKey: { key })
+    let assistant = AgentAssistant(apiKey: { key })
     var report = FailureReport(
       step: "Load", failureClass: .outOfMemory, message: "The model did not fit in memory.",
       logTail: "ggml_metal: failed to allocate buffer, size = 9000.00 MiB", hardware: "Apple M2 · 8 GB · 40 GB free",
@@ -222,7 +222,7 @@ extension InstallMatrixLiveTests {
     var pipeline = InstallPipeline()
     pipeline.store = ModelStore(root: dir.appendingPathComponent("models"))
     let audit = AuditLog(file: dir.appendingPathComponent("audit.json"))
-    let runner = RepairRunner(pipeline: pipeline, audit: audit, assistant: OpenRouterAssistant()) { _, _ in true }
+    let runner = RepairRunner(pipeline: pipeline, audit: audit, assistant: AgentAssistant()) { _, _ in true }
     _ = try? await runner.install(Self.tiny, host: "http://127.0.0.1:\(server.port)") { _ in }
     let entries = audit.entries()
     for entry in entries { print("AUDIT", entry.outcome.rawValue, entry.operation, entry.reason.prefix(140)) }
@@ -239,7 +239,7 @@ extension InstallMatrixLiveTests {
                  && ProcessInfo.processInfo.environment["OPENROUTER_API_KEY"] != nil))
   func webSearchReturnsAnswerWithSources() async throws {
     let key = ProcessInfo.processInfo.environment["OPENROUTER_API_KEY"]
-    let answer = try await OpenRouterAssistant(apiKey: { key }).search("llama.cpp llama-server Metal out of memory fix macOS")
+    let answer = try await AgentAssistant(apiKey: { key }).search("llama.cpp llama-server Metal out of memory fix macOS")
     print("SEARCH:", answer.prefix(400))
     #expect(answer.contains("Sources: https://"))
   }

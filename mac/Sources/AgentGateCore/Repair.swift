@@ -25,6 +25,20 @@ public enum RepairOperation: Sendable, Equatable, Hashable {
   /// the same rules as the agent's terminal apply, the user approves it, and its output goes back to the assistant.
   case runCommand(String)
 
+  /// Every operation an assistant may propose, with how to ask for it. The playbook given to every agent is
+  /// generated from this, so what agents are told cannot drift from what the app accepts.
+  public static let catalogue: [(name: String, help: String, example: String)] = [
+    ("retryDownload", "download again, resuming a partial file", #"{"op":"retryDownload"}"#),
+    ("restartRuntime", "start the model engine again on a new port", #"{"op":"restartRuntime"}"#),
+    ("cancelAndCleanUp", "stop and remove the incomplete files of this install", #"{"op":"cancelAndCleanUp"}"#),
+    ("reduceContext", "plan again with the next smaller context", #"{"op":"reduceContext"}"#),
+    ("lowerQuantization", "plan again one quality level lower", #"{"op":"lowerQuantization"}"#),
+    ("setContext", "plan with this context size; add \"to\": \"8192\" | \"16384\" | \"32768\"", #"{"op":"setContext","to":"8192"}"#),
+    ("setQuantization", "plan with at most this quality; add \"to\": \"Q8_0\" | \"Q6_K\" | \"Q5_K_M\" | \"MXFP4\" | \"Q4_K_M\" | \"Q3_K_M\"", #"{"op":"setQuantization","to":"Q4_K_M"}"#),
+    ("useMirror", "download from a mirror when the main server keeps failing; add \"to\": \"https://hf-mirror.com\"; checksums still apply", #"{"op":"useMirror","to":"https://hf-mirror.com"}"#),
+    ("freeDisk", "delete another installed model to make room; add \"modelId\", one of the removable ids you are given", #"{"op":"freeDisk","modelId":"old"}"#),
+  ]
+
   /// The only download mirrors an assistant may choose.
   public static let mirrors = ["https://hf-mirror.com"]
 

@@ -71,7 +71,7 @@ private struct SetupCard: View {
           Button("Choose a model") { app.route = .models }.buttonStyle(PrimaryButtonStyle())
         }
         Divider().overlay(Theme.line)
-        row(done: app.agentOn, title: "Repair agent") {
+        row(done: app.agentOn, title: "Supervising agent") {
           HStack(spacing: 8) {
             SecureField("OpenRouter key", text: $key).field().frame(width: 190).accessibilityLabel("OpenRouter key")
             Button("Connect") { if app.connectAgent(key: key) { key = "" } }
