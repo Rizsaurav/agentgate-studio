@@ -5,6 +5,7 @@ import type { AgentStore } from './agent-store';
 import type { Finding } from './watchdog';
 import { modelNameSchema } from './local-models';
 import type { OpenedModel } from './ollama';
+import { detectSecrets, redactSecrets } from './policy';
 
 export type SupervisorLimits = {
   /** Hard cap on tokens spent per day, across every run. */
@@ -104,6 +105,11 @@ export class Supervisor {
 
   async ask(questionInput: unknown): Promise<string> {
     const question = questionSchema.parse(questionInput);
+    // Nothing is sent or saved: the question would go to a third-party model and into the notes.
+    if (detectSecrets(question).length > 0)
+      throw new Error(
+        'That looks like an API key or other secret, so it was not sent. If it is a real key, rotate it now.',
+      );
     const reason = await this.unavailable();
     if (reason) throw new Error(reason);
     this.store.addNote('question', question);
@@ -202,7 +208,7 @@ export class Supervisor {
         .join('')
         .trim();
       if (!text) throw new Error('The assistant gave no answer.');
-      return text;
+      return redactSecrets(text);
     } finally {
       clearTimeout(timeout);
       this.busy = false;
@@ -210,11 +216,11 @@ export class Supervisor {
   }
 
   private tools(): AgentTool[] {
+    // Redacted before it is cut, so a key split at the cut cannot slip through as a fragment.
     const cut = (value: unknown): string =>
-      (typeof value === 'string' ? value : JSON.stringify(value)).slice(
-        0,
-        this.limits.toolResultChars,
-      );
+      redactSecrets(
+        typeof value === 'string' ? value : JSON.stringify(value),
+      ).slice(0, this.limits.toolResultChars);
     const used = new Set<string>();
     const reply = (text: string) => ({
       content: [{ type: 'text' as const, text: cut(text) }],
