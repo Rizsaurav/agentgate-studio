@@ -12,3 +12,4 @@ scanner/.venv/
 __pycache__/
 eval-results/
 .vscode/
+/secrets/

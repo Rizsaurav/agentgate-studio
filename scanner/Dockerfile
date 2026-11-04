@@ -1,5 +1,6 @@
 # The security scanner service (LLM Guard). Reachable only on the compose network.
-FROM python:3.11-slim-bookworm
+# Pinned by digest (same bytes for everyone); Dependabot proposes updates.
+FROM python:3.11-slim-bookworm@sha256:94a8fee35252d06ab75856f15f12c7bae67b10e8a6da93c7fded82b2610926cd
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \

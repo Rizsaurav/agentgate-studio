@@ -16,6 +16,9 @@ const scannerPort = Number(process.env.AGENTGATE_SCANNER_PORT ?? 8765);
 const scannerUrl =
   process.env.AGENTGATE_SCANNER_URL ?? `http://127.0.0.1:${scannerPort}`;
 const started = [];
+// Next.js sends anonymous usage data unless told not to; nothing leaves this computer by default.
+// Inherited by the build and the server below. The Docker image and Mac app set the same.
+process.env.NEXT_TELEMETRY_DISABLED ??= '1';
 
 const say = (message) => console.log(`[agentgate] ${message}`);
 async function up(url) {
