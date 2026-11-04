@@ -125,14 +125,14 @@ enum AgentEventDecoder {
 
 public enum AgentError: Error, Equatable, CustomStringConvertible {
   case missingBinary(String)
-  case startTimedOut
+  case startTimedOut(String)
   case http(Int)
   case malformed
 
   public var description: String {
     switch self {
     case .missingBinary(let path): "The agent harness is missing (\(path))."
-    case .startTimedOut: "The agent harness did not start."
+    case .startTimedOut(let tail): "The agent harness did not start." + (tail.isEmpty ? "" : " Its last output: \(tail)")
     case .http(let code): "The agent harness answered with HTTP \(code)."
     case .malformed: "The agent harness sent a reply that could not be read."
     }
@@ -195,13 +195,19 @@ public final class AgentServer: @unchecked Sendable {
       "OPENCODE_SERVER_PASSWORD": password,
       "OPENCODE_CONFIG_CONTENT": try config(engineURL: engineURL, engineKey: engineKey, model: model),
     ]) { $1 }
-    process.standardOutput = FileHandle.nullDevice
-    process.standardError = FileHandle.nullDevice
+    let log = LogTail()
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = pipe
+    pipe.fileHandleForReading.readabilityHandler = { handle in
+      let data = handle.availableData
+      if data.isEmpty { handle.readabilityHandler = nil } else { log.append(data) }
+    }
     try process.run()
     try? EngineRegistry().record(process.processIdentifier)
     let server = AgentServer(
       baseURL: URL(string: "http://127.0.0.1:\(port)")!, password: password, folder: folder,
-      engineKey: engineKey, process: process)
+      engineKey: engineKey, process: process, log: log)
     do {
       try await server.waitUntilReady(timeout: timeout)
     } catch {
@@ -211,7 +217,10 @@ public final class AgentServer: @unchecked Sendable {
     return server
   }
 
-  private init(baseURL: URL, password: String, folder: URL, engineKey: String, process: Process) {
+  private let log: LogTail
+
+  private init(baseURL: URL, password: String, folder: URL, engineKey: String, process: Process, log: LogTail) {
+    self.log = log
     self.baseURL = baseURL
     self.password = password
     self.folder = folder
@@ -228,11 +237,16 @@ public final class AgentServer: @unchecked Sendable {
   private func waitUntilReady(timeout: TimeInterval) async throws {
     let deadline = Date().addingTimeInterval(timeout)
     while Date() < deadline {
-      guard process.isRunning else { throw AgentError.startTimedOut }
+      guard process.isRunning else { throw AgentError.startTimedOut(tail) }
       if (try? await client.sessionStatus()) != nil { return }
       try await Task.sleep(nanoseconds: 250_000_000)
     }
-    throw AgentError.startTimedOut
+    throw AgentError.startTimedOut(tail)
+  }
+
+  /// The harness's last output, cleaned of keys and private paths, for error messages.
+  private var tail: String {
+    String(Redaction.clean(log.text, root: folder, label: "<project>").suffix(400))
   }
 
   public func stop() {

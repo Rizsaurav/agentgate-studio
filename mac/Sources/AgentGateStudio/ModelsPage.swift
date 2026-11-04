@@ -129,6 +129,7 @@ private struct CheckRow: View {
 }
 
 private struct TierCard: View {
+  @Environment(AppModel.self) private var app
   let tier: Tier
   let plan: ModelPlan
   let option: ModelOption
@@ -147,6 +148,7 @@ private struct TierCard: View {
           .font(.system(size: 12)).foregroundStyle(Theme.muted)
         Button(action: install) { Text(buttonTitle) }
           .buttonStyle(PrimaryButtonStyle()).padding(.top, 4)
+          .disabled(app.active?.id == option.model.id || app.installing != nil)
           .help(plan.reason)
       }
     }
@@ -154,7 +156,7 @@ private struct TierCard: View {
 
   private var buttonTitle: String {
     switch option.state {
-    case .ready, .chatOnly: "Load"
+    case .ready, .chatOnly: app.active?.id == option.model.id ? "Loaded" : "Load"
     default: "Install"
     }
   }

@@ -310,11 +310,14 @@ final class AppModel {
 
   private(set) var activity: [ActivityItem] = []
   private(set) var pendingPermission: AgentEvent.Permission?
+  let securityLog = SecurityLog()
+  private(set) var securityEntries: [SecurityEntry] = []
   var activityOpen = false
   private var agent: AgentServer?
   private var eventTask: Task<Void, Never>?
   private var streamingSession: UUID?
   private var agentConnected = false
+  private var loggedRefusals: Set<String> = []
   private var parts: [(id: String, messageID: String, text: String)] = []
   private var roles: [String: String] = [:]
 
@@ -381,11 +384,82 @@ final class AppModel {
   func answerPermission(allow: Bool) {
     guard let permission = pendingPermission, let agent else { return }
     pendingPermission = nil
+    // Check again at the moment of approval: by now the file the agent means to edit is known.
+    if allow, case .block(let rule, _) = verdict(for: permission, final: true) {
+      block(permission, rule: rule, agent: agent)
+      return
+    }
+    record(permission.tool, permission.detail, allow ? .allowed : .deniedByUser, rule: "")
     Task {
       do { try await agent.client.reply(permission: permission.id, allow: allow) }
       catch { errorMessage = String(describing: error) }
     }
   }
+
+  // MARK: Security
+
+  private var streamingFolder: URL? {
+    guard let id = streamingSession,
+          let folder = workspace.sessions.first(where: { $0.id == id }).flatMap({ project($0.projectId)?.folder })
+    else { return nil }
+    return URL(fileURLWithPath: folder)
+  }
+
+  /// The policy's answer for a request. Edits name their file only in the tool call, so for those the
+  /// answer can be unknown until then; at the final check an unknown target counts as blocked.
+  private func verdict(for permission: AgentEvent.Permission, final: Bool) -> ToolPolicy.Verdict? {
+    guard let folder = streamingFolder else {
+      return .block(rule: "unknown-project", reason: "The project folder could not be determined.")
+    }
+    if permission.tool == "bash" { return ToolPolicy.evaluate(tool: "bash", detail: permission.detail, folder: folder) }
+    guard ["edit", "write", "patch", "multiedit"].contains(permission.tool) else { return .allow }
+    let editing = ["edit", "write", "patch", "multiedit"]
+    guard let path = activity.last(where: { editing.contains($0.tool) && !$0.detail.isEmpty })?.detail else {
+      return final ? .block(rule: "unknown-target", reason: "The file to edit could not be determined.") : nil
+    }
+    return ToolPolicy.evaluate(tool: "edit", detail: path, folder: folder)
+  }
+
+  /// A new question from the agent: refuse it at once if a rule forbids it, otherwise ask the user.
+  private func review(_ permission: AgentEvent.Permission) {
+    if case .block(let rule, _)? = verdict(for: permission, final: false), let agent {
+      block(permission, rule: rule, agent: agent)
+    } else {
+      pendingPermission = permission
+    }
+  }
+
+  private func block(_ permission: AgentEvent.Permission, rule: String, agent: AgentServer) {
+    pendingPermission = nil
+    record(permission.tool, permission.detail, .blocked, rule: rule)
+    activity.append(ActivityItem(
+      id: "blocked-\(permission.id)", tool: permission.tool, detail: permission.detail,
+      status: "blocked: \(rule)", output: ""))
+    Task { try? await agent.client.reply(permission: permission.id, allow: false) }
+  }
+
+  /// A tool returned text that reads like an instruction to the model: stop the turn and say so.
+  private func stopForInjection(_ tool: AgentEvent.Tool) {
+    record(tool.name, tool.detail, .stopped, rule: "instruction-in-tool-output")
+    if let id = streamingSession { append("\n\nStopped: what \(tool.name) returned looked like instructions to the model. Review it before continuing.", to: id) }
+    stopAgent()
+  }
+
+  private func record(_ tool: String, _ detail: String, _ outcome: SecurityEntry.Outcome, rule: String) {
+    let folder = streamingFolder
+    let clean = folder.map { Redaction.clean(detail, root: $0, label: "<project>") } ?? detail
+    let name = streamingSession.flatMap { id in workspace.sessions.first { $0.id == id } }
+      .flatMap { project($0.projectId)?.name } ?? ""
+    do {
+      try securityLog.append(SecurityEntry(
+        date: Date(), project: name, tool: tool, detail: String(clean.prefix(200)), outcome: outcome, rule: rule))
+      securityEntries = securityLog.entries()
+    } catch {
+      errorMessage = String(describing: error)
+    }
+  }
+
+  func loadSecurityEntries() { securityEntries = securityLog.entries() }
 
   private func agentServer(folder: URL, runtime: LlamaRuntime) async throws -> AgentServer {
     if let agent, agent.isRunning, agent.folder == folder, agent.engineKey == runtime.apiKey { return agent }
@@ -424,7 +498,14 @@ final class AppModel {
     case .tool(let tool):
       let item = ActivityItem(id: tool.id, tool: tool.name, detail: tool.detail, status: tool.status, output: tool.output)
       if let i = activity.firstIndex(where: { $0.id == tool.id }) { activity[i] = item } else { activity.append(item) }
-    case .permission(let permission): pendingPermission = permission
+      if tool.status == "completed", ToolPolicy.looksLikeInjection(tool.output) { stopForInjection(tool) }
+      // The harness refuses some requests by itself (outside the project, web fetches). Log those too.
+      let lowered = tool.output.lowercased()
+      if tool.status == "error", ["denied", "rejected", "not allowed", "permission"].contains(where: lowered.contains),
+         loggedRefusals.insert(tool.id).inserted {
+        record(tool.name, tool.detail, .blocked, rule: "harness-refused")
+      }
+    case .permission(let permission): review(permission)
     case .connected: agentConnected = true
     case .busy: thinking = true
     case .idle: finishTurn()

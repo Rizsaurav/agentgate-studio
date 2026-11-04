@@ -114,7 +114,14 @@ public struct FailureReport: Sendable, Equatable, Codable {
 
   /// Removes keys, tokens and any path outside the models folder.
   static func redact(_ text: String, modelsRoot: URL) -> String {
-    var out = text.replacingOccurrences(of: modelsRoot.path, with: "<models>")
+    Redaction.clean(text, root: modelsRoot, label: "<models>")
+  }
+}
+
+/// Removes keys, tokens and private paths from text that is logged or shown to an assistant.
+public enum Redaction {
+  public static func clean(_ text: String, root: URL, label: String) -> String {
+    var out = text.replacingOccurrences(of: root.path, with: label)
     let rules: [(String, String)] = [
       (#"(?i)(bearer|api[-_ ]?key)[=: ]+\S+"#, "$1 <secret>"),
       (#"\b(sk|hf|ghp|gho)[-_][A-Za-z0-9_\-]{8,}"#, "<secret>"),
