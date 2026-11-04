@@ -42,6 +42,8 @@ public struct InstallFailure: Error, Sendable, CustomStringConvertible {
   public var cause: any Error & Sendable
   /// The engine's last output, when the engine was involved.
   public var logTail: String?
+  /// What was planned, once planning had succeeded; repairs use it to step quality or context down.
+  public var plan: ModelPlan?
 
   public var description: String { message }
 
@@ -70,14 +72,18 @@ public struct InstallPipeline: Sendable {
     _ model: CatalogModel, limits: ModelPlanner.Limits = supported,
     update: @escaping @Sendable (InstallUpdate) -> Void
   ) async throws -> (InstalledModel, LlamaRuntime) {
+    var planned: ModelPlan?
     func at<T>(_ step: InstallStep, _ message: String, _ body: () async throws -> T) async throws -> T {
       update(InstallUpdate(step: step, message: message))
       do {
         return try await body()
-      } catch let failure as InstallFailure {
+      } catch var failure as InstallFailure {
+        failure.plan = failure.plan ?? planned
         throw failure
       } catch {
-        throw InstallFailure(step: step, message: String(describing: error), cause: error as any Error & Sendable, logTail: nil)
+        var failure = InstallFailure(step: step, message: String(describing: error), cause: error as any Error & Sendable, logTail: nil)
+        failure.plan = planned
+        throw failure
       }
     }
 
@@ -90,6 +96,7 @@ public struct InstallPipeline: Sendable {
       case .incompatible(let reason): throw PlanError.incompatible(reason)
       }
     }
+    planned = plan
     let file = try await at(.quantization, plan.reason) { () -> CatalogModel.GGUFFile in
       guard case .ggufFile(_, let file) = plan.source else { throw PlanError.unsupportedSource }
       return file
