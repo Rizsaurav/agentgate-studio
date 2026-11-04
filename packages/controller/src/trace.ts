@@ -126,7 +126,8 @@ export function buildTraceStages(input: {
       .filter(
         (event) =>
           event.stage === 'retrieval' &&
-          event.outcome === 'quarantined' &&
+          // Older runs recorded 'quarantined'; flagged passages are now recorded as 'excluded'.
+          (event.outcome === 'quarantined' || event.outcome === 'excluded') &&
           event.documentId !== null,
       )
       .map((event) => event.documentId as string),

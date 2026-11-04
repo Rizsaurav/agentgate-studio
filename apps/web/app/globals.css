@@ -1203,3 +1203,30 @@ select {
     gap: 18px;
   }
 }
+
+/* Run traces: status badges in the theme's tones. */
+.trace-badge {
+  display: inline-block;
+  border-radius: 6px;
+  padding: 1px 8px;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: var(--raised);
+  color: var(--muted);
+}
+.trace-badge[data-tone='ok'] {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+}
+.trace-badge[data-tone='bad'] {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+.trace-badge[data-tone='pending'] {
+  color: var(--warning, #f2c97d);
+  background: color-mix(in srgb, var(--warning, #f2c97d) 14%, transparent);
+}
+.error-text {
+  color: var(--danger);
+}

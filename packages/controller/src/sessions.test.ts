@@ -260,6 +260,7 @@ describe('sessions and runs', () => {
             path: 'r.md',
             seq: 0,
             text: 'Refunds take 7 business days.',
+            released: false,
           },
         ],
       },

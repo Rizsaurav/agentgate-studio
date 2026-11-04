@@ -304,7 +304,7 @@ describe('enforced pipeline', () => {
     expect(trace?.stages[1]?.detail).toContain('1 document quarantined');
     expect(
       trace?.securityEvents.some(
-        (e) => e.stage === 'retrieval' && e.outcome === 'quarantined',
+        (e) => e.stage === 'retrieval' && e.outcome === 'excluded',
       ),
     ).toBe(true);
     expect(JSON.stringify(trace)).not.toContain('7 business days');

@@ -15,22 +15,24 @@ const STAGE_STATUS_LABELS: Record<RunTraceStage['status'], string> = {
   cancelled: 'Cancelled',
 };
 
-const STAGE_STATUS_BADGE: Record<RunTraceStage['status'], string> = {
-  done: 'bg-teal-100 text-teal-900',
-  blocked: 'bg-red-100 text-red-900',
-  failed: 'bg-red-100 text-red-900',
-  'not-run': 'bg-stone-200 text-stone-700',
-  pending: 'bg-amber-100 text-amber-900',
-  cancelled: 'bg-stone-200 text-stone-700',
+type Tone = 'ok' | 'bad' | 'pending' | 'neutral';
+
+const STAGE_STATUS_BADGE: Record<RunTraceStage['status'], Tone> = {
+  done: 'ok',
+  blocked: 'bad',
+  failed: 'bad',
+  'not-run': 'neutral',
+  pending: 'pending',
+  cancelled: 'neutral',
 };
 
-const RUN_STATUS_BADGE: Record<RunStatus, string> = {
-  queued: 'bg-amber-100 text-amber-900',
-  running: 'bg-amber-100 text-amber-900',
-  completed: 'bg-teal-100 text-teal-900',
-  failed: 'bg-red-100 text-red-900',
-  cancelled: 'bg-stone-200 text-stone-700',
-  blocked: 'bg-red-100 text-red-900',
+const RUN_STATUS_BADGE: Record<RunStatus, Tone> = {
+  queued: 'pending',
+  running: 'pending',
+  completed: 'ok',
+  failed: 'bad',
+  cancelled: 'neutral',
+  blocked: 'bad',
 };
 
 const SECURITY_STAGE_LABELS = {
@@ -68,13 +70,10 @@ export function RunTraces({
   const shown = items;
   return (
     <section aria-labelledby="run-traces-title" className="mt-12">
-      <h2
-        id="run-traces-title"
-        className="mb-2 text-xl font-semibold tracking-tight"
-      >
+      <h2 id="run-traces-title" className="mb-2 text-xl font-semibold">
         Run traces
       </h2>
-      <p className="mb-6 max-w-2xl text-sm leading-6 text-stone-600">
+      <p className="mb-6 max-w-2xl text-sm leading-6 muted">
         What each run actually did, in order: task check, retrieval, generation,
         and answer check. A stage marked “Not run” did not happen for that run,
         for example generation after an early block. Traces show the run state
@@ -82,36 +81,35 @@ export function RunTraces({
         finishes.
       </p>
       {totalRuns > shown.length && (
-        <p className="mb-4 text-sm text-stone-600">
+        <p className="mb-4 text-sm muted">
           Showing the latest {shown.length} of {totalRuns} runs.
         </p>
       )}
       <ol className="space-y-4">
         {shown.map(({ run, trace }, index) => (
-          <li
-            key={run.id}
-            className="rounded-xl border border-stone-300 bg-white p-5"
-          >
+          <li key={run.id} className="activity-panel">
             {trace === null ? (
               <>
                 <p className="text-sm font-medium">
                   <span
-                    className={`mr-2 rounded px-2 py-0.5 text-xs uppercase tracking-wide ${RUN_STATUS_BADGE[run.status]}`}
+                    className="trace-badge mr-2"
+                    data-tone={RUN_STATUS_BADGE[run.status]}
                   >
                     {run.status}
                   </span>
                   {shortPrompt(run.prompt)}
                 </p>
-                <p className="mt-3 text-sm text-stone-600">
+                <p className="mt-3 text-sm muted">
                   Trace unavailable for this run: a stored event for this run
                   could not be parsed.
                 </p>
               </>
             ) : (
               <details open={index === 0}>
-                <summary className="cursor-pointer rounded focus-visible:outline-2 focus-visible:outline-teal-700">
+                <summary className="cursor-pointer rounded ">
                   <span
-                    className={`mr-2 rounded px-2 py-0.5 text-xs uppercase tracking-wide ${RUN_STATUS_BADGE[trace.run.status]}`}
+                    className="trace-badge mr-2"
+                    data-tone={RUN_STATUS_BADGE[trace.run.status]}
                   >
                     {trace.run.status}
                   </span>
@@ -119,7 +117,7 @@ export function RunTraces({
                     {shortPrompt(trace.run.prompt)}
                   </span>
                 </summary>
-                <p className="mt-3 text-xs text-stone-600">
+                <p className="mt-3 text-xs muted">
                   Started{' '}
                   <time dateTime={trace.run.createdAt}>
                     {formatTimestamp(trace.run.createdAt)}
@@ -137,13 +135,14 @@ export function RunTraces({
                   )}
                 </p>
                 {trace.run.error && (
-                  <p className="mt-2 text-sm text-red-800">{trace.run.error}</p>
+                  <p className="mt-2 text-sm error-text">{trace.run.error}</p>
                 )}
                 <ol className="mt-4 space-y-3">
                   {trace.stages.map((stage) => (
                     <li key={stage.key} className="flex gap-3 text-sm">
                       <span
-                        className={`h-fit shrink-0 rounded px-2 py-0.5 text-xs uppercase tracking-wide ${STAGE_STATUS_BADGE[stage.status]}`}
+                        className="trace-badge h-fit shrink-0"
+                        data-tone={STAGE_STATUS_BADGE[stage.status]}
                       >
                         {STAGE_STATUS_LABELS[stage.status]}
                       </span>
@@ -156,7 +155,7 @@ export function RunTraces({
                 </ol>
                 {trace.sources.length > 0 && (
                   <div className="mt-4">
-                    <p className="text-xs font-semibold uppercase tracking-widest text-stone-600">
+                    <p className="text-xs font-semibold uppercase tracking-widest muted">
                       Retrieved sources
                     </p>
                     <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
@@ -170,7 +169,7 @@ export function RunTraces({
                 )}
                 {trace.securityEvents.length > 0 && (
                   <div className="mt-4">
-                    <p className="text-xs font-semibold uppercase tracking-widest text-stone-600">
+                    <p className="text-xs font-semibold uppercase tracking-widest muted">
                       Security events for this run
                     </p>
                     <ul className="mt-2 space-y-2 text-sm">
@@ -183,13 +182,11 @@ export function RunTraces({
                           {event.outcome}
                           {event.score !== null &&
                             ` · score ${event.score.toFixed(2)}`}
-                          <span className="block text-stone-600">
-                            {event.detail}
-                          </span>
+                          <span className="block muted">{event.detail}</span>
                         </li>
                       ))}
                     </ul>
-                    <p className="mt-3 text-xs text-stone-600">
+                    <p className="mt-3 text-xs muted">
                       Full findings, including any stored evidence, are on the{' '}
                       <Link href="/security" className="underline">
                         Security page
