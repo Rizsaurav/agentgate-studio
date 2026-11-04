@@ -27,6 +27,12 @@ npm run setup    # installs Ollama (Homebrew on macOS) and the security scanner 
 npm start        # starts the scanner and the app (and Ollama if you already have local models), then opens the Models page
 ```
 
+- **macOS:** the setup installs Ollama with Homebrew.
+- **Linux:** install Ollama with its [Linux installer](https://ollama.com/download/linux) first; the setup then installs the scanner (needs `python3.11` with `venv`, or [uv](https://docs.astral.sh/uv/), which fetches Python itself). `npm start` opens the browser with `xdg-open` when there is one.
+- **Windows:** not supported from source yet. Use Docker Desktop with WSL2 (option 1); that path is not verified yet either.
+
+Contributing? See [CONTRIBUTING.md](CONTRIBUTING.md) for branches, checks and how to add an evaluation.
+
 ### 3. Mac app
 
 `cd desktop && npm ci && npm run build` creates `desktop/release/AGENTGATE Studio-*/AGENTGATE Studio.app`. It starts only the web app, so Ollama and the scanner must already be running (see [issue tracker](../../issues) for the planned first-run setup).
@@ -46,6 +52,9 @@ npm start        # starts the scanner and the app (and Ollama if you already hav
 | Tasks say "Blocked ... scanner-unavailable" | The scanner is not running. `npm start` or `docker compose up` starts it; the first start downloads its model. |
 | No models in the picker                     | Add an API key on Models, or install a local model there (that starts Ollama).                                 |
 | Port 3000 is in use                         | `PORT=3100 npm start`, or `PORT=3100 docker compose up`.                                                       |
+| The first start takes minutes               | The scanner downloads its model once (about 700 MB). Later starts take seconds.                                |
+| `npm run setup` cannot install the scanner  | It needs Python 3.11 with `venv`, or `uv`. Install one, then run `npm run setup` again.                        |
+| Docker on Linux cannot reach Ollama         | Host Ollama listens on 127.0.0.1 only: run `OLLAMA_HOST=0.0.0.0 ollama serve`, or use the `ollama` profile.    |
 | Docker: models never appear                 | Ollama must run on your computer (`ollama serve`) or use the `ollama` profile above.                           |
 | Keys                                        | From source: stored in your OS keychain. Docker: set them in `.env` (a container has no keychain).             |
 
@@ -71,6 +80,20 @@ The **Assistant** button in the title bar shows live status and opens a panel. A
 ## Security notes
 
 Single-user and loopback-only: do not expose it on a public interface. Mutations require a matching loopback Origin and Host. Agents have no tools. If the scanner is unreachable, document ingestion and every run fail closed and the reason is shown. Checks reduce risk but do not guarantee protection from all attacks. SQLite is not encrypted, so keep secrets out of project names, context, and documents (known credential formats are rejected).
+
+## What leaves your computer
+
+Nothing about you or your work, by default: with local models the app, its database, the scanner and Ollama all run on your computer, and Next.js and Promptfoo telemetry are off. The one automatic request is the model list from Hugging Face (first row). Everything else leaves only when you use a feature that needs it:
+
+| When you…                                      | What is sent                                                                                                        | To                                      |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| Open the app (model recommendations)           | A request for the model lists of a few trusted publishers, at most once an hour; nothing about you or this computer | Hugging Face                            |
+| Run a session on a cloud model                 | The task, the conversation so far, the project's shared context and the retrieved passages that passed the checks   | That provider (or your custom endpoint) |
+| Turn on the Assistant                          | System state only: service status, evaluation case names and counts of blocked items; no documents or conversations | OpenRouter                              |
+| Save a cloud key                               | One small test request with that key                                                                                | That provider                           |
+| Install a local model                          | The model name; the model is downloaded                                                                             | Ollama's registry                       |
+| Start the scanner for the first time           | A request for the scanner model, which is downloaded                                                                | Hugging Face                            |
+| Open Evaluations with the GitHub CLI signed in | A request for this repository's workflow runs, with your `gh` login                                                 | GitHub                                  |
 
 ## Verify
 
