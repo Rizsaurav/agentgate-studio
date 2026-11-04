@@ -35,6 +35,36 @@ describe('condenseLog', () => {
   });
 });
 
+describe('lines from gh run view --log-failed', () => {
+  it('drops the job, step and timestamp, even when the step name has spaces', () => {
+    const out = condenseLog(
+      [
+        'e2e\tEnd-to-end tests (required; quarantined tests excluded)\t2026-11-04T18:40:55.1651415Z     Error: strict mode violation',
+        'build\tRun npm test\t2026-11-04T18:40:56.0000000Z FAIL src/a.test.ts',
+        'test Run 2026-11-04T18:40:57.0000000Z Error: older single-word format',
+      ].join('\n'),
+    );
+    expect(out).toBe(
+      [
+        'Error: strict mode violation',
+        'FAIL src/a.test.ts',
+        'Error: older single-word format',
+      ].join('\n'),
+    );
+  });
+
+  it('starts a cut tail on a whole line', () => {
+    const many = Array.from(
+      { length: 50 },
+      (_, i) => `error: line number ${i} of the failure`,
+    ).join('\n');
+    const out = condenseLog(many, 120);
+    const [marker, first] = out.split('\n');
+    expect(marker).toBe('…');
+    expect(first).toMatch(/^error: line number \d+ of the failure$/);
+  });
+});
+
 describe('failureSignature', () => {
   it('ignores timings and numbers but separates different failures', () => {
     const a = failureSignature('error: timed out after 3000ms at line 4412');

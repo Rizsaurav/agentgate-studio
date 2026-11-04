@@ -193,7 +193,7 @@ test('the dashboard runs the required suite, and a deliberately weak configurati
   await page.getByText('Deliberately weak demonstration').click();
   await page.getByRole('button', { name: 'Run weak demo' }).click();
   const weak = runs.filter({ hasText: 'Weak demo' }).first();
-  await expect(weak).toContainText('6 of 14 cases passed', {
+  await expect(weak).toContainText('7 of 16 cases passed', {
     timeout: 120_000,
   });
   await expect(weak).toContainText(
