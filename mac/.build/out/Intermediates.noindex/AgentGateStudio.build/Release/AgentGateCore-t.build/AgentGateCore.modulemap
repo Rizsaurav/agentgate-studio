@@ -1,4 +1,0 @@
-module AgentGateCore {
-header "AgentGateCore-Swift.h"
-export *
-}

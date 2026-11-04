@@ -13,3 +13,5 @@ __pycache__/
 eval-results/
 .vscode/
 /secrets/
+mac/.build/
+mac/dist/
