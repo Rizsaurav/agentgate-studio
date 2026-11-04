@@ -15,6 +15,7 @@ export class SqliteProjects implements ProjectRepository {
       id: randomUUID(),
       name,
       createdAt: new Date().toISOString(),
+      repository: null,
     });
     this.db
       .prepare('INSERT INTO projects (id, name, created_at) VALUES (?, ?, ?)')
@@ -28,7 +29,7 @@ export class SqliteProjects implements ProjectRepository {
       .parse(
         this.db
           .prepare(
-            'SELECT id, name, created_at AS createdAt FROM projects ORDER BY created_at DESC, id ASC',
+            'SELECT id, name, created_at AS createdAt, repository FROM projects ORDER BY created_at DESC, id ASC',
           )
           .all(),
       );
@@ -37,9 +38,15 @@ export class SqliteProjects implements ProjectRepository {
   find(id: string): Project | null {
     const row = this.db
       .prepare(
-        'SELECT id, name, created_at AS createdAt FROM projects WHERE id = ?',
+        'SELECT id, name, created_at AS createdAt, repository FROM projects WHERE id = ?',
       )
       .get(id);
     return row === undefined ? null : projectSchema.parse(row);
+  }
+
+  setRepository(id: string, repository: string | null): void {
+    this.db
+      .prepare('UPDATE projects SET repository = ? WHERE id = ?')
+      .run(repository, id);
   }
 }
