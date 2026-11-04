@@ -25,7 +25,10 @@ public struct OpenRouterAssistant: RepairAssistant {
 
   public init(
     baseURL: URL = URL(string: "https://openrouter.ai/api/v1")!,
-    apiKey: @escaping @Sendable () throws -> String? = { try OpenRouterAssistant.keychain.read() },
+    apiKey: @escaping @Sendable () throws -> String? = {
+      // OPENROUTER_API_KEY is for automated tests only; the app stores the key in the Keychain.
+      try ProcessInfo.processInfo.environment["OPENROUTER_API_KEY"] ?? OpenRouterAssistant.keychain.read()
+    },
     session: URLSession = .shared
   ) {
     self.baseURL = baseURL
@@ -37,7 +40,10 @@ public struct OpenRouterAssistant: RepairAssistant {
     You repair failed installs of a local language model on a Mac. You get a redacted failure report and \
     decide what to do yourself. Reply with one JSON object and nothing else. \
     To look first, ask for one read-only probe: {"explanation": "<why>", "probe": "diskFree" | "modelsFolder" | "memory" | "network"}; \
-    its result comes back in the report's findings. To act: {"explanation": "<two plain sentences for the user>", \
+    its result comes back in the report's findings. Or ask to run one shell command to look at something the probes \
+    cannot show: {"explanation": "<why>", "command": "df -h ."}. It runs in the models folder, the user must approve it, \
+    and paths outside that folder, sudo, network uploads and anything destructive are refused. You get at most 3 \
+    looks in total. To act: {"explanation": "<two plain sentences for the user>", \
     "operations": [{"op": "<name>"}]}. Operations: retryDownload, restartRuntime, cancelAndCleanUp, \
     reduceContext, lowerQuantization, setContext (add "to": "8192" | "16384" | "32768"), \
     setQuantization (add "to": "Q8_0" | "Q6_K" | "Q5_K_M" | "MXFP4" | "Q4_K_M" | "Q3_K_M"), \
@@ -81,5 +87,5 @@ public struct OpenRouterAssistant: RepairAssistant {
   }
 
   /// Whether a key is saved, without reading it into the UI.
-  public static var isConnected: Bool { keychain.exists() }
+  public static var isConnected: Bool { ProcessInfo.processInfo.environment["OPENROUTER_API_KEY"] != nil || keychain.exists() }
 }

@@ -18,6 +18,9 @@ public enum RepairOperation: Sendable, Equatable, Hashable {
   case setContext(Int)
   /// Plan again with at most this quantization.
   case setQuantization(Quantization)
+  /// A shell command the assistant wants run to look at something. It is never a repair on its own:
+  /// the same rules as the agent's terminal apply, the user approves it, and its output goes back to the assistant.
+  case runCommand(String)
 
   public var name: String {
     switch self {
@@ -29,13 +32,14 @@ public enum RepairOperation: Sendable, Equatable, Hashable {
     case .cancelAndCleanUp: "cancelAndCleanUp"
     case .setContext: "setContext"
     case .setQuantization: "setQuantization"
+    case .runCommand: "runCommand"
     }
   }
 
   /// A repair that deletes files, changes the model's quality, or downloads over 1 GB is the user's call.
   public func needsApproval(downloadBytes: UInt64) -> Bool {
     switch self {
-    case .freeDisk, .lowerQuantization, .setQuantization: true
+    case .freeDisk, .lowerQuantization, .setQuantization, .runCommand: true
     case .retryDownload: downloadBytes > MemoryBudget.gib
     case .reduceContext, .restartRuntime, .cancelAndCleanUp, .setContext: false
     }
@@ -51,6 +55,7 @@ public enum RepairOperation: Sendable, Equatable, Hashable {
     case .cancelAndCleanUp: "Stop and remove the incomplete files."
     case .setContext(let size): "Use a \(size / 1024)K context."
     case .setQuantization(let quant): "Use the \(quant.rawValue) version of the model."
+    case .runCommand(let command): "Run: \(command)"
     }
   }
 }
@@ -243,10 +248,16 @@ public enum RepairProbe: String, Sendable, CaseIterable {
 /// What an assistant answered: a probe to run first, or the repairs to apply.
 public enum RepairReply: Sendable, Equatable {
   case probe(RepairProbe)
+  /// A command to run in the models folder, after the rules and the user agree.
+  case command(String)
   case proposal(RepairProposal)
 
   public static func parse(_ json: String, removable: Set<String>) throws -> RepairReply {
-    struct Peek: Decodable { var probe: String? }
+    struct Peek: Decodable { var probe: String?; var command: String? }
+    if let command = (try? JSONDecoder().decode(Peek.self, from: Data(json.utf8)))?.command {
+      guard !command.isEmpty, command.count <= 300 else { throw RepairProposal.Invalid.badValue("command") }
+      return .command(command)
+    }
     if let name = (try? JSONDecoder().decode(Peek.self, from: Data(json.utf8)))?.probe {
       guard let probe = RepairProbe(rawValue: name) else { throw RepairProposal.Invalid.unknownOperation(String(name.prefix(40))) }
       return .probe(probe)

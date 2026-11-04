@@ -146,6 +146,10 @@ public struct RepairRunner: Sendable {
             let found = await probe.run(store: pipeline.store, hardware: report.hardware)
             try record(model, nil, "probe \(probe.rawValue): \(found.prefix(120))", .done)
             report.findings.append("\(probe.rawValue): \(found)")
+          case .command(let command):
+            guard report.findings.count < Self.maxProbes else { throw RepairProposal.Invalid.tooMany }
+            let found = try await look(command, report: report, model: model)
+            report.findings.append("command \(command): \(found)")
           }
         }
       } catch {
@@ -157,6 +161,57 @@ public struct RepairRunner: Sendable {
       operations: report.failureClass.defaultRepair(after: tried))
   }
 
+  /// Runs a command the assistant asked for, if the rules allow it and the user approves. The answer is what
+  /// the assistant reads next: output, or the reason nothing ran.
+  private func look(_ command: String, report: FailureReport, model: CatalogModel) async throws -> String {
+    let folder = pipeline.store.root
+    let operation = RepairOperation.runCommand(command)
+    if case .block(let rule, let reason) = ToolPolicy.evaluate(tool: "bash", detail: command, folder: folder) {
+      try record(model, operation, "blocked by \(rule)", .rejected)
+      return "Not run: blocked by the rules (\(rule)): \(reason)"
+    }
+    try record(model, operation, "asked to run", .proposed)
+    guard await approve(operation, report) else {
+      try record(model, operation, "declined", .denied)
+      return "Not run: the user declined."
+    }
+    try record(model, operation, "approved", .approved)
+    let output = await Self.shell(command, in: folder)
+    let clean = String(Redaction.clean(output, root: folder, label: "<models>").prefix(1500))
+    try record(model, operation, "ran: \(clean.prefix(120))", .done)
+    return clean
+  }
+
+  /// Runs `command` with /bin/sh in `folder`: 20 seconds at most, output capped at 8 KB.
+  static func shell(_ command: String, in folder: URL) async -> String {
+    await withCheckedContinuation { continuation in
+      let process = Process()
+      process.executableURL = URL(fileURLWithPath: "/bin/sh")
+      process.arguments = ["-c", command]
+      process.currentDirectoryURL = folder
+      process.environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "en_US.UTF-8"]
+      let pipe = Pipe()
+      process.standardOutput = pipe
+      process.standardError = pipe
+      let log = LogTail()
+      pipe.fileHandleForReading.readabilityHandler = { handle in
+        let data = handle.availableData
+        if data.isEmpty { handle.readabilityHandler = nil } else { log.append(data) }
+      }
+      process.terminationHandler = { _ in
+        pipe.fileHandleForReading.readabilityHandler = nil
+        continuation.resume(returning: String(log.text.suffix(8192)))
+      }
+      do {
+        try process.run()
+      } catch {
+        continuation.resume(returning: "Could not run: \(error.localizedDescription)")
+        return
+      }
+      DispatchQueue.global().asyncAfter(deadline: .now() + 20) { if process.isRunning { process.terminate() } }
+    }
+  }
+
   /// Runs one operation. Returns false when it does not apply (nothing changed).
   private func perform(
     _ operation: RepairOperation, failure: InstallFailure, model: CatalogModel,
@@ -165,6 +220,8 @@ public struct RepairRunner: Sendable {
     switch operation {
     case .retryDownload, .restartRuntime:
       return true
+    case .runCommand:
+      return false  // Commands are looks, run before a proposal; they are never applied as repairs.
     case .reduceContext:
       guard let current = failure.plan?.context, let next = ModelPlanner.contexts.first(where: { $0 < current }) else { return false }
       limits.maxContext = next

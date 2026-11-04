@@ -180,6 +180,9 @@ extension InstallMatrixLiveTests {
       case .probe(let probe):
         steps.append("probe \(probe.rawValue)")
         report.findings.append("\(probe.rawValue): checked")
+      case .command(let command):
+        steps.append("command \(command)")
+        report.findings.append("command \(command): not run in this test")
       case .proposal(let proposal):
         steps.append("fix \(proposal.operations.map(\.name))")
         print("AGENT STEPS:", steps, "|", proposal.explanation)

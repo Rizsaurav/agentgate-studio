@@ -330,3 +330,53 @@ private actor Sequence: RepairAssistant {
     #expect(rig.audit.entries().filter { $0.reason.hasPrefix("probe ") }.count <= RepairRunner.maxProbes)
   }
 }
+
+private actor Asked2 { var operations: [RepairOperation] = []; func add(_ o: RepairOperation) { operations.append(o) } }
+
+@Suite struct RepairCommandTests {
+  private func run(_ replies: [String], approve: Bool) async throws -> (findings: [String], asked: [RepairOperation], audit: [AuditEntry]) {
+    let rig = try RepairRunnerTests.Rig()
+    defer { try? FileManager.default.removeItem(at: rig.dir) }
+    let assistant = Sequence(replies)
+    let asked = Asked2()
+    var pipeline = InstallPipeline()
+    pipeline.store = rig.store
+    let runner = RepairRunner(pipeline: pipeline, audit: rig.audit, assistant: assistant) { op, _ in
+      await asked.add(op)
+      return approve
+    }
+    _ = try? await runner.install(rig.model) { _ in }
+    let reports = await assistant.reports
+    return (reports.last?.findings ?? [], await asked.operations, rig.audit.entries())
+  }
+
+  private let stop = #"{"explanation":"done","operations":[{"op":"cancelAndCleanUp"}]}"#
+
+  @Test func anApprovedCommandRunsAndItsOutputReachesTheAssistant() async throws {
+    let result = try await run([#"{"explanation":"look","command":"echo hello-from-repair"}"#, stop], approve: true)
+    #expect(result.asked.first == .runCommand("echo hello-from-repair"))
+    #expect(result.findings.first?.contains("hello-from-repair") == true)
+    #expect(result.audit.contains { $0.operation == "runCommand" && $0.outcome == .done })
+  }
+
+  @Test func aCommandTheRulesForbidIsNeverAskedAboutOrRun() async throws {
+    let result = try await run([#"{"explanation":"look","command":"sudo rm -rf /"}"#, stop], approve: true)
+    #expect(result.asked.isEmpty)
+    #expect(result.findings.first?.contains("blocked by the rules") == true)
+    #expect(result.audit.contains { $0.operation == "runCommand" && $0.outcome == .rejected })
+  }
+
+  @Test func aDeclinedCommandDoesNotRun() async throws {
+    let result = try await run([#"{"explanation":"look","command":"echo should-not-appear"}"#, stop], approve: false)
+    #expect(result.asked == [.runCommand("echo should-not-appear")])
+    #expect(result.findings.first?.contains("declined") == true)
+    #expect(result.findings.first?.contains("should-not-appear") == false || result.findings.first?.contains("command echo") == true)
+    #expect(!result.audit.contains { $0.outcome == .done && $0.reason.hasPrefix("ran:") })
+  }
+
+  @Test func theAssistantCannotListRunCommandAsARepair() {
+    #expect(throws: RepairProposal.Invalid.unknownOperation("runCommand")) {
+      try RepairProposal.parse(#"{"explanation":"x","operations":[{"op":"runCommand"}]}"#, removable: [])
+    }
+  }
+}
