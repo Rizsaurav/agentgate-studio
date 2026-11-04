@@ -75,5 +75,5 @@ public struct OpenRouterAssistant: RepairAssistant {
   }
 
   /// Whether a key is saved, without reading it into the UI.
-  public static var isConnected: Bool { ((try? keychain.read()) ?? nil)?.isEmpty == false }
+  public static var isConnected: Bool { keychain.exists() }
 }

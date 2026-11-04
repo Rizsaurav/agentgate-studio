@@ -1,4 +1,5 @@
 import AgentGateCore
+import AppKit
 import Foundation
 import Observation
 
@@ -82,10 +83,49 @@ final class AppModel {
     workspace.sessions.filter { $0.projectId == project }.sorted { $0.createdAt > $1.createdAt }
   }
 
+  /// Where new projects are created: a visible folder in Documents.
+  static var projectsRoot: URL {
+    FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+      .appendingPathComponent("AGENTGATE Projects", isDirectory: true)
+  }
+
+  /// Creates a project with a new folder of the same name.
   func createProject(named name: String) -> Bool {
     do {
-      let project = Project(id: UUID(), name: try WorkspaceStore.validName(name), createdAt: Date())
-      workspace.projects.append(project)
+      let valid = try WorkspaceStore.validName(name)
+      let folder = Self.projectsRoot.appendingPathComponent(valid.replacingOccurrences(of: "/", with: "-"), isDirectory: true)
+      try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+      return add(Project(id: UUID(), name: valid, createdAt: Date(), folder: folder.path))
+    } catch {
+      errorMessage = String(describing: error)
+      return false
+    }
+  }
+
+  /// Opens an existing folder as a project. Asks which folder.
+  func openFolder() {
+    let panel = NSOpenPanel()
+    panel.canChooseDirectories = true
+    panel.canChooseFiles = false
+    panel.allowsMultipleSelection = false
+    panel.prompt = "Open"
+    panel.message = "Choose the folder this project works in."
+    guard panel.runModal() == .OK, let url = panel.url else { return }
+    if let existing = workspace.projects.first(where: { $0.folder == url.path }) {
+      route = .project(existing.id)
+      return
+    }
+    do {
+      _ = add(Project(id: UUID(), name: try WorkspaceStore.validName(String(url.lastPathComponent.prefix(80))),
+                      createdAt: Date(), folder: url.path))
+    } catch {
+      errorMessage = String(describing: error)
+    }
+  }
+
+  private func add(_ project: Project) -> Bool {
+    workspace.projects.append(project)
+    do {
       try persist()
       route = .project(project.id)
       return true
@@ -93,6 +133,16 @@ final class AppModel {
       errorMessage = String(describing: error)
       return false
     }
+  }
+
+  /// Switches an existing session to another installed model and loads it.
+  func switchModel(of sessionId: UUID, to model: InstalledModel) {
+    guard let index = workspace.sessions.firstIndex(where: { $0.id == sessionId }),
+          workspace.sessions[index].modelId != model.id else { return }
+    workspace.sessions[index].modelId = model.id
+    workspace.sessions[index].modelName = model.name
+    do { try persist() } catch { errorMessage = String(describing: error) }
+    if let entry = catalog?.model(model.id) { select(entry) }
   }
 
   func startSession(in project: UUID, with model: InstalledModel) {

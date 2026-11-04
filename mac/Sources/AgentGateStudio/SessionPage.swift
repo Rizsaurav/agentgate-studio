@@ -8,41 +8,21 @@ struct SessionPage: View {
 
   var body: some View {
     if let session = app.session(sessionId), let project = app.project(session.projectId) {
-      VStack(alignment: .leading, spacing: 26) {
-        Button { app.route = .project(project.id) } label: { Text("← \(project.name)").font(.system(size: 13)) }
-          .buttonStyle(.plain).foregroundStyle(Theme.muted)
-        PageHeading(eyebrow: project.name, title: "Agent session", detail: "\(session.modelName) · local · Saved locally")
-        HStack(alignment: .top, spacing: 24) {
-          conversation(session)
-          VStack(spacing: 16) {
-            SideCard(title: "Selected model") {
-              Label(session.modelName, systemImage: "cube").font(.system(size: 14, weight: .medium))
-              Text(modelState(session)).font(.system(size: 12)).foregroundStyle(Theme.muted)
-              Button("Start a session with another model →") { app.route = .project(project.id) }
-                .buttonStyle(LinkButtonStyle())
-            }
-            SideCard(title: "Task activity") {
-              let tasks = session.messages.filter { $0.role == .user }
-              if tasks.isEmpty {
-                Text("No tasks have run in this session.").font(.system(size: 12)).foregroundStyle(Theme.muted)
-              } else {
-                ForEach(tasks.suffix(5).reversed()) { task in
-                  Label(task.content, systemImage: "checkmark").font(.system(size: 12)).lineLimit(1)
-                }
-              }
-            }
-            SideCard(title: "Protection") {
-              Text("The model runs on this Mac and answers only to this app, behind a per-launch key. Security checks arrive with the bundled harness.")
-                .font(.system(size: 12)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
-              Button("Security & Verification →") { app.route = .security }.buttonStyle(LinkButtonStyle())
-            }
+      VStack(alignment: .leading, spacing: 14) {
+        HStack {
+          Button { app.route = .project(project.id) } label: { Text("← \(project.name)").font(.system(size: 13)) }
+            .buttonStyle(.plain).foregroundStyle(Theme.muted)
+          Spacer()
+          if let folder = project.folder {
+            Label((folder as NSString).abbreviatingWithTildeInPath, systemImage: "folder")
+              .font(.system(size: 12)).foregroundStyle(Theme.muted).lineLimit(1)
           }
-          .frame(width: 240)
         }
+        conversation(session)
       }
-      .padding(.horizontal, 42).padding(.top, 40).padding(.bottom, 24)
-      .frame(maxWidth: 1100, maxHeight: .infinity, alignment: .topLeading)
-      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.horizontal, 42).padding(.top, 28).padding(.bottom, 20)
+      .frame(maxWidth: 860, maxHeight: .infinity, alignment: .topLeading)
+      .frame(maxWidth: .infinity, alignment: .center)
     } else {
       Text("This session no longer exists.").foregroundStyle(Theme.muted)
     }
@@ -59,9 +39,7 @@ struct SessionPage: View {
       if session.messages.isEmpty {
         VStack(spacing: 12) {
           IconTile(symbol: "sparkle", size: 56)
-          Text("What would you like to work on?").font(.system(size: 15, weight: .semibold))
-          Text("Your project stays on this Mac. The model answers from the engine built into the app.")
-            .font(.system(size: 13)).foregroundStyle(Theme.muted).multilineTextAlignment(.center).frame(maxWidth: 340)
+          Text("What are we working on?").font(.system(size: 15, weight: .semibold))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
       } else {
@@ -89,10 +67,12 @@ struct SessionPage: View {
       TextField("Ask anything about your project…", text: $draft, axis: .vertical)
         .textFieldStyle(.plain).font(.system(size: 14)).lineLimit(3...8)
         .accessibilityLabel("Task")
+        .onSubmit { send() }
       HStack {
-        Text("Runs on this Mac · ⌘ Return").font(.system(size: 11)).foregroundStyle(Theme.muted)
+        modelMenu(session)
+        Text(modelState(session)).font(.system(size: 11)).foregroundStyle(Theme.muted)
         Spacer()
-        Button { send() } label: { Label("Run task", systemImage: "paperplane") }
+        Button { send() } label: { Label("Send", systemImage: "arrow.up") }
           .buttonStyle(PrimaryButtonStyle())
           .keyboardShortcut(.return, modifiers: .command)
           .disabled(app.generating || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -102,6 +82,28 @@ struct SessionPage: View {
     .background(RoundedRectangle(cornerRadius: 10).fill(Theme.raised.opacity(0.6)))
     .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.line))
     .padding(18)
+  }
+
+  private func modelMenu(_ session: Session) -> some View {
+    Menu {
+      ForEach(app.installed) { model in
+        Button("\(model.name) · \(model.quant.rawValue)") { app.switchModel(of: session.id, to: model) }
+      }
+      Divider()
+      Button("Install another model…") { app.route = .models }
+    } label: {
+      HStack(spacing: 6) {
+        Image(systemName: "cube").font(.system(size: 11))
+        Text(session.modelName).font(.system(size: 12, weight: .medium))
+        Image(systemName: "chevron.up.chevron.down").font(.system(size: 9))
+      }
+      .foregroundStyle(Theme.text)
+      .padding(.horizontal, 10).padding(.vertical, 6)
+      .background(Capsule().fill(Theme.raised))
+      .overlay(Capsule().strokeBorder(Theme.line))
+    }
+    .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
+    .accessibilityLabel("Model")
   }
 
   private func send() {

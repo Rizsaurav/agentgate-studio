@@ -37,6 +37,8 @@ struct WorkspacePage: View {
             .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
             .help("Create project")
         }
+        Button("Open a folder…") { app.openFolder() }.buttonStyle(.plain).foregroundStyle(Theme.accent)
+          .font(.system(size: 13))
         VStack(spacing: 2) {
           ForEach(app.projects) { project in
             ProjectListRow(project: project, sessions: app.sessions(in: project.id).count) {
@@ -114,7 +116,7 @@ private struct ProjectListRow: View {
         IconTile(symbol: "cube", size: 46)
         VStack(alignment: .leading, spacing: 6) {
           Text(project.name).font(.system(size: 14, weight: .semibold))
-          Text("\(plural(sessions, "session"))  ·  Created \(isoDay(project.createdAt))")
+          Text("\(plural(sessions, "chat"))" + (project.folder.map { "  ·  " + ($0 as NSString).abbreviatingWithTildeInPath } ?? ""))
             .font(.system(size: 12)).foregroundStyle(Theme.muted)
         }
         Spacer()

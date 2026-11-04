@@ -44,6 +44,14 @@ public struct Keychain: Sendable {
     return String(decoding: data, as: UTF8.self)
   }
 
+  /// Whether the secret exists. Asks only for attributes, never the secret, so it never prompts.
+  public func exists() -> Bool {
+    var item = query
+    item[kSecReturnAttributes as String] = true
+    item[kSecMatchLimit as String] = kSecMatchLimitOne
+    return SecItemCopyMatching(item as CFDictionary, nil) == errSecSuccess
+  }
+
   public func delete() throws {
     let status = SecItemDelete(query as CFDictionary)
     guard status == errSecSuccess || status == errSecItemNotFound else { throw KeychainError.failed(status) }

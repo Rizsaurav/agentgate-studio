@@ -4,11 +4,14 @@ public struct Project: Codable, Sendable, Equatable, Identifiable, Hashable {
   public var id: UUID
   public var name: String
   public var createdAt: Date
+  /// The folder on this Mac the agent works in. Nil for projects made before folders existed.
+  public var folder: String?
 
-  public init(id: UUID, name: String, createdAt: Date) {
+  public init(id: UUID, name: String, createdAt: Date, folder: String? = nil) {
     self.id = id
     self.name = name
     self.createdAt = createdAt
+    self.folder = folder
   }
 }
 
