@@ -1,5 +1,9 @@
 import { headers } from 'next/headers';
-import { DEFAULT_LIMITS, isLocalHost } from '@agentgate/controller';
+import {
+  DEFAULT_LIMITS,
+  fixForProposal,
+  isLocalHost,
+} from '@agentgate/controller';
 import { assistant } from '@/lib/assistant';
 import { agentModel, agentStore } from '@/lib/controller';
 
@@ -24,7 +28,16 @@ export async function GET() {
         DEFAULT_LIMITS.dailyTokens,
       model: agentModel().modelId,
       findings: watchdog.current(),
-      notes: store.notes(30),
+      // The panel needs to know what approving a proposal does: run an action or install a model.
+      notes: store.notes(30).map((note) => ({
+        ...note,
+        request:
+          note.kind !== 'proposal'
+            ? null
+            : fixForProposal(note.text)
+              ? 'action'
+              : 'install',
+      })),
     },
     { headers: { 'cache-control': 'no-store' } },
   );

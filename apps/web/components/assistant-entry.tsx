@@ -22,6 +22,8 @@ type Note = {
   kind: 'question' | 'answer' | 'finding' | 'action' | 'proposal';
   text: string;
   status: 'open' | 'approved' | 'dismissed';
+  /** What approving a proposal does; null for every other kind of note. */
+  request: 'action' | 'install' | null;
 };
 type Status = {
   enabled: boolean;
@@ -43,6 +45,10 @@ const KIND_LABEL: Record<Note['kind'], string> = {
   finding: 'Looked into',
   action: 'Did',
   proposal: 'Suggests installing',
+};
+const PROPOSAL_LABEL: Record<'action' | 'install', string> = {
+  action: 'Waiting for your approval',
+  install: 'Suggests installing',
 };
 
 /** The assistant's status, always in the title bar, with its panel one click away. */
@@ -237,8 +243,10 @@ function AssistantBody({
                   <li key={note.id}>
                     <div>
                       <span className="metadata">
-                        {KIND_LABEL[note.kind]} · {note.createdAt.slice(11, 16)}{' '}
-                        UTC
+                        {note.request
+                          ? PROPOSAL_LABEL[note.request]
+                          : KIND_LABEL[note.kind]}{' '}
+                        · {note.createdAt.slice(11, 16)} UTC
                       </span>
                       <p>{note.text}</p>
                       {note.kind === 'proposal' && note.status === 'open' && (
@@ -249,7 +257,9 @@ function AssistantBody({
                               void run(decideProposal(note.id, true))
                             }
                           >
-                            Install it
+                            {note.request === 'action'
+                              ? 'Approve'
+                              : 'Install it'}
                           </Button>
                           <Button
                             type="button"
