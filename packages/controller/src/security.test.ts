@@ -275,6 +275,41 @@ describe('enforced pipeline', () => {
     });
   });
 
+  it('shows a quarantined retrieval in the trace after a real pipeline run', async () => {
+    let flagged = false;
+    const scanner: InjectionScanner = {
+      scan: async (texts) =>
+        texts.map((t) => ({
+          injection: flagged && t.includes('Refunds'),
+          score: flagged ? 0.99 : 0,
+        })),
+    };
+    const t = setup(scanner);
+    writeFileSync(
+      join(t.root, 'r.md'),
+      '# Returns\n\nRefunds take 7 business days.',
+    );
+    await t.documents.reference({ projectId: t.project.id, path: '.' });
+    flagged = true;
+    t.faux.setResponses([fauxAssistantMessage('I could not find that.')]);
+    const run = await t.ask('How long do refunds take?');
+    expect(run.status).toBe('completed');
+    const trace = t.sessions.trace(run.id, t.events.forRun(run.id));
+    expect(trace?.stages.map((stage) => stage.status)).toEqual([
+      'done',
+      'done',
+      'done',
+      'done',
+    ]);
+    expect(trace?.stages[1]?.detail).toContain('1 document quarantined');
+    expect(
+      trace?.securityEvents.some(
+        (e) => e.stage === 'retrieval' && e.outcome === 'excluded',
+      ),
+    ).toBe(true);
+    expect(JSON.stringify(trace)).not.toContain('7 business days');
+  });
+
   it('blocks and never persists an answer containing a secret or exfiltration link', async () => {
     const t = setup();
     t.faux.setResponses([

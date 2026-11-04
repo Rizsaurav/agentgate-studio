@@ -16,7 +16,15 @@ export {
   sendPromptSchema,
   sessionIdSchema,
 } from './sessions';
-export type { Run, Session } from './sessions';
+export type { Run, RunEvent, RunStatus, RunTrace, Session } from './sessions';
+export {
+  buildTraceStages,
+  screenedDocumentIds,
+  sourcesFromEvents,
+  toSecurityEventSummaries,
+  traceSourceSchema,
+} from './trace';
+export type { RunTraceStage, SecurityEventSummary, TraceSource } from './trace';
 export { DEFAULT_OLLAMA_URL, OllamaCatalog } from './ollama';
 export type { AgentModels } from './ollama';
 export {
@@ -51,7 +59,9 @@ export type { Document } from './documents';
 export {
   detectDisallowedOperation,
   detectExfiltrationLink,
+  REDACTED,
   detectSecrets,
+  redactSecrets,
   safeExcerpt,
 } from './policy';
 export {
@@ -61,16 +71,18 @@ export {
 } from './scanner';
 export type { InjectionScanner } from './scanner';
 export { ProtectionPipeline, SqliteSecurityEvents } from './security';
-export type { Blocked, RunGuard } from './security';
+export type { Blocked, RunGuard, SecurityEvent } from './security';
 export { RunService } from './runner';
 export { isLocalHost, isLocalMutation } from './local-request';
 export {
   EvalService,
   SqliteEvals,
   configurationIdentity,
+  guardrailRates,
   latestFailedRunLog,
   listGithubRuns,
 } from './evals';
+export type { GuardrailRate, GuardrailRates } from './evals';
 export { condenseLog, failureSignature } from './ci-log';
 export { ModelPuller, PULL_STEPS, modelNameSchema } from './local-models';
 export type { PullOptions, PullState, PullStep } from './local-models';
@@ -79,12 +91,38 @@ export type { CatalogModel } from './hf-catalog';
 export { checkServices } from './health';
 export type { ServiceCheck } from './health';
 export { inspectSystem } from './system';
+export {
+  GithubCi,
+  describeGhError,
+  failureTail,
+  fixTask,
+  repositorySchema,
+} from './github-ci';
+export type {
+  CiFailure,
+  CiStatus,
+  GhRunner,
+  WorkflowRun,
+  WorkflowState,
+} from './github-ci';
 export type { SystemProfile } from './system';
 export { AgentStore } from './agent-store';
 export type { AgentNote } from './agent-store';
 export { AgentModel, AGENT_PROVIDER, DEFAULT_AGENT_MODEL } from './agent-model';
-export { DEFAULT_LIMITS, Supervisor, questionSchema } from './supervisor';
-export type { SupervisorActions, SupervisorLimits } from './supervisor';
+export {
+  DEFAULT_LIMITS,
+  FIXES,
+  Supervisor,
+  asksForAction,
+  fixForProposal,
+  questionSchema,
+} from './supervisor';
+export type {
+  FixName,
+  RunTrigger,
+  SupervisorActions,
+  SupervisorLimits,
+} from './supervisor';
 export { Watchdog, assess } from './watchdog';
 export type { Finding, Probe, Remedy } from './watchdog';
 export { ensureOllama, startOllama, startScanner } from './service-control';

@@ -1,0 +1,95 @@
+name: E2E
+on:
+  pull_request:
+  push:
+    branches: [dev, main]
+  schedule:
+    # Nightly, so drift in a dependency or a model is caught even when nobody pushes.
+    - cron: '17 7 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  NEXT_TELEMETRY_DISABLED: '1'
+
+jobs:
+  # Chrome against the production build, the real LLM Guard scanner and a real Ollama with two
+  # tiny models. Nothing is retried; a failure uploads a trace, a screenshot and a video.
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PIP_EXTRA_INDEX_URL: https://download.pytorch.org/whl/cpu
+      OLLAMA_MODELS_DIR: ${{ github.workspace }}/.ollama-models
+      AGENTGATE_OLLAMA_URL: http://127.0.0.1:11434
+      # The smallest models that still answer; the tests check the application, not answer quality.
+      AGENTGATE_E2E_MODEL: qwen2.5:0.5b
+      AGENTGATE_E2E_MODEL_2: gemma3:270m
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: scanner/requirements.txt
+      - name: Cache the scanner model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: huggingface-llm-guard-${{ hashFiles('scanner/requirements.txt') }}
+      - name: Cache the Ollama models
+        uses: actions/cache@v4
+        with:
+          path: .ollama-models
+          key: ollama-e2e-${{ env.AGENTGATE_E2E_MODEL }}-${{ env.AGENTGATE_E2E_MODEL_2 }}
+      - name: Cache the Playwright browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
+      - run: PYTHON=python sh scanner/setup.sh
+      - name: Start Ollama (the same pinned image as compose.yaml) and pull the test models
+        run: |
+          mkdir -p "$OLLAMA_MODELS_DIR"
+          docker run --detach --name ollama --publish 127.0.0.1:11434:11434 \
+            --volume "$OLLAMA_MODELS_DIR:/root/.ollama/models" \
+            ollama/ollama:0.40.13@sha256:b2f0122c476bc9fe7ce679d8bb4bd555351e25e2554eefb156f61cb0a89cf429
+          for _ in $(seq 1 30); do curl -sf "$AGENTGATE_OLLAMA_URL/api/tags" > /dev/null && break; sleep 1; done
+          docker exec ollama ollama pull "$AGENTGATE_E2E_MODEL"
+          docker exec ollama ollama pull "$AGENTGATE_E2E_MODEL_2"
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - name: End-to-end tests (required; quarantined tests excluded)
+        run: npx playwright test
+      - name: Quarantined tests (nightly only, never blocking)
+        if: github.event_name == 'schedule'
+        continue-on-error: true
+        env:
+          AGENTGATE_E2E_QUARANTINE: '1'
+        run: npx playwright test --pass-with-no-tests
+      - name: Upload traces, screenshots and videos
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-evidence
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+      - name: Ollama log on failure
+        if: failure()
+        run: docker logs --tail 100 ollama
+      # Last, after the tests have also written to it: the files are root-owned in the container,
+      # and the cache step that saves them afterwards runs as the runner user.
+      - name: Make the Ollama models readable for the cache
+        if: always()
+        run: sudo chmod -R a+rX "$OLLAMA_MODELS_DIR"

@@ -3,6 +3,8 @@ import { statfsSync } from 'node:fs';
 import { arch, cpus, platform, totalmem } from 'node:os';
 
 const GPU_PROBE_TIMEOUT_MS = 3000;
+/** The graphics card does not change while the app runs, and asking starts a process. */
+const GPU_CACHE_MS = 10 * 60_000;
 const MIB = 1024 ** 2;
 
 export type SystemProfile = {
@@ -40,7 +42,21 @@ function probeNvidia(): Promise<SystemProfile['gpu']> {
   });
 }
 
-/** What this computer can run, read from the operating system. `diskPath` is where models are stored. */
+let gpuCache: { at: number; gpu: Promise<SystemProfile['gpu']> } | null = null;
+
+/** The NVIDIA probe at most once per GPU_CACHE_MS; concurrent callers share one probe. */
+function cachedGpu(): Promise<SystemProfile['gpu']> {
+  const now = Date.now();
+  if (!gpuCache || now - gpuCache.at >= GPU_CACHE_MS)
+    gpuCache = { at: now, gpu: probeNvidia() };
+  return gpuCache.gpu;
+}
+
+/**
+ * What this computer can run, read from the operating system. `diskPath` is where models are
+ * stored. Memory and free disk are read fresh each time (cheap, and disk changes after a
+ * download); the GPU probe is cached.
+ */
 export async function inspectSystem(diskPath: string): Promise<SystemProfile> {
   const processors = cpus();
   const disk = statfsSync(diskPath);
@@ -50,6 +66,6 @@ export async function inspectSystem(diskPath: string): Promise<SystemProfile> {
     memoryBytes: totalmem(),
     freeDiskBytes: disk.bavail * disk.bsize,
     appleSilicon: platform() === 'darwin' && arch() === 'arm64',
-    gpu: await probeNvidia(),
+    gpu: await cachedGpu(),
   };
 }

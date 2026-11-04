@@ -5,6 +5,8 @@ import { revalidatePath } from 'next/cache';
 import {
   createProjectSchema,
   createSessionSchema,
+  fixForProposal,
+  fixTask,
   isLocalMutation,
   questionSchema,
   runIdSchema,
@@ -26,6 +28,7 @@ import {
   sessions,
 } from '@/lib/controller';
 import { assistant } from '@/lib/assistant';
+import { githubCi } from '@/lib/github';
 
 export type CreateProjectState = { error: string | null };
 export async function createProject(
@@ -67,6 +70,19 @@ async function isLocalRequest(): Promise<boolean> {
   );
 }
 
+/** The project and model a session form chose. Option values are `provider/modelId`; ids may contain slashes. */
+function sessionChoice(form: FormData) {
+  const choice = String(form.get('model') ?? '');
+  const separator = choice.indexOf('/');
+  return createSessionSchema.safeParse({
+    projectId: form.get('projectId'),
+    model: {
+      provider: choice.slice(0, separator),
+      modelId: choice.slice(separator + 1),
+    },
+  });
+}
+
 export type StartSessionState = { error: string | null };
 export async function startSession(
   _previous: StartSessionState,
@@ -74,16 +90,7 @@ export async function startSession(
 ): Promise<StartSessionState> {
   if (!(await isLocalRequest()))
     return { error: 'Requests must come from this local workspace.' };
-  // Option values are `provider/modelId`; model ids may themselves contain slashes or colons.
-  const choice = String(form.get('model') ?? '');
-  const separator = choice.indexOf('/');
-  const parsed = createSessionSchema.safeParse({
-    projectId: form.get('projectId'),
-    model: {
-      provider: choice.slice(0, separator),
-      modelId: choice.slice(separator + 1),
-    },
-  });
+  const parsed = sessionChoice(form);
   if (!parsed.success) return { error: 'Choose an installed model.' };
   let id: string;
   try {
@@ -476,7 +483,10 @@ export async function askAssistant(question: string): Promise<PullResult> {
   return { error: null };
 }
 
-/** Installing a model is never automatic: the assistant proposes, and only this action starts the download. */
+/**
+ * Installing a model, or an action asked for in a question, is never automatic: the assistant
+ * proposes, and only this action carries it out.
+ */
 export async function decideProposal(
   id: string,
   approve: boolean,
@@ -486,10 +496,85 @@ export async function decideProposal(
   const note = agentStore().findNote(id);
   if (note?.kind !== 'proposal' || note.status !== 'open')
     return { error: 'That suggestion is no longer open.' };
-  if (approve) {
-    const started = await installLocalModel(note.text);
-    if (started.error) return started;
-  }
+  // Closed first, so a double click cannot run the same approval twice.
   agentStore().setStatus(id, approve ? 'approved' : 'dismissed');
+  if (!approve) return { error: null };
+  const fix = fixForProposal(note.text);
+  if (fix) {
+    try {
+      await assistant().supervisor.performApproved(fix);
+    } catch (error) {
+      return { error: userMessage(error, 'That action could not be done.') };
+    }
+    return { error: null };
+  }
+  const started = await installLocalModel(note.text);
+  if (started.error) agentStore().setStatus(id, 'open');
+  return started;
+}
+
+/** The first validation message of a schema error, for a form. */
+function validationMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.name === 'ZodError') {
+    const issues = (error as Error & { issues?: { message?: unknown }[] })
+      .issues;
+    const message = issues?.[0]?.message;
+    if (typeof message === 'string') return message;
+  }
+  return fallback;
+}
+
+export type RepositoryState = { error: string | null };
+/** Connects a project to the GitHub repository whose CI it shows; an empty value disconnects it. */
+export async function connectRepository(
+  _previous: RepositoryState,
+  form: FormData,
+): Promise<RepositoryState> {
+  if (!(await isLocalRequest()))
+    return { error: 'Requests must come from this local workspace.' };
+  const projectId = String(form.get('projectId') ?? '');
+  try {
+    projects().setRepository(projectId, form.get('repository'));
+  } catch (error) {
+    return {
+      error: validationMessage(error, 'The repository could not be saved.'),
+    };
+  }
+  revalidatePath(`/projects/${projectId}`);
   return { error: null };
+}
+
+export type FixState = { error: string | null };
+/**
+ * Starts a session whose first task is a failed run's log tail. The failure is read again here
+ * from GitHub, never taken from the page, so only that tail is sent, and like any task it is
+ * scanned before a model sees it.
+ */
+export async function fixWithAgent(
+  _previous: FixState,
+  form: FormData,
+): Promise<FixState> {
+  if (!(await isLocalRequest()))
+    return { error: 'Requests must come from this local workspace.' };
+  const parsed = sessionChoice(form);
+  if (!parsed.success) return { error: 'Choose a model for the agent.' };
+  const project = projects().find(parsed.data.projectId);
+  if (!project?.repository)
+    return { error: 'Connect a GitHub repository first.' };
+  let failure: Awaited<ReturnType<ReturnType<typeof githubCi>['failure']>>;
+  try {
+    failure = await githubCi().failure(project.repository, form.get('runId'));
+  } catch (error) {
+    return { error: userMessage(error, 'The failed run could not be read.') };
+  }
+  if (!failure)
+    return { error: 'That run did not fail, so there is nothing to fix.' };
+  let sessionId: string;
+  try {
+    sessionId = sessions().createSession(parsed.data).id;
+    runs().enqueue({ sessionId, prompt: fixTask(failure) });
+  } catch {
+    return { error: 'The session could not be started.' };
+  }
+  redirect(`/projects/${parsed.data.projectId}/sessions/${sessionId}`);
 }

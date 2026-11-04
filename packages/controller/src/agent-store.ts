@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { z } from 'zod';
+import { redactSecrets } from './policy';
 import { SqliteSettings } from './settings';
 
 const MAX_NOTE_CHARS = 2000;
@@ -22,6 +23,12 @@ export const agentNoteSchema = z.object({
   status: z.enum(['open', 'approved', 'dismissed']),
 });
 export type AgentNote = z.infer<typeof agentNoteSchema>;
+
+/** Notes are shown in the panel and sent to the browser, so credential-shaped text never survives. */
+const readNote = (row: unknown): AgentNote => {
+  const note = agentNoteSchema.parse(row);
+  return { ...note, text: redactSecrets(note.text) };
+};
 
 const day = (now: Date) => now.toISOString().slice(0, 10);
 
@@ -80,7 +87,7 @@ export class AgentStore {
       createdAt: this.now().toISOString(),
       kind,
       findingId,
-      text: text.slice(0, MAX_NOTE_CHARS),
+      text: redactSecrets(text).slice(0, MAX_NOTE_CHARS),
       status: 'open',
     });
     this.db
@@ -98,14 +105,14 @@ export class AgentStore {
   }
 
   notes(limit: number): AgentNote[] {
-    return z.array(agentNoteSchema).parse(
-      this.db
-        .prepare(
-          `SELECT id, created_at AS createdAt, kind, finding_id AS findingId, text, status
-             FROM agent_notes ORDER BY created_at DESC, rowid DESC LIMIT ?`,
-        )
-        .all(limit),
-    );
+    // Read through the redaction too, so notes written before it existed are cleaned as well.
+    return this.db
+      .prepare(
+        `SELECT id, created_at AS createdAt, kind, finding_id AS findingId, text, status
+           FROM agent_notes ORDER BY created_at DESC, rowid DESC LIMIT ?`,
+      )
+      .all(limit)
+      .map(readNote);
   }
 
   findNote(id: string): AgentNote | undefined {
@@ -115,7 +122,7 @@ export class AgentStore {
          FROM agent_notes WHERE id = ?`,
       )
       .get(id);
-    return row === undefined ? undefined : agentNoteSchema.parse(row);
+    return row === undefined ? undefined : readNote(row);
   }
 
   setStatus(id: string, status: AgentNote['status']): void {

@@ -166,7 +166,8 @@ export function assistant() {
     },
     onNeedsAgent: (finding) => void supervisor.investigate(finding),
     onAction: (finding, outcome) => {
-      const text = `${finding.title}: ${outcome}`;
+      // Every action says what triggered it: here the watchdog, without any model.
+      const text = `${finding.title}: ${outcome} (automatic fix by the watchdog)`;
       // The same failure is not written again and again.
       const previous = store
         .notes(20)
