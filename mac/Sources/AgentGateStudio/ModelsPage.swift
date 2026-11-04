@@ -6,6 +6,7 @@ struct ModelsPage: View {
   @Environment(AppModel.self) private var app
   @State private var showAll = false
   @State private var repairs: [AuditEntry] = []
+  @State private var task = ""
 
   var body: some View {
     PageScroll {
@@ -13,6 +14,7 @@ struct ModelsPage: View {
         PageHeading(
           eyebrow: "Connections", title: "Models & Providers",
           detail: "Pick a model. AGENTGATE chooses the quantization for this Mac, downloads it, checks it and loads it.")
+        advisor
         VStack(alignment: .leading, spacing: 12) {
           Text("System check").font(.system(size: 16, weight: .semibold))
           Card(padding: 6) {
@@ -88,6 +90,35 @@ struct ModelsPage: View {
       .frame(maxWidth: 820, alignment: .leading)
     }
     .onAppear { repairs = AuditLog().entries() }
+  }
+
+  /// Describe the work; get up to three models for this Mac, each one click away.
+  private var advisor: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      HStack(spacing: 10) {
+        TextField("What will you use it for?", text: $task).field().onSubmit { app.suggestModels(for: task) }
+          .accessibilityLabel("What will you use it for?")
+        Button(app.advising ? "Thinking…" : "Suggest") { app.suggestModels(for: task) }
+          .buttonStyle(PrimaryButtonStyle()).disabled(task.trimmingCharacters(in: .whitespaces).isEmpty || app.advising)
+      }
+      if let note = app.advisorNote { Text(note).font(.system(size: 12)).foregroundStyle(Theme.muted) }
+      if !app.suggestions.isEmpty {
+        HStack(alignment: .top, spacing: 14) {
+          ForEach(Array(app.suggestions.enumerated()), id: \.element.id) { index, pick in
+            Card(padding: 16) {
+              VStack(alignment: .leading, spacing: 8) {
+                if index == 0 { StatusPill(text: "Best match", tone: .ok) }
+                Text(pick.model.name).font(.system(size: 14, weight: .semibold))
+                ForEach(pick.reasons, id: \.self) { Text($0).font(.system(size: 12)).foregroundStyle(Theme.muted) }
+                Button(pick.installed ? (app.active?.id == pick.model.id ? "Loaded" : "Use") : "Install") { app.select(pick.model) }
+                  .buttonStyle(PrimaryButtonStyle()).padding(.top, 4)
+                  .disabled(app.active?.id == pick.model.id || app.installing != nil)
+              }
+            }
+          }
+        }
+      }
+    }
   }
 }
 

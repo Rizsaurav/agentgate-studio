@@ -339,6 +339,36 @@ final class AppModel {
     runtime = nil
   }
 
+  // MARK: Advisor
+
+  private(set) var suggestions: [ModelSuggestion] = []
+  private(set) var advisorNote: String?
+  private(set) var advising = false
+
+  /// Suggests models for a task. The agent (if on) reads the task; fixed code ranks the models.
+  func suggestModels(for task: String) {
+    let task = task.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !task.isEmpty, let catalog, let profile else { return }
+    advising = true
+    Task {
+      defer { advising = false }
+      var needs = TaskNeeds.fromKeywords(task)
+      var source = "Read by fixed rules."
+      if agentOn {
+        do {
+          needs = try await AgentAssistant(profile: activeAgent).needs(for: task)
+          source = "Read by \(activeAgent.name)."
+        } catch {
+          source = "The agent's answer could not be used, so fixed rules read it."
+        }
+      }
+      suggestions = ModelAdvisor.suggest(catalog, for: profile, installed: installed, needs: needs)
+      let wants = [needs.tools ? "tools" : nil, needs.longContext ? "long context" : nil, needs.priority == .balanced ? nil : needs.priority.rawValue]
+        .compactMap { $0 }.joined(separator: ", ")
+      advisorNote = (wants.isEmpty ? "No special needs." : "Needs \(wants).") + " " + source + " Scores are estimates until measured on this Mac."
+    }
+  }
+
   // MARK: Agent
 
   /// One thing the agent did or asked to do, kept for the activity view.
