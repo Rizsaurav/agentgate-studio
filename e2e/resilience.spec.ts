@@ -176,11 +176,19 @@ test('main pages fit a 390px phone without horizontal scrolling', async ({
     '/evaluations',
   ]) {
     await page.goto(server.url + path);
-    const overflow = await page.evaluate(
-      () =>
-        document.documentElement.scrollWidth -
-        document.documentElement.clientWidth,
-    );
-    expect(overflow, `${path} overflows horizontally`).toBeLessThanOrEqual(0);
+    // A page may still be navigating right after it loads; measure again until it settles.
+    await expect
+      .poll(
+        () =>
+          page
+            .evaluate(
+              () =>
+                document.documentElement.scrollWidth -
+                document.documentElement.clientWidth,
+            )
+            .catch(() => Number.NaN),
+        { message: `${path} overflows horizontally` },
+      )
+      .toBeLessThanOrEqual(0);
   }
 });
