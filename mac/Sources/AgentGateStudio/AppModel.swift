@@ -37,7 +37,13 @@ final class AppModel {
   private(set) var active: InstalledModel?
   private(set) var update: InstallUpdate?
   /// What each install step reported, for the dialog behind each dot in the status bar.
-  private(set) var stepLog: [InstallStep: [String]] = [:]
+  /// The current or last install's record; the step dots read from it.
+  private(set) var run: InstallRun?
+  /// Installs that stopped before finishing (quit, crash, failure), offered for Resume or Discard.
+  private(set) var resumable: [InstallRun] = []
+  private let runStore = InstallRunStore()
+  private var lastRunSave = Date.distantPast
+  var stepLog: [InstallStep: [String]] { run?.log ?? [:] }
   var stepDetail: InstallStep?
   var agentPanelOpen = false
   var autonomy = Autonomy(rawValue: UserDefaults.standard.string(forKey: "autonomy") ?? "") ?? .careful {
@@ -78,6 +84,7 @@ final class AppModel {
       self.profile = profile
       tiers = ModelPlanner.tiers(catalog, for: profile)
       installed = try store.list()
+      resumable = runStore.unfinished(installed: Set(installed.map(\.id)))
       refreshAgents()
       workspace = try workspaceStore.load()
     } catch {
@@ -190,7 +197,9 @@ final class AppModel {
   func select(_ model: CatalogModel) -> Task<Bool, Never>? {
     if let installTask, installing != nil { return installTask }
     failure = nil
-    stepLog = [:]
+    let fresh = !installed.contains { $0.id == model.id }
+    run = InstallRun(modelId: model.id, modelName: model.name)
+    resumable.removeAll { $0.modelId == model.id }
     installing = model
     stopRuntime()
     let task = Task { () -> Bool in
@@ -199,7 +208,7 @@ final class AppModel {
         let report: @Sendable (InstallUpdate) -> Void = { update in
           Task { @MainActor in
             self.update = update
-            self.log(update)
+            self.log(update, persist: fresh)
           }
         }
         if let done = installed.first(where: { $0.id == model.id }) {
@@ -213,6 +222,7 @@ final class AppModel {
           self.runtime = runtime
           installed = try store.list()
           active = done
+          runStore.remove(model.id)
         }
         return true
       } catch let failure as InstallFailure {
@@ -226,6 +236,11 @@ final class AppModel {
       } catch {
         failure = InstallFailure(step: update?.step ?? .load, message: String(describing: error), cause: error, logTail: nil)
         update = nil
+      }
+      if fresh, var record = run {
+        record.failure = failure?.message
+        run = record
+        saveRun(record)
       }
       return false
     }
@@ -291,15 +306,39 @@ final class AppModel {
     }
   }
 
-  /// Keeps what a step said. Download progress replaces its own last line instead of piling up.
-  private func log(_ update: InstallUpdate) {
-    var lines = stepLog[update.step, default: []]
-    if update.step == .download, update.totalBytes > 0, let last = lines.last, last.hasPrefix("Downloading ") {
-      lines[lines.count - 1] = update.message
-    } else if lines.last != update.message {
-      lines.append(update.message)
+  /// Keeps what a step said, and for a new install saves the record: on every step change, and at most every
+  /// three seconds during a download.
+  private func log(_ update: InstallUpdate, persist: Bool) {
+    guard var record = run else { return }
+    let stepChanged = record.step != update.step
+    record.record(update)
+    run = record
+    if persist, stepChanged || Date().timeIntervalSince(lastRunSave) > 3 { saveRun(record) }
+  }
+
+  private func saveRun(_ record: InstallRun) {
+    do {
+      try runStore.save(record)
+      lastRunSave = Date()
+    } catch {
+      errorMessage = "The install record could not be saved: \(error)"
     }
-    stepLog[update.step] = Array(lines.suffix(40))
+  }
+
+  /// Picks up an install that stopped. The download resumes from its partial file.
+  func resume(_ record: InstallRun) {
+    guard let model = catalog?.model(record.modelId) else { discard(record); return }
+    select(model)
+  }
+
+  /// Forgets an install that stopped, and removes its incomplete files (never a finished model's).
+  func discard(_ record: InstallRun) {
+    runStore.remove(record.modelId)
+    resumable.removeAll { $0.modelId == record.modelId }
+    let folder = store.folder(record.modelId)
+    if (try? store.load(record.modelId)) == nil, FileManager.default.fileExists(atPath: folder.path) {
+      do { try FileManager.default.removeItem(at: folder) } catch { errorMessage = String(describing: error) }
+    }
   }
 
   func cancelInstall() {

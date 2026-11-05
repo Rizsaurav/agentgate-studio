@@ -15,6 +15,13 @@ struct InstallStrip: View {
     } else if let failure = app.failure {
       bar(step: failure.step, failed: true, message: failure.message, progress: nil, trailing: AnyView(
         Button("Dismiss") { app.dismissFailure() }.controlSize(.small)))
+    } else if app.update == nil, app.installing == nil, let stopped = app.resumable.first {
+      bar(step: stopped.step, failed: true,
+          message: "Installing \(stopped.modelName) stopped at \(stopped.step.title)." + (stopped.failure.map { " \($0)" } ?? " The app was closed before it finished."),
+          progress: nil, trailing: AnyView(HStack {
+            Button("Discard") { app.discard(stopped) }.controlSize(.small)
+            Button("Resume") { app.resume(stopped) }.controlSize(.small).buttonStyle(.borderedProminent)
+          }))
     } else if app.update == nil, let model = app.active {
       // Idle: the loaded model, with every step done. Each dot still opens what was recorded at install.
       bar(step: .ready, failed: false, message: model.readiness == .ready
