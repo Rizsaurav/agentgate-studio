@@ -1,15 +1,16 @@
+import AppKit
 import SwiftUI
 
-/// The Studio palette, the same tokens as the desktop web app (apps/web/app/globals.css).
+/// Quiet charcoal content surfaces; system materials provide the navigation chrome.
 enum Theme {
-  static let bg = Color(hex: 0x101115)
-  static let sidebar = Color(hex: 0x0D0E12)
-  static let surface = Color(hex: 0x17181E)
-  static let raised = Color(hex: 0x202129)
-  static let line = Color(hex: 0x292A34)
+  static let bg = Color(hex: 0x141519)
+  static let sidebar = Color(hex: 0x16171C)
+  static let surface = Color(hex: 0x1C1D23)
+  static let raised = Color(hex: 0x272830)
+  static let line = Color(hex: 0x35363F)
   static let text = Color(hex: 0xEDEDF2)
-  static let muted = Color(hex: 0xA0A1B1)
-  static let accent = Color(hex: 0xB69AF1)
+  static let muted = Color(hex: 0xACADBA)
+  static let accent = Color(hex: 0xC4AFF3)
   static let accentBg = Color(hex: 0x292238)
   static let button = Color(hex: 0x9A7BDD)
   static let success = Color(hex: 0x8AD1AA)
@@ -40,16 +41,16 @@ struct PageHeading: View {
   let title: String
   let detail: String
   var body: some View {
-    VStack(alignment: .leading, spacing: 10) {
+    VStack(alignment: .leading, spacing: 8) {
       Eyebrow(eyebrow)
-      Text(title).font(.system(size: 30, weight: .bold)).tracking(-0.6).foregroundStyle(Theme.text)
+      Text(title).font(.system(size: 28, weight: .semibold)).tracking(-0.6).foregroundStyle(Theme.text)
       Text(detail).font(.system(size: 14)).foregroundStyle(Theme.muted).lineSpacing(4)
         .frame(maxWidth: 620, alignment: .leading)
     }
   }
 }
 
-/// Rounded panel with the surface colour and a hairline border.
+/// Content stays on a quiet, readable surface rather than a second layer of glass.
 struct Card<Content: View>: View {
   var padding: CGFloat = 24
   @ViewBuilder var content: Content
@@ -57,8 +58,7 @@ struct Card<Content: View>: View {
     content
       .padding(padding)
       .frame(maxWidth: .infinity, alignment: .topLeading)
-      .background(RoundedRectangle(cornerRadius: 14).fill(Theme.surface))
-      .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.line))
+      .background(RoundedRectangle(cornerRadius: 16).fill(Theme.surface))
   }
 }
 
@@ -69,7 +69,7 @@ struct IconTile: View {
   var body: some View {
     Image(systemName: symbol).font(.system(size: size * 0.4)).foregroundStyle(Theme.accent)
       .frame(width: size, height: size)
-      .background(RoundedRectangle(cornerRadius: size * 0.26).fill(Theme.accentBg))
+      .background(RoundedRectangle(cornerRadius: size * 0.28).fill(Theme.accent.opacity(0.07)))
   }
 }
 
@@ -103,7 +103,7 @@ struct PrimaryButtonStyle: ButtonStyle {
     var body: some View {
       configuration.label.font(.system(size: 14, weight: .medium)).foregroundStyle(Color(hex: 0x15121F))
         .padding(.horizontal, 16).padding(.vertical, 10)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.button.opacity(enabled ? 1 : 0.5)))
+        .background(RoundedRectangle(cornerRadius: 11).fill(Theme.accent.opacity(enabled ? 1 : 0.35)))
         .opacity(configuration.isPressed ? 0.85 : 1)
     }
   }
@@ -111,10 +111,18 @@ struct PrimaryButtonStyle: ButtonStyle {
 
 struct SubtleButtonStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
-    configuration.label.font(.system(size: 13)).foregroundStyle(Theme.text)
-      .padding(.horizontal, 12).padding(.vertical, 8)
-      .background(RoundedRectangle(cornerRadius: 8).fill(configuration.isPressed ? Theme.raised : Theme.raised.opacity(0.6)))
-      .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.line))
+    SubtleButtonBody(configuration: configuration)
+  }
+
+  private struct SubtleButtonBody: View {
+    let configuration: ButtonStyleConfiguration
+    @Environment(\.isEnabled) private var enabled
+    var body: some View {
+      configuration.label.font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.text)
+        .padding(.horizontal, 13).padding(.vertical, 9)
+        .studioGlass(radius: 11, interactive: enabled)
+        .opacity(enabled ? (configuration.isPressed ? 0.7 : 1) : 0.4)
+    }
   }
 }
 
@@ -137,4 +145,81 @@ struct FieldStyle: ViewModifier {
 
 extension View {
   func field() -> some View { modifier(FieldStyle()) }
+}
+
+/// Glass is reserved for controls. Older systems use native material, and accessibility
+/// preferences replace translucency with an opaque surface and a stronger edge.
+private struct StudioGlass: ViewModifier {
+  var radius: CGFloat
+  var interactive: Bool
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.colorSchemeContrast) private var contrast
+
+  @ViewBuilder func body(content: Content) -> some View {
+    let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+    if reduceTransparency || contrast == .increased {
+      content.background(shape.fill(Theme.raised))
+        .overlay(shape.strokeBorder(Theme.muted.opacity(0.6)))
+    } else {
+      // Keep the macOS 14 deployment target and older CI toolchains supported.
+      #if compiler(>=6.2)
+      if #available(macOS 26, *) {
+        content.glassEffect(.regular.interactive(interactive && !reduceMotion), in: shape)
+      } else {
+        content.background(.regularMaterial, in: shape)
+          .overlay(shape.strokeBorder(.white.opacity(0.1)))
+      }
+      #else
+      content.background(.regularMaterial, in: shape)
+        .overlay(shape.strokeBorder(.white.opacity(0.1)))
+      #endif
+    }
+  }
+}
+
+extension View {
+  func studioGlass(radius: CGFloat = 16, interactive: Bool = false) -> some View {
+    modifier(StudioGlass(radius: radius, interactive: interactive))
+  }
+}
+
+/// A real behind-window material, so the sidebar responds to the desktop and window focus.
+struct WindowBackdrop: View {
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+  @Environment(\.colorSchemeContrast) private var contrast
+
+  var body: some View {
+    if reduceTransparency || contrast == .increased {
+      Theme.sidebar
+    } else {
+      SidebarMaterial().overlay(Theme.sidebar.opacity(0.25))
+    }
+  }
+}
+
+private struct SidebarMaterial: NSViewRepresentable {
+  func makeNSView(context: Context) -> NSVisualEffectView {
+    let view = NSVisualEffectView()
+    view.material = .sidebar
+    view.blendingMode = .behindWindow
+    view.state = .followsWindowActiveState
+    return view
+  }
+
+  func updateNSView(_ view: NSVisualEffectView, context: Context) {}
+}
+
+// AppKit-backed fields can discard a custom prompt's color. Draw a noninteractive
+// hint explicitly so it stays readable on dark materials; retain its spoken hint.
+extension View {
+  func inputHint(_ text: String, when isEmpty: Bool) -> some View {
+    overlay(alignment: .topLeading) {
+      if isEmpty {
+        Text(text).foregroundStyle(Theme.muted).lineLimit(1)
+          .allowsHitTesting(false).accessibilityHidden(true)
+      }
+    }
+    .accessibilityHint(text)
+  }
 }

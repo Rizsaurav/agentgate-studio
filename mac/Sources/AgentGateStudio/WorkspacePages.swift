@@ -27,10 +27,11 @@ struct WorkspacePage: View {
   var body: some View {
     PageScroll {
       VStack(alignment: .leading, spacing: 28) {
-        Text("Projects").font(.system(size: 30, weight: .bold)).tracking(-0.6)
+        Text("Projects").font(.system(size: 28, weight: .semibold)).tracking(-0.6)
         if !setupDone { SetupCard() }
         HStack(spacing: 10) {
-          TextField(app.projects.isEmpty ? "Name your first project" : "New project", text: $name)
+          TextField("Project name", text: $name, prompt: Text(""))
+            .inputHint(app.projects.isEmpty ? "Name your first project" : "New project", when: name.isEmpty)
             .field().onSubmit(create).accessibilityLabel("Project name").focused($nameFocused)
           Button(action: create) { Label("Create project", systemImage: "plus").labelStyle(.iconOnly) }
             .buttonStyle(PrimaryButtonStyle())
@@ -39,7 +40,7 @@ struct WorkspacePage: View {
         }
         Button("Open a folder…") { app.openFolder() }.buttonStyle(.plain).foregroundStyle(Theme.accent)
           .font(.system(size: 13))
-        VStack(spacing: 2) {
+        VStack(spacing: 8) {
           ForEach(app.projects) { project in
             ProjectListRow(project: project, sessions: app.sessions(in: project.id).count) {
               app.route = .project(project.id)
@@ -107,7 +108,7 @@ private struct ProjectListRow: View {
   var body: some View {
     Button(action: action) {
       HStack(spacing: 16) {
-        IconTile(symbol: "cube", size: 46)
+        IconTile(symbol: "folder", size: 40)
         VStack(alignment: .leading, spacing: 6) {
           Text(project.name).font(.system(size: 14, weight: .semibold))
           Text("\(plural(sessions, "chat"))" + (project.folder.map { "  ·  " + ($0 as NSString).abbreviatingWithTildeInPath } ?? ""))
@@ -116,8 +117,8 @@ private struct ProjectListRow: View {
         Spacer()
         Image(systemName: "arrow.up.right").font(.system(size: 12)).foregroundStyle(Theme.muted)
       }
-      .padding(8)
-      .background(RoundedRectangle(cornerRadius: 12).fill(hover ? Theme.surface : .clear))
+      .padding(14)
+      .background(RoundedRectangle(cornerRadius: 14).fill(hover ? Theme.raised : Theme.surface))
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
@@ -137,7 +138,7 @@ struct ProjectPage: View {
         VStack(alignment: .leading, spacing: 30) {
           Button { app.route = .workspace } label: { Text("← All projects").font(.system(size: 13)) }
             .buttonStyle(.plain).foregroundStyle(Theme.muted)
-          Text(project.name).font(.system(size: 30, weight: .bold)).tracking(-0.6)
+          Text(project.name).font(.system(size: 28, weight: .semibold)).tracking(-0.6)
           HStack(alignment: .top, spacing: 36) {
             VStack(alignment: .leading, spacing: 14) {
               let sessions = app.sessions(in: projectId)

@@ -80,8 +80,7 @@ struct SessionPage: View {
       composer(session)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(RoundedRectangle(cornerRadius: 14).fill(Theme.surface))
-    .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.line))
+
   }
 
   private func composer(_ session: Session) -> some View {
@@ -94,7 +93,8 @@ struct SessionPage: View {
           Button("Add a key") { app.route = .profile }.buttonStyle(PrimaryButtonStyle())
         }
       }
-      TextField("Ask anything about your project…", text: $draft, axis: .vertical)
+      TextField("Task", text: $draft, prompt: Text(""), axis: .vertical)
+        .inputHint("Ask anything about your project…", when: draft.isEmpty)
         .textFieldStyle(.plain).font(.system(size: 14)).lineLimit(3...8)
         .accessibilityLabel("Task")
         .focused($composerFocused)
@@ -111,9 +111,8 @@ struct SessionPage: View {
       }
     }
     .padding(16)
-    .background(RoundedRectangle(cornerRadius: 10).fill(Theme.raised.opacity(0.6)))
-    .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.line))
-    .padding(18)
+    .studioGlass(radius: 22)
+    .padding(.horizontal, 6).padding(.bottom, 6)
   }
 
   private func modelMenu(_ session: Session) -> some View {
@@ -131,8 +130,7 @@ struct SessionPage: View {
       }
       .foregroundStyle(Theme.text)
       .padding(.horizontal, 10).padding(.vertical, 6)
-      .background(Capsule().fill(Theme.raised))
-      .overlay(Capsule().strokeBorder(Theme.line))
+      .background(Capsule().fill(Theme.text.opacity(0.06)))
     }
     .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
     .accessibilityLabel("Model")
@@ -162,18 +160,5 @@ private struct Turn: View {
     }
     .font(.system(size: 14))
     .frame(maxWidth: .infinity, alignment: .leading)
-  }
-}
-
-private struct SideCard<Content: View>: View {
-  let title: String
-  @ViewBuilder var content: Content
-  var body: some View {
-    Card(padding: 18) {
-      VStack(alignment: .leading, spacing: 12) {
-        Text(title).font(.system(size: 13, weight: .medium))
-        content
-      }
-    }
   }
 }
