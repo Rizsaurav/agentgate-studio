@@ -31,6 +31,15 @@ public enum AgentEvent: Sendable, Equatable {
     public var id: String
     public var tool: String
     public var detail: String
+    /// The folder a glob or grep searches in, when the call names one.
+    public var path: String?
+
+    public init(id: String, tool: String, detail: String, path: String? = nil) {
+      self.id = id
+      self.tool = tool
+      self.detail = detail
+      self.path = path
+    }
   }
 }
 
@@ -56,7 +65,10 @@ enum AgentEventDecoder {
         var tool: String?
         var state: State?
       }
-      struct Metadata: Decodable { var command: String? }
+      struct Metadata: Decodable {
+        var command: String?
+        var path: String?
+      }
       struct Status: Decodable { var type: String? }
       struct Failure: Decodable {
         struct Data: Decodable { var message: String? }
@@ -108,7 +120,8 @@ enum AgentEventDecoder {
       return .textDelta(partID: id, messageID: message, delta: delta)
     case "permission.asked":
       guard let id = p.id, let tool = p.permission else { return nil }
-      return .permission(.init(id: id, tool: tool, detail: p.metadata?.command ?? (p.patterns ?? []).joined(separator: ", ")))
+      let detail = p.metadata?.command ?? (p.patterns ?? []).joined(separator: ", ")
+      return .permission(.init(id: id, tool: tool, detail: detail, path: p.metadata?.path))
     case "session.status":
       return p.status?.type == "busy" ? .busy : nil
     case "session.idle":
@@ -164,7 +177,12 @@ public final class AgentServer: @unchecked Sendable {
         "options": ["baseURL": engineURL.appendingPathComponent("v1").absoluteString, "apiKey": engineKey],
         "models": [model: ["name": model, "tool_call": true, "limit": ["context": context, "output": 4096]]],
       ]],
-      "permission": ["bash": "ask", "edit": "ask", "webfetch": "deny", "external_directory": "deny"],
+      // Reads, globs, greps and lists ask too, so ToolCallCheck sees every call; the app answers
+      // valid ones itself without bothering the user.
+      "permission": [
+        "bash": "ask", "edit": "ask", "read": "ask", "glob": "ask", "grep": "ask", "list": "ask",
+        "webfetch": "deny", "external_directory": "deny",
+      ],
     ]
     return String(decoding: try JSONSerialization.data(withJSONObject: config), as: UTF8.self)
   }
@@ -307,14 +325,21 @@ public struct AgentClient: Sendable {
     ])
   }
 
-  public func reply(permission: String, allow: Bool) async throws {
-    try await send("POST", "permission/\(permission)/reply", body: ["reply": allow ? "once" : "reject"])
+  /// Answers a permission request. A refusal with a `message` reaches the model as feedback it can
+  /// correct the call from, instead of a bare "rejected".
+  public func reply(permission: String, allow: Bool, message: String? = nil) async throws {
+    var body: [String: Any] = ["reply": allow ? "once" : "reject"]
+    if !allow, let message { body["message"] = message }
+    try await send("POST", "permission/\(permission)/reply", body: body)
   }
 
   /// Questions the harness is waiting on, for any that arrived before the event stream was open.
   public func pendingPermissions() async throws -> [AgentEvent.Permission] {
     struct Pending: Decodable {
-      struct Metadata: Decodable { var command: String? }
+      struct Metadata: Decodable {
+        var command: String?
+        var path: String?
+      }
       var id: String
       var permission: String
       var patterns: [String]?
@@ -323,7 +348,9 @@ public struct AgentClient: Sendable {
     let data = try await send("GET", "permission")
     guard let items = try? JSONDecoder().decode([Pending].self, from: data) else { throw AgentError.malformed }
     return items.map {
-      .init(id: $0.id, tool: $0.permission, detail: $0.metadata?.command ?? ($0.patterns ?? []).joined(separator: ", "))
+      .init(
+        id: $0.id, tool: $0.permission,
+        detail: $0.metadata?.command ?? ($0.patterns ?? []).joined(separator: ", "), path: $0.metadata?.path)
     }
   }
 

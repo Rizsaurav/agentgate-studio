@@ -38,6 +38,8 @@ private func decode(_ json: String) -> AgentEvent? { AgentEventDecoder.decode(Da
     let permission = try #require(json["permission"] as? [String: String])
     #expect(permission["bash"] == "ask" && permission["edit"] == "ask")
     #expect(permission["webfetch"] == "deny" && permission["external_directory"] == "deny")
+    // Reads, globs, greps and lists ask too, so the app checks every call (J3).
+    for tool in ["read", "glob", "grep", "list"] { #expect(permission[tool] == "ask", "\(tool)") }
     #expect(json["autoupdate"] as? Bool == false)
     let provider = try #require((json["provider"] as? [String: Any])?["local"] as? [String: Any])
     #expect((provider["options"] as? [String: String])?["baseURL"] == "http://127.0.0.1:1234/v1")
