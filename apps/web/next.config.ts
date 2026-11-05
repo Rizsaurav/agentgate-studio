@@ -1,6 +1,7 @@
 import type { NextConfig } from 'next';
 const config: NextConfig = {
-  ...(process.env.AGENTGATE_DESKTOP_BUILD === '1'
+  // A self-contained server with only the files it needs, for the Docker image and the app bundle.
+  ...(process.env.AGENTGATE_STANDALONE === '1'
     ? { output: 'standalone' as const }
     : {}),
   transpilePackages: ['@agentgate/controller'],

@@ -22,7 +22,6 @@ test(
         NODE_ENV: 'production',
         NEXT_TELEMETRY_DISABLED: '1',
         AGENTGATE_DATA_DIR: data,
-        AGENTGATE_REPO_ROOT: join(stage, 'evaluation'),
       },
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     });

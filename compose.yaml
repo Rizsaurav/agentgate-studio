@@ -42,6 +42,20 @@ services:
         required: false
     restart: unless-stopped
 
+  # The evaluation suite, kept out of the application image. Only with the profile:
+  # `docker compose --profile evals run --rm --build evals` runs the required suite against the
+  # scanner container. No ports, no keys: it uses a scripted model.
+  evals:
+    profiles: [evals]
+    build:
+      context: .
+      target: evals
+    environment:
+      AGENTGATE_SCANNER_URL: http://scanner:8765
+    depends_on:
+      scanner:
+        condition: service_healthy
+
   scanner:
     build: ./scanner
     volumes:

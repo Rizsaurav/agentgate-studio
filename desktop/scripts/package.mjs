@@ -35,7 +35,6 @@ const paths = await packager({
     'server.mjs',
     'access.mjs',
     'BUILD.json',
-    'evaluation',
   ].map((path) => join(desktop, 'stage', path)),
   extendInfo: {
     NSHumanReadableCopyright: 'AGENTGATE Studio',

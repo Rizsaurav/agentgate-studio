@@ -121,8 +121,11 @@ jobs:
         run: |
           curl -sf -o /dev/null http://127.0.0.1:3000/models
           curl -sf -o /dev/null http://127.0.0.1:3000/api/models/pull
-      - name: Required evaluation suite inside the app container, against the scanner container
-        run: $COMPOSE exec -T --workdir /app app npm run eval
+      - name: The application image ships no evaluation suite or dev tools
+        run: |
+          $COMPOSE exec -T app sh -c '! test -e /app/evals && ! test -e /app/node_modules/promptfoo && ! test -e /app/node_modules/typescript'
+      - name: Required evaluation suite in its own container, against the scanner container
+        run: $COMPOSE --profile evals run --rm --build evals
       - name: Logs on failure
         if: failure()
         run: $COMPOSE logs --no-color --tail 200

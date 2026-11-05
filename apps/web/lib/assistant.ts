@@ -152,6 +152,8 @@ export function assistant() {
       ...readActions(() => watchdog),
       ...fixes,
       runEvalSuite: async () => {
+        if (!evals().available)
+          return 'The evaluation suite is not shipped with this installation; it runs in CI and from source (npm run eval).';
         await evals().enqueue('enforced');
         return 'The evaluation suite was queued.';
       },
