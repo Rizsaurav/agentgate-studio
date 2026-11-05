@@ -17,25 +17,56 @@ public struct GitHubRepo: Sendable, Equatable, Hashable, CustomStringConvertible
     return GitHubRepo(owner: String(parts[0]), name: String(parts[1]))
   }
 
-  /// The repository and current branch of a project folder, read with git. Nil when it is not a GitHub repo.
-  public static func of(folder: URL) -> (repo: GitHubRepo, branch: String?)? {
-    guard let remote = run("/usr/bin/git", ["-C", folder.path, "remote", "get-url", "origin"]), let repo = parse(remote) else { return nil }
-    let branch = run("/usr/bin/git", ["-C", folder.path, "rev-parse", "--abbrev-ref", "HEAD"])?.trimmingCharacters(in: .whitespacesAndNewlines)
-    return (repo, branch == "HEAD" ? nil : branch)
+  public enum Detection: Sendable, Equatable {
+    case found(GitHubRepo, branch: String?)
+    case notGitHub
+    /// git did not answer in time. On macOS this is usually the system asking for permission to read the folder
+    /// (Desktop, Documents and Downloads are protected), so it is not reported as "not a repository".
+    case timedOut
   }
 
-  static func run(_ exe: String, _ args: [String]) -> String? {
+  /// The repository and current branch of a project folder, read with git.
+  public static func detect(folder: URL, timeout: TimeInterval = 10) -> Detection {
+    let remote = run("/usr/bin/git", ["-C", folder.path, "remote", "get-url", "origin"], timeout: timeout)
+    if remote.timedOut { return .timedOut }
+    guard let text = remote.output, let repo = parse(text) else { return .notGitHub }
+    let branch = run("/usr/bin/git", ["-C", folder.path, "rev-parse", "--abbrev-ref", "HEAD"], timeout: timeout).output?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return .found(repo, branch: branch == "HEAD" ? nil : branch)
+  }
+
+  public static func of(folder: URL) -> (repo: GitHubRepo, branch: String?)? {
+    if case .found(let repo, let branch) = detect(folder: folder) { return (repo, branch) }
+    return nil
+  }
+
+  static func run(_ exe: String, _ args: [String]) -> String? { run(exe, args, timeout: 10).output }
+
+  static func run(_ exe: String, _ args: [String], timeout: TimeInterval) -> (output: String?, timedOut: Bool) {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: exe)
     process.arguments = args
     let out = Pipe()
     process.standardOutput = out
     process.standardError = FileHandle.nullDevice
-    do { try process.run() } catch { return nil }
+    process.standardInput = FileHandle.nullDevice
+    do { try process.run() } catch { return (nil, false) }
+    let killed = Flag()
+    DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+      if process.isRunning { killed.set(); process.terminate() }
+    }
     let data = out.fileHandleForReading.readDataToEndOfFile()
     process.waitUntilExit()
-    return process.terminationStatus == 0 ? String(decoding: data, as: UTF8.self) : nil
+    if killed.value { return (nil, true) }
+    return (process.terminationStatus == 0 ? String(decoding: data, as: UTF8.self) : nil, false)
   }
+}
+
+final class Flag: @unchecked Sendable {
+  private let lock = NSLock()
+  private var raised = false
+  func set() { lock.withLock { raised = true } }
+  var value: Bool { lock.withLock { raised } }
 }
 
 public struct WorkflowRun: Decodable, Sendable, Identifiable, Equatable {

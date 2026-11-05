@@ -173,6 +173,17 @@ final class AppModel {
     if active?.id != model.id, let entry = catalog?.model(model.id) { select(entry) }
   }
 
+  /// Starts a chat in the project with a CI failure as the task. Uses the loaded model, or the first installed one.
+  func fixWithAgent(in project: UUID, task: String) {
+    guard let model = active ?? installed.first else {
+      errorMessage = "Install a model first."
+      return
+    }
+    startSession(in: project, with: model)
+    guard case .session(let id) = route else { return }
+    send(task, in: id)
+  }
+
   private func persist() throws { try workspaceStore.save(workspace) }
 
   // MARK: Models

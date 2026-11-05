@@ -38,6 +38,15 @@ private func run(_ id: Int, _ workflow: String, sha: String, _ status: String, _
     #expect(found?.repo == GitHubRepo(owner: "Rizsaurav", name: "agentgate-studio"))
   }
 
+  @Test func aGitThatDoesNotAnswerIsReportedAsWaitingNotAsNoRepo() {
+    let slow = GitHubRepo.run("/bin/sleep", ["5"], timeout: 0.3)
+    #expect(slow.timedOut && slow.output == nil)
+    let empty = FileManager.default.temporaryDirectory.appendingPathComponent("norepo-\(UUID().uuidString)")
+    try? FileManager.default.createDirectory(at: empty, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: empty) }
+    #expect(GitHubRepo.detect(folder: empty) == .notGitHub)
+  }
+
   @Test func realResponsesDecode() async throws {
     let service = ActionsService(repo: .init(owner: "o", name: "r"), transport: Canned(responses: [
       "repos/o/r/actions/runs?": Data(CIFixtures.runs.utf8),

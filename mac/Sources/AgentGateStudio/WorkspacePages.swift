@@ -130,6 +130,7 @@ struct ProjectPage: View {
   @Environment(AppModel.self) private var app
   let projectId: UUID
   @State private var modelId = ""
+  @AppStorage("projectTab") private var tab = "chats"
 
   var body: some View {
     if let project = app.project(projectId) {
@@ -138,6 +139,18 @@ struct ProjectPage: View {
           Button { app.route = .workspace } label: { Text("← All projects").font(.system(size: 13)) }
             .buttonStyle(.plain).foregroundStyle(Theme.muted)
           Text(project.name).font(.system(size: 30, weight: .bold)).tracking(-0.6)
+          Picker("View", selection: $tab) {
+            Text("Chats").tag("chats")
+            Text("CI/CD").tag("ci")
+          }
+          .pickerStyle(.segmented).frame(width: 220).labelsHidden()
+          if tab == "ci" {
+            if let folder = project.folder {
+              CIPanel(projectId: projectId, folder: URL(fileURLWithPath: folder)).id(projectId)
+            } else {
+              Text("This project has no folder. Open a folder to see its CI.").foregroundStyle(Theme.muted)
+            }
+          } else {
           HStack(alignment: .top, spacing: 36) {
             VStack(alignment: .leading, spacing: 14) {
               let sessions = app.sessions(in: projectId)
@@ -178,6 +191,7 @@ struct ProjectPage: View {
               }
             }
             .frame(width: 300)
+          }
           }
         }
       }
