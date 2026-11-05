@@ -57,13 +57,31 @@ public enum RepairOperation: Sendable, Equatable, Hashable {
     }
   }
 
-  /// A repair that deletes files, changes the model's quality, or downloads over 1 GB is the user's call.
-  public func needsApproval(downloadBytes: UInt64) -> Bool {
+  /// How much oversight a repair gets, by risk.
+  public enum Tier: Int, Sendable, Comparable {
+    /// Reversible and cheap: runs and is logged.
+    case act
+    /// Recoverable but worth knowing about: runs with a note in the bar (asked first when the user chose Careful).
+    case notify
+    /// Deletes files, lowers quality, or runs a command: always the user's yes.
+    case ask
+
+    public static func < (a: Tier, b: Tier) -> Bool { a.rawValue < b.rawValue }
+  }
+
+  public func tier(downloadBytes: UInt64) -> Tier {
     switch self {
-    case .freeDisk, .lowerQuantization, .setQuantization, .runCommand, .useMirror: true
-    case .retryDownload: downloadBytes > MemoryBudget.gib
-    case .reduceContext, .restartRuntime, .cancelAndCleanUp, .setContext: false
+    case .freeDisk, .lowerQuantization, .setQuantization, .runCommand: .ask
+    case .useMirror: .notify
+    case .retryDownload: downloadBytes > MemoryBudget.gib ? .notify : .act
+    case .reduceContext, .restartRuntime, .cancelAndCleanUp, .setContext: .act
     }
+  }
+
+  /// Whether the user must say yes first, given how much autonomy they chose.
+  public func needsApproval(downloadBytes: UInt64, autonomy: Autonomy = .careful) -> Bool {
+    let tier = tier(downloadBytes: downloadBytes)
+    return tier == .ask || (tier == .notify && autonomy == .careful)
   }
 
   public var summary: String {
@@ -78,6 +96,21 @@ public enum RepairOperation: Sendable, Equatable, Hashable {
     case .setQuantization(let quant): "Use the \(quant.rawValue) version of the model."
     case .runCommand(let command): "Run: \(command)"
     case .useMirror(let host): "Download from \(host) instead. The file is still checked against its published checksum."
+    }
+  }
+}
+
+/// How much the supervising agent may do without asking.
+public enum Autonomy: String, Codable, Sendable, CaseIterable {
+  /// Asks before anything beyond retries and restarts.
+  case careful
+  /// Also switches to a listed mirror or retries a big download on its own, and says so in the bar.
+  case balanced
+
+  public var summary: String {
+    switch self {
+    case .careful: "Asks before switching download source or re-downloading over 1 GB."
+    case .balanced: "Switches to a listed mirror or retries a big download on its own and tells you. Still asks before deleting, lowering quality or running commands."
     }
   }
 }

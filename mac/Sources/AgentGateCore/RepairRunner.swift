@@ -65,18 +65,25 @@ public struct RepairRunner: Sendable {
   public static let maxRepeats = 2
   static let maxRepeatRejections = 2
   static let defaultSource = "https://huggingface.co"
+  /// An unanswered question counts as no after this long, so an install never waits forever.
+  public static let approvalTimeout: Duration = .seconds(600)
 
   public var pipeline = InstallPipeline()
   public var audit = AuditLog()
   public var assistant: (any RepairAssistant)?
+  public var autonomy: Autonomy
+  public var approvalTimeout: Duration
   /// Asked before any repair that needs approval; `false` stops the install.
   public var approve: @Sendable (RepairOperation, FailureReport) async -> Bool
 
   public init(
     pipeline: InstallPipeline = InstallPipeline(), audit: AuditLog = AuditLog(),
-    assistant: (any RepairAssistant)? = nil,
+    assistant: (any RepairAssistant)? = nil, autonomy: Autonomy = .careful,
+    approvalTimeout: Duration = RepairRunner.approvalTimeout,
     approve: @escaping @Sendable (RepairOperation, FailureReport) async -> Bool
   ) {
+    self.autonomy = autonomy
+    self.approvalTimeout = approvalTimeout
     self.pipeline = pipeline
     self.audit = audit
     self.assistant = assistant
@@ -104,12 +111,19 @@ public struct RepairRunner: Sendable {
         for operation in proposal.operations where tried.count < Self.maxOperations {
           let reason = proposal.explanation
           try record(model, operation, reason, .proposed)
-          if operation.needsApproval(downloadBytes: failure.plan?.downloadBytes ?? .max) {
-            guard await approve(operation, report) else {
+          let bytes = failure.plan?.downloadBytes ?? .max
+          if operation.needsApproval(downloadBytes: bytes, autonomy: autonomy) {
+            switch await ask(operation, report) {
+            case .yes: try record(model, operation, reason, .approved)
+            case .no:
               try record(model, operation, reason, .denied)
               throw RepairError.unrepaired(failure, why: "The repair was not approved.")
+            case .timedOut:
+              try record(model, operation, "No answer in time; nothing was done.", .denied)
+              throw RepairError.unrepaired(failure, why: "No answer came, so nothing was changed. Install again to continue.")
             }
-            try record(model, operation, reason, .approved)
+          } else if operation.tier(downloadBytes: bytes) == .notify {
+            update(InstallUpdate(step: failure.step, message: "The agent chose to: \(operation.summary)"))
           }
           tried.append(operation)
           do {
@@ -187,6 +201,23 @@ public struct RepairRunner: Sendable {
       operations: report.failureClass.defaultRepair(after: tried))
   }
 
+  enum Answer: Equatable { case yes, no, timedOut }
+
+  /// Asks the user, giving up after `approvalTimeout`. A missing answer is never a yes.
+  func ask(_ operation: RepairOperation, _ report: FailureReport) async -> Answer {
+    let approve = approve, timeout = approvalTimeout
+    return await withTaskGroup(of: Answer.self) { group in
+      group.addTask { await approve(operation, report) ? .yes : .no }
+      group.addTask {
+        try? await Task.sleep(for: timeout)
+        return .timedOut
+      }
+      let first = await group.next() ?? .timedOut
+      group.cancelAll()
+      return first
+    }
+  }
+
   /// Runs a command the assistant asked for, if the rules allow it and the user approves. The answer is what
   /// the assistant reads next: output, or the reason nothing ran.
   private func look(_ command: String, report: FailureReport, model: CatalogModel) async throws -> String {
@@ -197,7 +228,7 @@ public struct RepairRunner: Sendable {
       return "Not run: blocked by the rules (\(rule)): \(reason)"
     }
     try record(model, operation, "asked to run", .proposed)
-    guard await approve(operation, report) else {
+    guard await ask(operation, report) == .yes else {
       try record(model, operation, "declined", .denied)
       return "Not run: the user declined."
     }

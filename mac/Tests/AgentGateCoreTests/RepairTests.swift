@@ -506,3 +506,49 @@ private actor SearchingAssistant: RepairAssistant {
     #expect(server.requestCount == 2)
   }
 }
+
+
+@Suite struct ApprovalTierTests {
+  @Test func tiersFollowRisk() {
+    let small: UInt64 = 100, big = 5 * MemoryBudget.gib
+    #expect(RepairOperation.restartRuntime.tier(downloadBytes: big) == .act)
+    #expect(RepairOperation.retryDownload.tier(downloadBytes: small) == .act)
+    #expect(RepairOperation.retryDownload.tier(downloadBytes: big) == .notify)
+    #expect(RepairOperation.useMirror("https://hf-mirror.com").tier(downloadBytes: small) == .notify)
+    for op: RepairOperation in [.freeDisk(modelId: "x"), .lowerQuantization, .setQuantization(.q4_K_M), .runCommand("ls")] {
+      #expect(op.tier(downloadBytes: small) == .ask)
+      // Asking is never skipped, whatever autonomy the user picked.
+      #expect(op.needsApproval(downloadBytes: small, autonomy: .balanced))
+    }
+  }
+
+  @Test func balancedActsOnNotifyTierAndCarefulAsks() {
+    let mirror = RepairOperation.useMirror("https://hf-mirror.com")
+    #expect(mirror.needsApproval(downloadBytes: 0, autonomy: .careful))
+    #expect(!mirror.needsApproval(downloadBytes: 0, autonomy: .balanced))
+  }
+
+  @Test func anUnansweredQuestionTimesOutAsNo() async throws {
+    let rig = try RepairRunnerTests.Rig()
+    defer { try? FileManager.default.removeItem(at: rig.dir) }
+    var pipeline = InstallPipeline()
+    pipeline.store = rig.store
+    let reply = #"{"explanation":"The disk is full.","operations":[{"op":"freeDisk","modelId":"old-model"}]}"#
+    let runner = RepairRunner(
+      pipeline: pipeline, audit: rig.audit, assistant: Scripted2(reply: reply), approvalTimeout: .milliseconds(200)
+    ) { _, _ in
+      try? await Task.sleep(for: .seconds(30))
+      return true
+    }
+    let started = Date()
+    let error = await rig.run(runner)
+    #expect(Date().timeIntervalSince(started) < 10)
+    #expect(error?.description.contains("No answer came") == true)
+    #expect(try rig.store.load("old-model") != nil)
+  }
+}
+
+private struct Scripted2: RepairAssistant {
+  var reply: String
+  func propose(for report: FailureReport, removable: [String]) async throws -> String { reply }
+}

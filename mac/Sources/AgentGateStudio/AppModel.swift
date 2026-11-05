@@ -40,6 +40,9 @@ final class AppModel {
   private(set) var stepLog: [InstallStep: [String]] = [:]
   var stepDetail: InstallStep?
   var agentPanelOpen = false
+  var autonomy = Autonomy(rawValue: UserDefaults.standard.string(forKey: "autonomy") ?? "") ?? .careful {
+    didSet { UserDefaults.standard.set(autonomy.rawValue, forKey: "autonomy") }
+  }
   private(set) var failure: InstallFailure?
   private(set) var installing: CatalogModel?
   /// A repair waiting for the user's yes or no.
@@ -203,7 +206,7 @@ final class AppModel {
           runtime = try await pipeline.load(done, update: report)
           active = done
         } else {
-          let runner = RepairRunner(assistant: agentOn ? AgentAssistant(profile: activeAgent) : nil) { operation, failure in
+          let runner = RepairRunner(assistant: agentOn ? AgentAssistant(profile: activeAgent) : nil, autonomy: autonomy) { operation, failure in
             await self.askToRepair(operation, failure)
           }
           let (done, runtime) = try await runner.install(model, update: report)
@@ -304,10 +307,15 @@ final class AppModel {
     installTask?.cancel()
   }
 
+  /// Shows the question in the bar. If the runner stops waiting (timeout), the question is taken down as a no.
   private func askToRepair(_ operation: RepairOperation, _ report: FailureReport) async -> Bool {
-    await withCheckedContinuation { continuation in
-      pendingRepair = (operation, report)
-      repairAnswer = continuation
+    await withTaskCancellationHandler {
+      await withCheckedContinuation { continuation in
+        pendingRepair = (operation, report)
+        repairAnswer = continuation
+      }
+    } onCancel: {
+      Task { @MainActor in self.answerRepair(false) }
     }
   }
 

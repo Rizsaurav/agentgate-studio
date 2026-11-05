@@ -22,6 +22,14 @@ struct AgentPanel: View {
       }
       Text("Watches every install, looks into failures, searches the web, and chooses the fix. You approve anything that deletes files, lowers quality, switches the download source, or downloads over 1 GB.")
         .font(.system(size: 12)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
+      @Bindable var bound = app
+      Picker("Autonomy", selection: $bound.autonomy) {
+        Text("Careful").tag(Autonomy.careful)
+        Text("Balanced").tag(Autonomy.balanced)
+      }
+      .pickerStyle(.segmented).frame(width: 260)
+      Text(app.autonomy.summary).font(.system(size: 12)).foregroundStyle(Theme.muted)
+        .fixedSize(horizontal: false, vertical: true)
       VStack(spacing: 0) {
         ForEach(app.agents) { agent in
           HStack(spacing: 10) {
