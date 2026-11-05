@@ -52,7 +52,7 @@ struct WorkspacePage: View {
     .onAppear { nameFocused = true }
   }
 
-  private var setupDone: Bool { !app.installed.isEmpty && (app.agentOn || app.setupSkipped) }
+  private var setupDone: Bool { !app.installed.isEmpty && app.agentOn }
 
   private func create() {
     if app.createProject(named: name) { name = "" }
@@ -62,7 +62,6 @@ struct WorkspacePage: View {
 /// First-run checklist: a model, then the optional repair agent. Disappears once both are settled.
 private struct SetupCard: View {
   @Environment(AppModel.self) private var app
-  @State private var key = ""
 
   var body: some View {
     Card(padding: 8) {
@@ -71,13 +70,8 @@ private struct SetupCard: View {
           Button("Choose a model") { app.route = .models }.buttonStyle(PrimaryButtonStyle())
         }
         Divider().overlay(Theme.line)
-        row(done: app.agentOn, title: "Supervising agent") {
-          HStack(spacing: 8) {
-            SecureField("OpenRouter key", text: $key).field().frame(width: 190).accessibilityLabel("OpenRouter key")
-            Button("Connect") { if app.connectAgent(key: key) { key = "" } }
-              .buttonStyle(PrimaryButtonStyle()).disabled(key.isEmpty)
-            Button("Not now") { app.setupSkipped = true }.buttonStyle(.plain).foregroundStyle(Theme.muted)
-          }
+        row(done: app.agentOn, title: "Agent (an API key)") {
+          Button("Add a key") { app.route = .profile }.buttonStyle(PrimaryButtonStyle())
         }
       }
     }

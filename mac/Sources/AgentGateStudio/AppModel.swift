@@ -24,6 +24,7 @@ enum Route: Hashable {
   case session(UUID)
   case security
   case models
+  case profile
 }
 
 @MainActor @Observable
@@ -62,9 +63,6 @@ final class AppModel {
   var activeAgent: AgentProfile { agents.first { $0.id == activeAgentID } ?? .builtIn }
   /// Whether the chosen agent has a key, so it can supervise installs. Checks existence only; never reads the key.
   var agentOn: Bool { agentKeys.contains(activeAgent.id) }
-  var setupSkipped = UserDefaults.standard.bool(forKey: "setupSkipped") {
-    didSet { UserDefaults.standard.set(setupSkipped, forKey: "setupSkipped") }
-  }
   var errorMessage: String?
   private(set) var workspace = WorkspaceStore.Snapshot()
   private(set) var thinking = false
@@ -251,25 +249,33 @@ final class AppModel {
   private func refreshAgents() {
     agents = agentStore.all()
     agentKeys = Set(agents.filter(AgentStore.isConnected).map(\.id))
+    providerKeys = Set(Providers.all.filter { $0.keychain.exists() }.map(\.id))
   }
 
-  /// Saves the built-in agent's key in the Keychain. Returns false (with a message) if it could not be saved.
-  func connectAgent(key: String) -> Bool {
-    let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty else { return false }
-    do {
-      try AgentProfile.builtIn.keychain.save(trimmed)
-      refreshAgents()
-      return true
-    } catch {
-      errorMessage = String(describing: error)
-      return false
+  /// Providers with a saved key. Existence only; keys are never read into the app's state.
+  private(set) var providerKeys: Set<String> = []
+
+  /// Checks a key with its provider, then saves it in the Keychain. Returns what to tell the user.
+  func saveProviderKey(_ provider: Provider, key: String) async -> (saved: Bool, message: String) {
+    let key = key.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !key.isEmpty else { return (false, "Paste a key first.") }
+    switch await Providers.verify(provider, key: key) {
+    case .rejected: return (false, "\(provider.name) rejected this key.")
+    case .unreachable(let why): return (false, "Not saved: \(why) Try again when online.")
+    case .valid:
+      do {
+        try provider.keychain.save(key)
+        refreshAgents()
+        return (true, "\(provider.name) key saved.")
+      } catch {
+        return (false, String(describing: error))
+      }
     }
   }
 
-  func disconnectAgent() {
+  func removeProviderKey(_ provider: Provider) {
     do {
-      try AgentProfile.builtIn.keychain.delete()
+      try provider.keychain.delete()
       refreshAgents()
     } catch {
       errorMessage = String(describing: error)

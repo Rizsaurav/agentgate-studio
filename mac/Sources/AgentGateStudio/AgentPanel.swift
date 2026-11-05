@@ -5,7 +5,6 @@ import SwiftUI
 struct AgentPanel: View {
   @Environment(AppModel.self) private var app
   @Environment(\.dismiss) private var dismiss
-  @State private var key = ""
   @State private var history: [AuditEntry] = []
   @State private var adding = false
   @State private var name = ""
@@ -45,7 +44,7 @@ struct AgentPanel: View {
             Spacer()
             StatusPill(text: app.agentKeys.contains(agent.id) ? "Key saved" : "No key", tone: app.agentKeys.contains(agent.id) ? .ok : .pending)
             if agent.isBuiltIn {
-              if app.agentKeys.contains(agent.id) { Button("Remove key") { app.disconnectAgent() }.controlSize(.small) }
+              EmptyView()
             } else {
               Button("Remove") { app.removeAgent(agent.id) }.controlSize(.small)
             }
@@ -57,11 +56,8 @@ struct AgentPanel: View {
       .background(RoundedRectangle(cornerRadius: 10).fill(Theme.surface))
       .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.line))
       if !app.agentOn && app.activeAgent.isBuiltIn {
-        HStack {
-          SecureField("OpenRouter key", text: $key).field().accessibilityLabel("OpenRouter key")
-          Button("Save key") { if app.connectAgent(key: key) { key = "" } }
-            .buttonStyle(PrimaryButtonStyle()).disabled(key.isEmpty)
-        }
+        Button("Add your OpenRouter key on Profile") { app.route = .profile; dismiss() }
+          .buttonStyle(PrimaryButtonStyle())
       }
       if adding {
         VStack(alignment: .leading, spacing: 8) {

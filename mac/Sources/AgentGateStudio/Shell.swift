@@ -4,7 +4,6 @@ import SwiftUI
 /// Sidebar, title bar and page area, laid out like the desktop web app.
 struct Shell: View {
   @Environment(AppModel.self) private var app
-  @State private var settings = false
 
   var body: some View {
     @Bindable var app = app
@@ -12,7 +11,7 @@ struct Shell: View {
       Sidebar().frame(width: 232)
       Rectangle().fill(Theme.line).frame(width: 1)
       VStack(spacing: 0) {
-        TitleBar(settings: $settings)
+        TitleBar()
         if let error = app.errorMessage {
           HStack {
             Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(Theme.danger)
@@ -44,6 +43,7 @@ struct Shell: View {
     case .session(let id): SessionPage(sessionId: id)
     case .security: SecurityPage()
     case .models: ModelsPage()
+    case .profile: ProfilePage()
     }
   }
 }
@@ -91,14 +91,19 @@ private struct Sidebar: View {
         .padding(.horizontal, 14)
       }
       Spacer(minLength: 0)
-      HStack(spacing: 12) {
-        Image(systemName: "key").font(.system(size: 14)).foregroundStyle(Theme.muted)
-          .frame(width: 34, height: 34).background(Circle().fill(Theme.raised))
-        VStack(alignment: .leading, spacing: 3) {
-          Text("Local workspace").font(.system(size: 12, weight: .semibold))
-          Text("Stored on this computer").font(.system(size: 11)).foregroundStyle(Theme.muted)
+      Button { app.route = .profile } label: {
+        HStack(spacing: 12) {
+          Image(systemName: "person.crop.circle").font(.system(size: 15)).foregroundStyle(Theme.muted)
+            .frame(width: 34, height: 34).background(Circle().fill(Theme.raised))
+          VStack(alignment: .leading, spacing: 3) {
+            Text("Profile").font(.system(size: 12, weight: .semibold))
+            Text(app.agentOn ? "Agent on · \(app.providerKeys.count) key\(app.providerKeys.count == 1 ? "" : "s")" : "Add an API key")
+              .font(.system(size: 11)).foregroundStyle(app.agentOn ? Theme.muted : Theme.accent)
+          }
         }
+        .contentShape(Rectangle())
       }
+      .buttonStyle(.plain).accessibilityLabel("Profile")
       .padding(.horizontal, 26).padding(.bottom, 22)
     }
     .frame(maxHeight: .infinity, alignment: .top)
@@ -175,7 +180,6 @@ private struct ProjectRow: View {
 
 private struct TitleBar: View {
   @Environment(AppModel.self) private var app
-  @Binding var settings: Bool
 
   var body: some View {
     HStack(spacing: 22) {
@@ -198,9 +202,11 @@ private struct TitleBar: View {
         }
       }
       .buttonStyle(.plain).accessibilityLabel("Open command palette")
-      Button { settings.toggle() } label: { Image(systemName: "slider.horizontal.3").font(.system(size: 14)) }
-        .buttonStyle(.plain).accessibilityLabel("Settings")
-        .popover(isPresented: $settings, arrowEdge: .bottom) { SettingsPanel() }
+      Button { app.route = .profile } label: {
+        Image(systemName: "person.crop.circle").font(.system(size: 17))
+          .foregroundStyle(app.route == .profile ? Theme.accent : Theme.text)
+      }
+      .buttonStyle(.plain).accessibilityLabel("Profile").help("Profile: API keys, agent and shortcuts")
     }
     .foregroundStyle(Theme.text)
     .padding(.horizontal, 28).frame(height: 56)
@@ -212,39 +218,12 @@ private struct TitleBar: View {
     switch app.route {
     case .security: "Security & Verification"
     case .models: "Providers"
+    case .profile: "Profile"
     default: "Workspace"
     }
   }
 }
 
-private struct SettingsPanel: View {
-  var body: some View {
-    VStack(alignment: .leading, spacing: 18) {
-      VStack(alignment: .leading, spacing: 6) {
-        Text("Local by design").font(.system(size: 13, weight: .semibold))
-        Text("Projects and conversations are stored on this computer. Models run in the engine built into the app, on this computer only.")
-          .font(.system(size: 12)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
-      }
-      VStack(alignment: .leading, spacing: 8) {
-        Text("Keyboard shortcuts").font(.system(size: 13, weight: .semibold))
-        Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 6) {
-          ForEach([("Find a project or view", "⌘ K"), ("Workspace", "⌘ 1"), ("Security & Verification", "⌘ 2"),
-                   ("Send a task", "⌘ Return")], id: \.0) { row in
-            GridRow {
-              Text(row.0).foregroundStyle(Theme.muted)
-              Text(row.1).font(.system(size: 11, weight: .medium))
-            }
-          }
-        }
-        .font(.system(size: 12))
-      }
-    }
-    .padding(20).frame(width: 320)
-    .foregroundStyle(Theme.text)
-    .background(Theme.surface)
-    .environment(\.colorScheme, .dark)
-  }
-}
 
 private struct CommandPalette: View {
   @Environment(AppModel.self) private var app

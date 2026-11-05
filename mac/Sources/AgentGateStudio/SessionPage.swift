@@ -65,6 +65,14 @@ struct SessionPage: View {
 
   private func composer(_ session: Session) -> some View {
     VStack(alignment: .leading, spacing: 12) {
+      if !app.agentOn {
+        HStack(spacing: 10) {
+          Image(systemName: "key").foregroundStyle(Theme.accent)
+          Text("Add an API key to turn on the agent, then start working.").font(.system(size: 13))
+          Spacer()
+          Button("Add a key") { app.route = .profile }.buttonStyle(PrimaryButtonStyle())
+        }
+      }
       TextField("Ask anything about your project…", text: $draft, axis: .vertical)
         .textFieldStyle(.plain).font(.system(size: 14)).lineLimit(3...8)
         .accessibilityLabel("Task")
@@ -78,7 +86,7 @@ struct SessionPage: View {
         Button { send() } label: { Label("Send", systemImage: "arrow.up") }
           .buttonStyle(PrimaryButtonStyle())
           .keyboardShortcut(.return, modifiers: .command)
-          .disabled(app.generating || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+          .disabled(!app.agentOn || app.generating || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
       }
     }
     .padding(16)
@@ -111,7 +119,7 @@ struct SessionPage: View {
 
   private func send() {
     let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty else { return }
+    guard !text.isEmpty, app.agentOn else { return }
     draft = ""
     app.send(text, in: sessionId)
   }
