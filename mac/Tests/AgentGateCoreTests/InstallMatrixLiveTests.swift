@@ -291,3 +291,25 @@ extension InstallMatrixLiveTests {
     #expect(FileManager.default.fileExists(atPath: decoy.appendingPathComponent("precious.txt").path))
   }
 }
+
+/// Reads this repository's real GitHub Actions through gh and checks it against gh's own listing.
+@Suite(.serialized, .timeLimit(.minutes(1))) struct ActionsLiveTests {
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["AGENTGATE_LIVE"] == "1"))
+  func matchesWhatGitHubReports() async throws {
+    let repo = GitHubRepo(owner: "Rizsaurav", name: "agentgate-studio")
+    let service = ActionsService(repo: repo)
+    let runs = try await service.runs(count: 10)
+    let listed = GitHubRepo.run("/opt/homebrew/bin/gh", ["run", "list", "-R", "\(repo)", "--limit", "1", "--json", "databaseId,status"]) ?? ""
+    print("CI: newest \(runs[0].workflow) #\(runs[0].run_number) \(runs[0].outcome) · gh says \(listed.trimmingCharacters(in: .whitespacesAndNewlines))")
+    #expect(listed.contains("\(runs[0].id)"))
+    let jobs = try await service.jobs(runID: runs[0].id)
+    let progress = RunProgress.steps(jobs)
+    print("CI: \(jobs.count) jobs, \(progress.done) of \(progress.total) steps done")
+    if let failed = runs.first(where: { $0.outcome == .failed }),
+       let job = try await service.jobs(runID: failed.id).first(where: { $0.outcome == .failed }) {
+      let tail = try await service.logTail(jobID: job.id, lines: 5)
+      print("CI: log tail of failed job \(job.name):\n\(tail)")
+      #expect(!tail.isEmpty)
+    }
+  }
+}
