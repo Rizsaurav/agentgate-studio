@@ -8,8 +8,7 @@ struct Shell: View {
   var body: some View {
     @Bindable var app = app
     HStack(spacing: 0) {
-      Sidebar().frame(width: 232)
-      Rectangle().fill(Theme.line).frame(width: 1)
+      Sidebar().frame(width: 240)
       VStack(spacing: 0) {
         TitleBar()
         if let error = app.errorMessage {
@@ -26,7 +25,7 @@ struct Shell: View {
       }
       .background(Theme.bg)
     }
-    .background(Theme.sidebar)
+    .background { WindowBackdrop() }
     .foregroundStyle(Theme.text)
     .preferredColorScheme(.dark)
     .ignoresSafeArea()
@@ -107,7 +106,6 @@ private struct Sidebar: View {
       .padding(.horizontal, 26).padding(.bottom, 22)
     }
     .frame(maxHeight: .infinity, alignment: .top)
-    .background(Theme.sidebar)
   }
 
   private var workspaceSelected: Bool {
@@ -138,12 +136,12 @@ private struct NavRow: View {
       HStack(spacing: 12) {
         Image(systemName: symbol).font(.system(size: 14)).foregroundStyle(selected ? Theme.accent : Theme.muted)
           .frame(width: 18)
-        Text(title).font(.system(size: 13)).foregroundStyle(selected ? Theme.text : Theme.text.opacity(0.85))
-          .lineLimit(1).fixedSize()
+        Text(title).font(.system(size: 12.5, weight: selected ? .medium : .regular)).foregroundStyle(selected ? Theme.text : Theme.text.opacity(0.85))
+          .lineLimit(1)
         Spacer()
       }
       .padding(.horizontal, 13).frame(height: 42)
-      .background(RoundedRectangle(cornerRadius: 8).fill(selected ? Theme.raised : hover ? Theme.raised.opacity(0.5) : .clear))
+      .background(RoundedRectangle(cornerRadius: 10).fill(selected ? Theme.accent.opacity(0.13) : hover ? Color.white.opacity(0.05) : .clear))
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
@@ -168,7 +166,7 @@ private struct ProjectRow: View {
         Spacer()
       }
       .padding(.horizontal, 13).frame(height: 38)
-      .background(RoundedRectangle(cornerRadius: 8).fill(selected ? Theme.raised : hover ? Theme.raised.opacity(0.5) : .clear))
+      .background(RoundedRectangle(cornerRadius: 10).fill(selected ? Theme.accent.opacity(0.13) : hover ? Color.white.opacity(0.05) : .clear))
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
@@ -182,7 +180,7 @@ private struct TitleBar: View {
   @Environment(AppModel.self) private var app
 
   var body: some View {
-    HStack(spacing: 22) {
+    HStack(spacing: 16) {
       HStack(spacing: 12) {
         Text("Studio")
         Text("/").foregroundStyle(Theme.muted.opacity(0.6))
@@ -190,28 +188,31 @@ private struct TitleBar: View {
       }
       .font(.system(size: 12)).foregroundStyle(Theme.muted)
       Spacer()
-      Button { app.route = .models } label: {
-        Label("Models", systemImage: "cube").font(.system(size: 13))
-      }
-      .buttonStyle(.plain).accessibilityLabel("Models")
-      Button { app.paletteOpen = true } label: {
-        HStack(spacing: 8) {
-          Image(systemName: "magnifyingglass").font(.system(size: 14))
-          Text("⌘ K").font(.system(size: 10, weight: .medium)).padding(.horizontal, 6).padding(.vertical, 3)
-            .background(RoundedRectangle(cornerRadius: 4).fill(Theme.raised))
+      HStack(spacing: 18) {
+        Button { app.route = .models } label: {
+          Label("Models", systemImage: "cube").font(.system(size: 13))
         }
+        .buttonStyle(.plain).accessibilityLabel("Models")
+        Button { app.paletteOpen = true } label: {
+          HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").font(.system(size: 14))
+            Text("⌘ K").font(.system(size: 10, weight: .medium)).padding(.horizontal, 6).padding(.vertical, 3)
+              .foregroundStyle(Theme.muted)
+          }
+        }
+        .buttonStyle(.plain).accessibilityLabel("Open command palette")
+        Button { app.route = .profile } label: {
+          Image(systemName: "person.crop.circle").font(.system(size: 17))
+            .foregroundStyle(app.route == .profile ? Theme.accent : Theme.text)
+        }
+        .buttonStyle(.plain).accessibilityLabel("Profile").help("Profile: API keys, agent and shortcuts")
       }
-      .buttonStyle(.plain).accessibilityLabel("Open command palette")
-      Button { app.route = .profile } label: {
-        Image(systemName: "person.crop.circle").font(.system(size: 17))
-          .foregroundStyle(app.route == .profile ? Theme.accent : Theme.text)
-      }
-      .buttonStyle(.plain).accessibilityLabel("Profile").help("Profile: API keys, agent and shortcuts")
+      .padding(.horizontal, 16).padding(.vertical, 11)
+      .studioGlass(radius: 20)
     }
     .foregroundStyle(Theme.text)
     .padding(.horizontal, 28).frame(height: 56)
-    .background(Theme.bg)
-    .overlay(alignment: .bottom) { Rectangle().fill(Theme.line.opacity(0.4)).frame(height: 1) }
+    .padding(.top, 8)
   }
 
   private var crumb: String {
@@ -243,7 +244,9 @@ private struct CommandPalette: View {
     VStack(spacing: 0) {
       HStack(spacing: 10) {
         Image(systemName: "magnifyingglass").foregroundStyle(Theme.muted)
-        TextField("Go to a project or view…", text: $query).textFieldStyle(.plain).font(.system(size: 15))
+        TextField("Find", text: $query, prompt: Text(""))
+          .inputHint("Go to a project or view…", when: query.isEmpty)
+          .textFieldStyle(.plain).font(.system(size: 15))
           .onSubmit { if let first = items.first { go(first.route) } }
       }
       .padding(16)
@@ -266,7 +269,7 @@ private struct CommandPalette: View {
       }
       .frame(height: 260)
     }
-    .frame(width: 520).background(Theme.surface).preferredColorScheme(.dark)
+    .frame(width: 520).studioGlass(radius: 20).preferredColorScheme(.dark)
     .onExitCommand { dismiss() }
   }
 

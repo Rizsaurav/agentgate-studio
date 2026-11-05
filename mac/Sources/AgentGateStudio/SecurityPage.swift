@@ -11,7 +11,7 @@ struct SecurityPage: View {
     PageScroll {
       VStack(alignment: .leading, spacing: 28) {
         VStack(alignment: .leading, spacing: 8) {
-          Text("Security").font(.system(size: 30, weight: .bold)).tracking(-0.6)
+          Text("Security").font(.system(size: 28, weight: .semibold)).tracking(-0.6)
           Text("These checks reduce risk. They do not guarantee protection from every attack.")
             .font(.system(size: 13)).foregroundStyle(Theme.muted)
         }
@@ -87,7 +87,7 @@ struct SecurityPage: View {
         Text("Nothing yet. Commands and edits the agent asks for appear here.")
           .font(.system(size: 13)).foregroundStyle(Theme.muted)
           .padding(24).frame(maxWidth: .infinity, alignment: .leading)
-          .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.line, style: StrokeStyle(lineWidth: 1, dash: [4])))
+          .background(RoundedRectangle(cornerRadius: 16).fill(Theme.surface))
       } else {
         Card(padding: 6) {
           VStack(spacing: 0) {
