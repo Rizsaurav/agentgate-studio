@@ -121,8 +121,9 @@ public struct InstallPipeline: Sendable {
       }
     }
 
-    let config = try await at(.configure, "\(plan.context / 1024)K context, all layers on the GPU, q8_0 KV cache.") {
-      RuntimeConfig.for(plan, profile: profile)
+    let kv = ModelPlanner.kvCacheType(model)
+    let config = try await at(.configure, "\(plan.context / 1024)K context, all layers on the GPU, \(kv) KV cache.") {
+      RuntimeConfig.for(plan, profile: profile, kvCacheType: kv)
     }
     let runtime = try await at(.load, "Loading \(model.name) into memory…") {
       do {

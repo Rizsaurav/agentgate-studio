@@ -118,3 +118,21 @@ func malformedCatalogIsRejected(label: String, patch: String) throws {
     try Catalog.decode(JSONSerialization.data(withJSONObject: json))
   }
 }
+
+
+@Test func kvCacheTypeFollowsTheHeadSize() throws {
+  var model = try #require(try Catalog.bundled().model("qwen3-0.6b"))
+  #expect(ModelPlanner.kvCacheType(model) == "q8_0")
+  let q8 = ModelPlanner.kvCacheBytes(model, context: 8192, backend: .llamaCpp)
+  model.architecture.headDim = 48
+  #expect(ModelPlanner.kvCacheType(model) == "f16")
+  // An f16 cache is counted at two bytes per value, so the memory plan stays honest.
+  #expect(ModelPlanner.kvCacheBytes(model, context: 8192, backend: .llamaCpp) > q8 * 48 / 128)
+}
+
+@Test func everyCatalogModelGetsACacheTheEngineAccepts() throws {
+  for model in try Catalog.bundled().models {
+    let kv = ModelPlanner.kvCacheType(model)
+    #expect(kv == "f16" || model.architecture.headDim % 32 == 0, "\(model.id)")
+  }
+}

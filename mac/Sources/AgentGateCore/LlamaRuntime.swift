@@ -26,12 +26,12 @@ public struct RuntimeConfig: Codable, Sendable, Equatable {
   public var flashAttention: Bool
   public var threads: Int
 
-  public static func `for`(_ plan: ModelPlan, profile: HardwareProfile) -> RuntimeConfig {
+  public static func `for`(_ plan: ModelPlan, profile: HardwareProfile, kvCacheType: String = "q8_0") -> RuntimeConfig {
     RuntimeConfig(
       context: plan.context,
       // Apple Silicon shares memory with the GPU, so every layer goes there.
       gpuLayers: profile.architecture == .appleSilicon ? 999 : 0,
-      kvCacheType: "q8_0",
+      kvCacheType: kvCacheType,
       flashAttention: true,
       threads: max(1, profile.performanceCores))
   }

@@ -51,10 +51,17 @@ public enum ModelPlanner {
   /// KV cache bytes per element: llama.cpp runs with a q8_0 cache, MLX with f16.
   static func kvBytesPerElement(_ backend: Backend) -> Double { backend == .llamaCpp ? 1.0625 : 2 }
 
+  /// The KV cache type llama.cpp can use for this model. q8_0 packs 32 values per block, so a head size that is
+  /// not a multiple of 32 makes the engine refuse to start; those models keep an f16 cache.
+  public static func kvCacheType(_ model: CatalogModel) -> String {
+    model.architecture.headDim % 32 == 0 ? "q8_0" : "f16"
+  }
+
   public static func kvCacheBytes(_ model: CatalogModel, context: Int, backend: Backend) -> UInt64 {
     let a = model.architecture
     let elements = 2 * Double(a.layers * a.kvHeads * a.headDim) * Double(context)
-    return UInt64(elements * kvBytesPerElement(backend))
+    let perElement = backend == .llamaCpp && kvCacheType(model) == "f16" ? 2 : kvBytesPerElement(backend)
+    return UInt64(elements * perElement)
   }
 
   public static func memoryBytes(weights: UInt64, model: CatalogModel, context: Int, backend: Backend) -> UInt64 {

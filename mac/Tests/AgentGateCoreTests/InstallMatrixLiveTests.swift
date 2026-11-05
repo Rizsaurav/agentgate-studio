@@ -205,6 +205,12 @@ extension InstallMatrixLiveTests {
     var model = try! Catalog.bundled().model("qwen3-0.6b")!
     model.id = "tiny-test"
     model.name = "Tiny test model"
+    model.toolCalling = false
+    model.contextMax = 8192
+    model.source = nil
+    model.mlx = nil
+    // stories260K's real shape: 5 layers, 4 KV heads of size 8. A head size of 8 needs an f16 KV cache.
+    model.architecture = .init(layers: 5, kvHeads: 4, headDim: 8)
     model.gguf = .init(repo: "ggml-org/test-model-stories260K", files: [
       .init(quant: .q8_0, file: "stories260K-f32.gguf", bytes: 1_185_376,
             sha256: "270cba1bd5109f42d03350f60406024560464db173c0e387d91f0426d3bd256d"),
