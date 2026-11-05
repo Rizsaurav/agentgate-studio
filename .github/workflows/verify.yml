@@ -35,6 +35,13 @@ jobs:
       - uses: actions/checkout@v4
       - run: swift build --package-path mac
       - run: swift test --package-path mac
+      - name: TEMP repeat the resume test 30 times
+        run: |
+          fails=0
+          for i in $(seq 1 30); do
+            swift test --package-path mac --skip-build --filter resumesAfterDroppedConnection > /tmp/r.txt 2>&1 || { fails=$((fails+1)); grep -m2 "Expectation failed" /tmp/r.txt; }
+          done
+          echo "RESULT: $fails of 30 runs failed"
 
   # Required: Promptfoo security and functional suite against the real application pipeline and
   # the real LLM Guard scanner. The model is a scripted fixture: no paid API key is used anywhere.
