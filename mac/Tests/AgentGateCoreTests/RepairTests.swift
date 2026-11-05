@@ -485,6 +485,24 @@ private actor SearchingAssistant: RepairAssistant {
     #expect(try await AgentAssistant(profile: profile, apiKey: { "k" }).search("x").contains("not available"))
     let builtIn = try JSONSerialization.jsonObject(with: AgentAssistant(apiKey: { "k" }).requestBody(report, removable: [])) as? [String: Any]
     #expect(builtIn?["model"] as? String == "deepseek/deepseek-v4.1-flash")
-    #expect(builtIn?["reasoning"] != nil)
+    #expect((builtIn?["reasoning"] as? [String: Bool])?["enabled"] == false)
+  }
+}
+
+
+@Suite(.serialized) struct AgentReplyTests {
+  @Test func codeFencesAreRemoved() {
+    #expect(AgentAssistant.unwrap("```json\n{\"a\":1}\n```") == #"{"a":1}"#)
+    #expect(AgentAssistant.unwrap("  {\"a\":1} ") == #"{"a":1}"#)
+  }
+
+  @Test func aCutOffAnswerIsRetriedOnceThenRefused() async throws {
+    let cut = try JSONSerialization.data(withJSONObject: ["choices": [["message": ["content": ""], "finish_reason": "length"]]])
+    let server = try TestHTTPServer(body: cut, servedPath: "/v1/chat/completions")
+    defer { server.stop() }
+    let assistant = AgentAssistant(baseURL: server.url("/v1"), apiKey: { "k" })
+    let report = FailureReport(step: "Load", failureClass: .network, message: "x", logTail: "", hardware: "m", triedAlready: [])
+    await #expect(throws: AgentAssistant.Failure.malformed) { try await assistant.propose(for: report, removable: []) }
+    #expect(server.requestCount == 2)
   }
 }

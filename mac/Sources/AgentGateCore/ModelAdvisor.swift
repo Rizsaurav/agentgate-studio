@@ -131,25 +131,6 @@ extension AgentAssistant {
 
   /// Turns the user's description of a task into requirements. Validated by `TaskNeeds.parse`.
   public func needs(for task: String) async throws -> TaskNeeds {
-    guard let key = try apiKey(), !key.isEmpty else { throw Failure.noKey }
-    var request = URLRequest(url: baseURL.appendingPathComponent("chat/completions"), timeoutInterval: 20)
-    request.httpMethod = "POST"
-    request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    var body: [String: Any] = [
-      "model": profile.model, "temperature": 0, "max_tokens": Self.maxReplyTokens,
-      "response_format": ["type": "json_object"],
-      "messages": [["role": "system", "content": Self.needsInstructions], ["role": "user", "content": String(task.prefix(1000))]],
-    ]
-    if profile.isOpenRouter { body["reasoning"] = ["effort": "low"] }
-    request.httpBody = try JSONSerialization.data(withJSONObject: body)
-    let (data, response) = try await session.data(for: request)
-    guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw Failure.http((response as? HTTPURLResponse)?.statusCode ?? 0) }
-    struct Reply: Decodable {
-      struct Choice: Decodable { struct Message: Decodable { var content: String? }; var message: Message }
-      var choices: [Choice]
-    }
-    guard let content = try? JSONDecoder().decode(Reply.self, from: data).choices.first?.message.content else { throw Failure.malformed }
-    return try TaskNeeds.parse(content)
+    try TaskNeeds.parse(try await complete(body(system: Self.needsInstructions, user: String(task.prefix(1000)), json: true), timeout: 20).text)
   }
 }
