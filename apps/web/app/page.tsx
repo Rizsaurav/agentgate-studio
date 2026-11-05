@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { projects, sessions } from '@/lib/controller';
 import { CreateProject } from '@/components/create-project';
 import { Icon } from '@/components/icon';
+import { ImportProject } from '@/components/import-project';
 export const dynamic = 'force-dynamic';
 export default function Workspace() {
   const items = projects().list();
@@ -64,6 +65,7 @@ export default function Workspace() {
           <span className="eyebrow">Make room for something new</span>
           <h2 id="create-title">New project</h2>
           <CreateProject />
+          <ImportProject />
         </section>
       </div>
       <div className="workspace-note">

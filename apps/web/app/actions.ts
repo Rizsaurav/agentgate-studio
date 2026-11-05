@@ -8,6 +8,7 @@ import {
   fixForProposal,
   fixTask,
   isLocalMutation,
+  ProjectImportFailure,
   questionSchema,
   runIdSchema,
   sendPromptSchema,
@@ -23,6 +24,7 @@ import {
   endpoints,
   evals,
   projects,
+  projectImportService,
   puller,
   runs,
   security,
@@ -61,6 +63,109 @@ export async function createProject(
   }
   revalidatePath('/');
   redirect(`/projects/${id}`);
+}
+
+export type ImportProjectState = {
+  error: string | null;
+  notice: string | null;
+  projectId: string | null;
+};
+export async function importProject(
+  _previous: ImportProjectState,
+  form: FormData,
+): Promise<ImportProjectState> {
+  if (!(await isLocalRequest()))
+    return {
+      error: 'Requests must come from this local workspace.',
+      notice: null,
+      projectId: null,
+    };
+
+  let projectId: string | null = null;
+  try {
+    const manifestText = String(form.get('manifest') ?? '');
+    let pathsValue: unknown;
+    try {
+      pathsValue = JSON.parse(String(form.get('relativePaths') ?? ''));
+    } catch {
+      throw new Error('The imported document paths are invalid.');
+    }
+    if (!Array.isArray(pathsValue))
+      throw new Error('The imported document paths are invalid.');
+    const paths: string[] = [];
+    for (const path of pathsValue) {
+      if (typeof path !== 'string')
+        throw new Error('The imported document paths are invalid.');
+      paths.push(path);
+    }
+
+    const uploads = form.getAll('files');
+    if (
+      uploads.length !== paths.length ||
+      uploads.some((file) => !(file instanceof File))
+    )
+      throw new Error('Select every document listed in the project manifest.');
+    const uploadsAsFiles = uploads.filter(
+      (file): file is File => file instanceof File,
+    );
+    if (uploadsAsFiles.some((file) => file.size === 0))
+      throw new Error('An imported document is empty.');
+    if (uploadsAsFiles.some((file) => file.size > 200_000))
+      throw new Error('An imported document is too large.');
+    if (uploadsAsFiles.reduce((sum, file) => sum + file.size, 0) > 10_000_000)
+      throw new Error(
+        'The selected project documents are too large to import.',
+      );
+    const files = await Promise.all(
+      uploadsAsFiles.map(async (file, index) => {
+        const path = paths[index];
+        if (!path) throw new Error('An imported document path is missing.');
+        return {
+          path,
+          bytes: new Uint8Array(await file.arrayBuffer()),
+        };
+      }),
+    );
+    const imported = await projectImportService().import({
+      manifestText,
+      files,
+    });
+    projectId = imported.project.id;
+
+    const added = imported.references.reduce(
+      (count, result) => count + result.added.length,
+      0,
+    );
+    const quarantined = imported.references.flatMap(
+      (result) => result.quarantined,
+    );
+    const skipped = imported.references.flatMap((result) => result.skipped);
+    const notes = [
+      ...quarantined.map(({ document }) => `${document.title} was quarantined`),
+      ...skipped.map(({ path, reason }) => `${path}: ${reason}`),
+    ];
+    revalidatePath('/');
+    revalidatePath(`/projects/${projectId}`);
+    return {
+      error: null,
+      notice: `Imported ${imported.project.name} with ${added} usable document(s).${
+        notes.length > 0 ? ` Review: ${notes.join('; ')}` : ''
+      }`,
+      projectId,
+    };
+  } catch (error) {
+    if (error instanceof ProjectImportFailure) projectId = error.projectId;
+    return {
+      error: userMessage(
+        error,
+        projectId
+          ? 'The project was created, but importing its context or documents did not finish.'
+          : 'The project folder could not be imported.',
+      ),
+      notice: null,
+      projectId,
+    };
+  }
 }
 
 async function isLocalRequest(): Promise<boolean> {

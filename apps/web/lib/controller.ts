@@ -25,6 +25,7 @@ import {
   ProtectionPipeline,
   SqliteSecurityEvents,
   ProjectService,
+  ProjectImportService,
   RunService,
   SecretCredentialStore,
   CLOUD_PROVIDERS,
@@ -33,6 +34,7 @@ import {
   SqliteSettings,
   SessionService,
   SqliteProjects,
+  SqliteProjectImports,
   SqliteSessions,
   openDatabase,
   startOllama,
@@ -40,6 +42,8 @@ import {
 
 type Controller = {
   projects: ProjectService;
+  projectImports: SqliteProjectImports;
+  projectImportService: ProjectImportService;
   sessions: SessionService;
   runs: RunService;
   ollama: OllamaCatalog;
@@ -96,6 +100,7 @@ function controller(): Controller {
     );
     mkdirSync(docsRoot, { recursive: true });
     const projectService = new ProjectService(projectRepository);
+    const projectImports = new SqliteProjectImports(db);
     const context = new ContextService(
       new SqliteContext(db),
       projectRepository,
@@ -114,6 +119,12 @@ function controller(): Controller {
       projectRepository,
       docsRoot,
       (document, chunks) => guard.screenDocument(document, chunks),
+    );
+    const projectImportService = new ProjectImportService(
+      projectService,
+      context,
+      documents,
+      projectImports,
     );
     // The evaluation suite is version-controlled in the repository, not in the data directory.
     // Resolved at runtime on purpose, so the bundler must not trace the whole repository.
@@ -141,6 +152,8 @@ function controller(): Controller {
     runs.start();
     globalController.controller = {
       projects: projectService,
+      projectImports,
+      projectImportService,
       sessions: new SessionService(sessionRepository, projectRepository),
       runs,
       ollama,
@@ -170,6 +183,8 @@ function controller(): Controller {
   return globalController.controller;
 }
 export const projects = () => controller().projects;
+export const projectImports = () => controller().projectImports;
+export const projectImportService = () => controller().projectImportService;
 export const sessions = () => controller().sessions;
 export const runs = () => controller().runs;
 export const ollama = () => controller().ollama;

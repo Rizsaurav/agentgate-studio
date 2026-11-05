@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs';
+import { cpSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,6 +7,9 @@ import { defineConfig } from '@playwright/test';
 const port = 3100;
 const scannerPort = 8766;
 const repoRoot = dirname(fileURLToPath(import.meta.url));
+const dataDir = mkdtempSync(join(tmpdir(), 'agentgate-e2e-'));
+const docsRoot = join(dataDir, 'documents');
+cpSync(join(repoRoot, 'fixtures'), docsRoot, { recursive: true });
 export default defineConfig({
   testDir: 'e2e',
   fullyParallel: false,
@@ -44,8 +47,8 @@ export default defineConfig({
       command: `npm run start --workspace @agentgate/web -- --port ${port}`,
       url: `http://127.0.0.1:${port}`,
       env: {
-        AGENTGATE_DATA_DIR: mkdtempSync(join(tmpdir(), 'agentgate-e2e-')),
-        AGENTGATE_DOCS_ROOT: join(repoRoot, 'fixtures'),
+        AGENTGATE_DATA_DIR: dataDir,
+        AGENTGATE_DOCS_ROOT: docsRoot,
         AGENTGATE_SCANNER_URL: `http://127.0.0.1:${scannerPort}`,
         // Never the developer's keychain: tests must not read or change real keys.
         AGENTGATE_SECRETS: 'env',

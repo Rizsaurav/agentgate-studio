@@ -4,11 +4,13 @@ import {
   readFileSync,
   readdirSync,
   realpathSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
 import {
   basename,
+  dirname,
   extname,
   isAbsolute,
   join,
@@ -18,6 +20,7 @@ import {
 import type Database from 'better-sqlite3';
 import { z } from 'zod';
 import { detectSecrets, safeExcerpt } from './policy';
+import { projectDocumentPathSchema } from './project-import';
 import { projectIdSchema, type ProjectRepository } from './projects';
 
 const MAX_FILE_BYTES = 200_000;
@@ -376,6 +379,53 @@ export class DocumentService {
         reason: `Only ${MAX_UPLOADS} files can be added at once.`,
       });
     return { paths, rejected };
+  }
+
+  /** Stores manifest-selected files under a unique confined folder for normal reference checks. */
+  storeProjectImport(files: { path: string; bytes: Uint8Array }[]): string[] {
+    const root = this.root;
+    if (root === null)
+      throw new Error('No reference document folder is configured.');
+    if (files.length === 0 || files.length > MAX_FILES)
+      throw new Error(`Import between 1 and ${MAX_FILES} documents.`);
+    const paths = files.map((file) =>
+      projectDocumentPathSchema.parse(file.path),
+    );
+    if (new Set(paths).size !== paths.length)
+      throw new Error('Imported document paths must be unique.');
+    for (const [index, file] of files.entries()) {
+      if (file.bytes.length === 0)
+        throw new Error(`The imported file ${paths[index]} is empty.`);
+      if (file.bytes.length > MAX_FILE_BYTES)
+        throw new Error(`The imported file ${paths[index]} is too large.`);
+    }
+
+    const uploadRoot = join(root, UPLOAD_FOLDER);
+    mkdirSync(uploadRoot, { recursive: true, mode: 0o700 });
+    const realUploadRoot = realpathSync(uploadRoot);
+    const uploadRootRelative = relative(root, realUploadRoot);
+    if (uploadRootRelative.startsWith('..') || isAbsolute(uploadRootRelative))
+      throw new Error('The upload folder is outside the reference folder.');
+
+    const folder = join(uploadRoot, `import-${randomUUID()}`);
+    mkdirSync(folder, { mode: 0o700 });
+    try {
+      return files.map((file, index) => {
+        const path = paths[index];
+        if (!path) throw new Error('An imported document path is missing.');
+        const target = join(folder, ...path.split('/'));
+        mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
+        const realParent = realpathSync(dirname(target));
+        const parentRelative = relative(folder, realParent);
+        if (parentRelative.startsWith('..') || isAbsolute(parentRelative))
+          throw new Error('An imported document path is outside its folder.');
+        writeFileSync(target, file.bytes, { flag: 'wx', mode: 0o600 });
+        return relative(root, target);
+      });
+    } catch (error) {
+      rmSync(folder, { recursive: true, force: true });
+      throw error;
+    }
   }
 
   async reference(input: unknown): Promise<ReferenceResult> {

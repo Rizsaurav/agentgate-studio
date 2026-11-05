@@ -299,6 +299,29 @@ describe('reference documents and retrieval', () => {
     ).toHaveLength(2);
   });
 
+  it('stores imported files under a confined unique path and rejects traversal', async () => {
+    const { root, projects, documents } = setup();
+    const project = projects.create({ name: 'Imported' });
+    const bytes = new TextEncoder().encode(
+      '# Returns\n\nBicycles may be returned within 30 days.',
+    );
+    const [path] = documents.storeProjectImport([
+      { path: 'policies/returns.md', bytes },
+    ]);
+    expect(path).toMatch(/^uploads\/import-[0-9a-f-]+\/policies\/returns\.md$/);
+    expect(existsSync(join(root, path!))).toBe(true);
+    await documents.reference({ projectId: project.id, path });
+    expect(
+      documents.retrieve(project.id, 'bicycle return period')[0]?.text,
+    ).toContain('within 30 days');
+
+    for (const unsafe of ['../outside.md', '/outside.md', 'docs\\outside.md']) {
+      expect(() =>
+        documents.storeProjectImport([{ path: unsafe, bytes }]),
+      ).toThrow();
+    }
+  });
+
   it('refuses to reference anything when no folder is configured', async () => {
     const { projects, documents } = setup(false);
     const project = projects.create({ name: 'P' });
@@ -307,6 +330,14 @@ describe('reference documents and retrieval', () => {
       documents.reference({ projectId: project.id, path: '.' }),
     ).rejects.toThrow('No reference');
     expect(() => documents.store([])).toThrow('No reference');
+    expect(() =>
+      documents.storeProjectImport([
+        {
+          path: 'returns.md',
+          bytes: new TextEncoder().encode('Returns within thirty days.'),
+        },
+      ]),
+    ).toThrow('No reference');
   });
 
   it('neutralizes FTS operators and chunks long text within bounds', () => {

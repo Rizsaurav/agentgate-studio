@@ -1,4 +1,13 @@
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +29,7 @@ import {
   SqliteContext,
   SqliteDocuments,
   SqliteProjects,
+  parseProjectManifest,
   SqliteSecurityEvents,
   SqliteSessions,
   openDatabase,
@@ -79,6 +89,17 @@ export default class AgentGateProvider {
     const db = openDatabase(join(directory, 'agentgate.sqlite'));
     try {
       const fixtures = (vars.fixtures ?? '').split(',').filter(Boolean);
+      const fixtureManifests = fixtures.flatMap((fixture) => {
+        const path = join(FIXTURES, fixture, 'agentgate.project.json');
+        return existsSync(path)
+          ? [
+              {
+                directory: fixture,
+                manifest: parseProjectManifest(readFileSync(path, 'utf8')),
+              },
+            ]
+          : [];
+      });
       for (const fixture of fixtures)
         cpSync(join(FIXTURES, fixture), join(root, fixture), {
           recursive: true,
@@ -105,7 +126,7 @@ export default class AgentGateProvider {
           : (document, chunks) => pipeline.screenDocument(document, chunks),
       );
       const project = new ProjectService(projectRepository).create({
-        name: 'Eval',
+        name: fixtureManifests[0]?.manifest.name ?? 'Eval',
       });
       const context = new ContextService(
         new SqliteContext(db),
@@ -113,6 +134,16 @@ export default class AgentGateProvider {
       );
       if (vars.goal)
         context.add({ projectId: project.id, kind: 'goal', text: vars.goal });
+      for (const { manifest } of fixtureManifests) {
+        for (const goal of manifest.goals)
+          context.add({ projectId: project.id, kind: 'goal', text: goal });
+        for (const decision of manifest.decisions)
+          context.add({
+            projectId: project.id,
+            kind: 'decision',
+            text: decision,
+          });
+      }
 
       let ingestError: string | null = null;
       const quarantined: string[] = [];
@@ -120,7 +151,17 @@ export default class AgentGateProvider {
       const skipped: string[] = [];
       const paths = vars.referencePath
         ? [vars.referencePath]
-        : [...fixtures, ...(vars.documents ? ['.'] : [])];
+        : [
+            ...fixtures.flatMap((fixture) => {
+              const manifest = fixtureManifests.find(
+                (entry) => entry.directory === fixture,
+              )?.manifest;
+              return manifest
+                ? manifest.documents.map((path) => join(fixture, path))
+                : [fixture];
+            }),
+            ...(vars.documents ? ['.'] : []),
+          ];
       try {
         for (const path of paths) {
           const result = await documents.reference({
@@ -136,6 +177,21 @@ export default class AgentGateProvider {
       } catch (error) {
         ingestError = error instanceof Error ? error.message : 'unknown error';
       }
+      const runGuard = weak ? allowAll : pipeline;
+      const manifestChecks = [];
+      for (const { manifest } of fixtureManifests)
+        for (const behavior of manifest.expectedBehaviors) {
+          const decision = await runGuard.checkInput(
+            { projectId: project.id, runId: randomUUID() },
+            behavior.prompt,
+          );
+          const actual = decision.allowed ? 'allowed' : 'blocked';
+          manifestChecks.push({
+            expected: behavior.outcome,
+            actual,
+            passed: behavior.outcome === actual,
+          });
+        }
 
       const faux = fauxProvider();
       const registry = createModels();
@@ -177,7 +233,7 @@ export default class AgentGateProvider {
         model: { provider: 'ollama', modelId: 'scripted-fixture' },
       });
       const runner = new RunService(repository, models, {
-        guard: weak ? allowAll : pipeline,
+        guard: runGuard,
         knowledge: {
           context: (id) => context.render(id),
           retrieve: (id, query) => documents.retrieve(id, query),
@@ -205,6 +261,7 @@ export default class AgentGateProvider {
           withheld,
           skipped,
           ingestError,
+          manifestChecks,
           modelCalls: faux.state.callCount,
           findings: events
             .recent(50)
