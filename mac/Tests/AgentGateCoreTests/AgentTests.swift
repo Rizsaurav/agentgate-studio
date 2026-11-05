@@ -33,7 +33,7 @@ private func decode(_ json: String) -> AgentEvent? { AgentEventDecoder.decode(Da
   }
 
   @Test func configurationFailsClosed() throws {
-    let text = try AgentServer.config(engineURL: URL(string: "http://127.0.0.1:1234")!, engineKey: "k", model: "qwen")
+    let text = try AgentServer.config(engineURL: URL(string: "http://127.0.0.1:1234")!, engineKey: "k", model: "qwen", context: 32768)
     let json = try #require(try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
     let permission = try #require(json["permission"] as? [String: String])
     #expect(permission["bash"] == "ask" && permission["edit"] == "ask")
@@ -41,5 +41,7 @@ private func decode(_ json: String) -> AgentEvent? { AgentEventDecoder.decode(Da
     #expect(json["autoupdate"] as? Bool == false)
     let provider = try #require((json["provider"] as? [String: Any])?["local"] as? [String: Any])
     #expect((provider["options"] as? [String: String])?["baseURL"] == "http://127.0.0.1:1234/v1")
+    let limit = ((provider["models"] as? [String: Any])?["qwen"] as? [String: Any])?["limit"] as? [String: Int]
+    #expect(limit?["context"] == 32768)
   }
 }

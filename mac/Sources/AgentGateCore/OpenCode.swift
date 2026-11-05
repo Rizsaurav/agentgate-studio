@@ -155,14 +155,14 @@ public final class AgentServer: @unchecked Sendable {
   }
 
   /// The harness configuration: one local provider, and permissions that fail closed.
-  static func config(engineURL: URL, engineKey: String, model: String) throws -> String {
+  static func config(engineURL: URL, engineKey: String, model: String, context: Int) throws -> String {
     let config: [String: Any] = [
       "$schema": "https://opencode.ai/config.json",
       "autoupdate": false, "share": "disabled",
       "provider": ["local": [
         "npm": "@ai-sdk/openai-compatible", "name": "Local model",
         "options": ["baseURL": engineURL.appendingPathComponent("v1").absoluteString, "apiKey": engineKey],
-        "models": [model: ["name": model, "tool_call": true, "limit": ["context": 16384, "output": 2048]]],
+        "models": [model: ["name": model, "tool_call": true, "limit": ["context": context, "output": 4096]]],
       ]],
       "permission": ["bash": "ask", "edit": "ask", "webfetch": "deny", "external_directory": "deny"],
     ]
@@ -170,7 +170,7 @@ public final class AgentServer: @unchecked Sendable {
   }
 
   public static func start(
-    folder: URL, engineURL: URL, engineKey: String, model: String,
+    folder: URL, engineURL: URL, engineKey: String, model: String, context: Int,
     binaries: URL? = binaryDirectory(), timeout: TimeInterval = 30
   ) async throws -> AgentServer {
     guard let exe = binaries?.appendingPathComponent("opencode"),
@@ -193,7 +193,7 @@ public final class AgentServer: @unchecked Sendable {
       "XDG_CONFIG_HOME": home.appendingPathComponent("config").path,
       "XDG_CACHE_HOME": home.appendingPathComponent("cache").path,
       "OPENCODE_SERVER_PASSWORD": password,
-      "OPENCODE_CONFIG_CONTENT": try config(engineURL: engineURL, engineKey: engineKey, model: model),
+      "OPENCODE_CONFIG_CONTENT": try config(engineURL: engineURL, engineKey: engineKey, model: model, context: context),
     ]) { $1 }
     let log = LogTail()
     let pipe = Pipe()

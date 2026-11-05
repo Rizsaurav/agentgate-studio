@@ -6,6 +6,7 @@ struct SessionPage: View {
   let sessionId: UUID
   @State private var draft = ""
   @FocusState private var composerFocused: Bool
+  @AppStorage("terminalOpen") private var terminalOpen = false
 
   var body: some View {
     if let session = app.session(sessionId), let project = app.project(session.projectId) {
@@ -17,9 +18,29 @@ struct SessionPage: View {
           if let folder = project.folder {
             Label((folder as NSString).abbreviatingWithTildeInPath, systemImage: "folder")
               .font(.system(size: 12)).foregroundStyle(Theme.muted).lineLimit(1)
+            Button { terminalOpen.toggle() } label: {
+              Label("Terminal", systemImage: "terminal").font(.system(size: 12))
+                .foregroundStyle(terminalOpen ? Theme.accent : Theme.muted)
+            }
+            .buttonStyle(.plain).keyboardShortcut("`", modifiers: .control)
+            .help("Open a terminal in this project's folder (⌃`)")
           }
         }
-        conversation(session)
+        if terminalOpen, let folder = project.folder {
+          VSplitView {
+            conversation(session).frame(minHeight: 280).layoutPriority(1)
+            TerminalPane(folder: folder)
+              .padding(.horizontal, 10).padding(.vertical, 8)
+              .background(Theme.bg)
+              .clipShape(RoundedRectangle(cornerRadius: 10))
+              .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.line))
+              .frame(minHeight: 120, idealHeight: 220, maxHeight: 420)
+              .padding(.top, 8)
+              .id(folder)
+          }
+        } else {
+          conversation(session)
+        }
       }
       .padding(.horizontal, 42).padding(.top, 28).padding(.bottom, 20)
       .frame(maxWidth: 860, maxHeight: .infinity, alignment: .topLeading)

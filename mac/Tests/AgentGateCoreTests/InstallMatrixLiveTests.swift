@@ -147,7 +147,7 @@ extension InstallMatrixLiveTests {
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: folder) }
     let server = try await AgentServer.start(
-      folder: folder, engineURL: URL(string: "http://127.0.0.1:9")!, engineKey: "k", model: "m",
+      folder: folder, engineURL: URL(string: "http://127.0.0.1:9")!, engineKey: "k", model: "m", context: 32768,
       binaries: URL(fileURLWithPath: ProcessInfo.processInfo.environment["AGENTGATE_OPENCODE_DIR"] ?? ""))
     #expect(server.isRunning)
     var open = URLRequest(url: server.baseURL.appendingPathComponent("session/status"))
