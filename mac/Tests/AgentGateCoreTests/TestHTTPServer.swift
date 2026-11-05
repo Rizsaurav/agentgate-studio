@@ -88,8 +88,8 @@ final class TestHTTPServer: @unchecked Sendable {
       head += "\r\n"
       switch current {
       case .cutFirst(let n) where isFirst, .cutFirstThenIgnoreRange(let n) where isFirst:
-        send(connection, head: head, body: slice.prefix(n))
-      case .cutAlways(let n): send(connection, head: head, body: slice.prefix(n))
+        send(connection, head: head, body: slice.prefix(n), cutAfter: Self.cutDelay)
+      case .cutAlways(let n): send(connection, head: head, body: slice.prefix(n), cutAfter: Self.cutDelay)
       case .stallFirst(let n) where isFirst:
         // Send a prefix and keep the connection open without sending more.
         lock.withLock { held.append(connection) }
@@ -99,7 +99,19 @@ final class TestHTTPServer: @unchecked Sendable {
     }
   }
 
-  private func send(_ connection: NWConnection, head: String, body: Data) {
-    connection.send(content: Data(head.utf8) + body, completion: .contentProcessed { _ in connection.cancel() })
+  /// How long a cut connection stays open after its bytes are sent. Closing at once lets URLSession
+  /// throw away data it has already received when it reports the error, so on a busy machine
+  /// nothing reaches the disk and there is nothing to resume from: the test then measured timing,
+  /// not resuming.
+  static let cutDelay: TimeInterval = 0.5
+
+  private func send(_ connection: NWConnection, head: String, body: Data, cutAfter delay: TimeInterval = 0) {
+    connection.send(content: Data(head.utf8) + body, completion: .contentProcessed { [queue] _ in
+      if delay > 0 {
+        queue.asyncAfter(deadline: .now() + delay) { connection.cancel() }
+      } else {
+        connection.cancel()
+      }
+    })
   }
 }
