@@ -144,7 +144,9 @@ test('scanner outage fails closed in the browser: ingestion and tasks are refuse
     .fill('How many days do I have to return a bicycle?');
   await page.getByRole('button', { name: 'Run task' }).click();
   await expect(
-    page.getByText(/Blocked by security rule scanner-unavailable/),
+    page.getByText(
+      /Last run blocked: Blocked by security rule scanner-unavailable/,
+    ),
   ).toBeVisible({ timeout: 60_000 });
 });
 
