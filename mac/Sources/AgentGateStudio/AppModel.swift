@@ -559,6 +559,22 @@ final class AppModel {
 
   /// A new question from the agent: refuse it at once if a rule forbids it, otherwise ask the user.
   private func review(_ permission: AgentEvent.Permission) {
+    // Our check of every call first (J3): paths, sizes, command rules. A refusal tells the model why.
+    if let agent {
+      guard let folder = streamingFolder else {
+        block(permission, rule: "unknown-project", agent: agent, message: "The project folder could not be determined, so nothing can run.")
+        return
+      }
+      if let rejection = ToolCallCheck.check(permission, folder: folder) {
+        block(permission, rule: rejection.rule, agent: agent, message: rejection.message)
+        return
+      }
+      // Reads that passed the check run without asking the user.
+      if ToolCallCheck.readOnly.contains(permission.tool) {
+        Task { try? await agent.client.reply(permission: permission.id, allow: true) }
+        return
+      }
+    }
     if case .block(let rule, _)? = verdict(for: permission, final: false), let agent {
       block(permission, rule: rule, agent: agent)
     } else {
@@ -566,13 +582,14 @@ final class AppModel {
     }
   }
 
-  private func block(_ permission: AgentEvent.Permission, rule: String, agent: AgentServer) {
+  private func block(_ permission: AgentEvent.Permission, rule: String, agent: AgentServer, message: String? = nil) {
     pendingPermission = nil
     record(permission.tool, permission.detail, .blocked, rule: rule)
     activity.append(ActivityItem(
       id: "blocked-\(permission.id)", tool: permission.tool, detail: permission.detail,
       status: "blocked: \(rule)", output: ""))
-    Task { try? await agent.client.reply(permission: permission.id, allow: false) }
+    let feedback = message ?? "Refused by AGENTGATE (\(rule)). Do not retry the same call; choose another way that stays inside the project."
+    Task { try? await agent.client.reply(permission: permission.id, allow: false, message: feedback) }
   }
 
   /// A tool returned text that reads like an instruction to the model: stop the turn and say so.
