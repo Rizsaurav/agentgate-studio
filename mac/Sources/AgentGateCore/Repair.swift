@@ -193,8 +193,14 @@ public enum Redaction {
   public static func clean(_ text: String, root: URL, label: String) -> String {
     var out = text.replacingOccurrences(of: root.path, with: label)
     let rules: [(String, String)] = [
+      (#"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(-----END [A-Z ]*PRIVATE KEY-----|$)"#, "<secret>"),
       (#"(?i)(bearer|api[-_ ]?key)[=: ]+\S+"#, "$1 <secret>"),
-      (#"\b(sk|hf|ghp|gho)[-_][A-Za-z0-9_\-]{8,}"#, "<secret>"),
+      (#"\b(sk|hf|ghp|gho|ghu|ghs|ghr|xai|gsk)[-_][A-Za-z0-9_\-]{8,}"#, "<secret>"),
+      (#"\bgithub_pat_\w{20,}"#, "<secret>"),
+      (#"\b(AKIA|ASIA)[0-9A-Z]{16}\b"#, "<secret>"),
+      (#"\bAIza[0-9A-Za-z_\-]{35}\b"#, "<secret>"),
+      (#"\bxox[baprs]-[A-Za-z0-9-]{10,}"#, "<secret>"),
+      (#"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"#, "<secret>"),
       (#"(?<![\w<])/(Users|home|private|var|tmp|Volumes|Library|opt|etc)/[^\s'"):,]+"#, "<path>"),
     ]
     for (pattern, template) in rules {
