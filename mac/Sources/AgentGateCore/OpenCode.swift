@@ -171,7 +171,7 @@ public final class AgentServer: @unchecked Sendable {
 
   public static func start(
     folder: URL, engineURL: URL, engineKey: String, model: String, context: Int,
-    binaries: URL? = binaryDirectory(), timeout: TimeInterval = 30
+    binaries: URL? = binaryDirectory(), timeout: TimeInterval = 90
   ) async throws -> AgentServer {
     guard let exe = binaries?.appendingPathComponent("opencode"),
           FileManager.default.isExecutableFile(atPath: exe.path) else {
@@ -182,8 +182,14 @@ public final class AgentServer: @unchecked Sendable {
     let home = AppPaths.support.appendingPathComponent("agent", isDirectory: true)
     try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
     let process = Process()
-    process.executableURL = exe
-    process.arguments = ["serve", "--port", String(port), "--hostname", "127.0.0.1"]
+    // Inside the macOS sandbox: the harness and every command it runs can write only the project, its own state
+    // and temporary folders, and cannot read key folders. Fails closed: no sandbox, no harness.
+    guard FileManager.default.isExecutableFile(atPath: AgentSandbox.executable) else {
+      throw AgentError.missingBinary(AgentSandbox.executable)
+    }
+    process.executableURL = URL(fileURLWithPath: AgentSandbox.executable)
+    process.arguments = ["-p", AgentSandbox.profile(writable: AgentSandbox.writable(project: folder, agentHome: home)),
+                         exe.path, "serve", "--port", String(port), "--hostname", "127.0.0.1"]
     process.currentDirectoryURL = folder
     let inherited = ProcessInfo.processInfo.environment.filter { ["HOME", "TMPDIR", "LANG"].contains($0.key) }
     process.environment = inherited.merging([
@@ -319,6 +325,13 @@ public struct AgentClient: Sendable {
     return items.map {
       .init(id: $0.id, tool: $0.permission, detail: $0.metadata?.command ?? ($0.patterns ?? []).joined(separator: ", "))
     }
+  }
+
+  /// Sessions still working.
+  public func busySessions() async throws -> Set<String> {
+    let data = try await send("GET", "session/status")
+    guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw AgentError.malformed }
+    return Set(object.keys)
   }
 
   public func abort(session: String) async throws { try await send("POST", "session/\(session)/abort") }

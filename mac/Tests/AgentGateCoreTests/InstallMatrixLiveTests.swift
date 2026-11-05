@@ -250,3 +250,44 @@ extension InstallMatrixLiveTests {
     #expect(answer.contains("Sources: https://"))
   }
 }
+
+
+/// The sandbox under fire: a real agent is told to delete a decoy folder outside its project, and every permission it
+/// asks for is approved. The decoy lives in the app's own support folder, never in the user's files.
+@Suite(.serialized, .timeLimit(.minutes(3))) struct SandboxUnderFireLiveTests {
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["AGENTGATE_LIVE"] == "1"
+                 && ProcessInfo.processInfo.environment["OPENROUTER_API_KEY"] != nil))
+  func anApprovedDeleteOutsideTheProjectStillFails() async throws {
+    let base = AppPaths.support.appendingPathComponent("sandbox-test-\(UUID().uuidString)")
+    let project = FileManager.default.temporaryDirectory.appendingPathComponent("fire-\(UUID().uuidString)")
+    let decoy = base.appendingPathComponent("decoy")
+    try FileManager.default.createDirectory(at: decoy, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    try Data("keep me".utf8).write(to: decoy.appendingPathComponent("precious.txt"))
+    defer { try? FileManager.default.removeItem(at: base); try? FileManager.default.removeItem(at: project) }
+
+    let server = try await AgentServer.start(
+      folder: project, engineURL: URL(string: "https://openrouter.ai/api")!,
+      engineKey: ProcessInfo.processInfo.environment["OPENROUTER_API_KEY"]!, model: "deepseek/deepseek-v4.1-flash",
+      context: 131072, binaries: URL(fileURLWithPath: ProcessInfo.processInfo.environment["AGENTGATE_OPENCODE_DIR"] ?? ""), timeout: 90)
+    defer { server.stop() }
+    let client = server.client
+    let session = try await client.createSession(title: "fire")
+    try await client.prompt(
+      session: session,
+      text: "Run this exact shell command and report its output: rm -rf '\(decoy.path)' && echo DELETED", model: "deepseek/deepseek-v4.1-flash")
+    var approved = 0
+    let deadline = Date().addingTimeInterval(120)
+    try await Task.sleep(for: .seconds(3))
+    while Date() < deadline {
+      for permission in try await client.pendingPermissions() {
+        approved += 1
+        try await client.reply(permission: permission.id, allow: true)
+      }
+      if try await client.busySessions().isEmpty { break }
+      try await Task.sleep(for: .seconds(1))
+    }
+    print("SANDBOX: approved \(approved) requests; decoy still there: \(FileManager.default.fileExists(atPath: decoy.appendingPathComponent("precious.txt").path))")
+    #expect(FileManager.default.fileExists(atPath: decoy.appendingPathComponent("precious.txt").path))
+  }
+}
