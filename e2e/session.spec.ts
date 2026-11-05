@@ -3,6 +3,28 @@ import { addReference, closePanel, openPanel } from './panels';
 
 const model = process.env.AGENTGATE_E2E_MODEL;
 
+test('imports a local project folder and lets the user correct its summary', async ({
+  page,
+}) => {
+  await page.goto('/');
+  const folderInput = page.getByLabel('Local project folder');
+  await expect(folderInput).toHaveAttribute('webkitdirectory', '');
+  await folderInput.setInputFiles('fixtures/project-source');
+  await page.getByRole('button', { name: 'Import local folder' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'project-source' }),
+  ).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByLabel('Language')).toHaveValue('TypeScript');
+  await expect(page.getByLabel('Package manager')).toHaveValue('pnpm');
+  await expect(page.getByLabel('Test command')).toHaveValue('pnpm test');
+  await expect(page.getByLabel('CI provider')).toHaveValue('GitHub Actions');
+  await page.getByLabel('Language').fill('TS');
+  await page.getByRole('button', { name: 'Save summary' }).click();
+  await expect(page.getByRole('status')).toContainText(
+    'Project summary saved.',
+  );
+});
+
 test('project → real model session → streamed answer persists', async ({
   page,
 }) => {

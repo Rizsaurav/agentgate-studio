@@ -4,6 +4,20 @@ export {
   projectIdSchema,
 } from './projects';
 export type { Project } from './projects';
+export {
+  editableProjectSummarySchema,
+  gitHubCloneUrlSchema,
+  ProjectSourceError,
+  ProjectSourceService,
+  projectSummarySchema,
+  SqliteProjectSources,
+} from './project-sources';
+export type {
+  GitCommandRunner,
+  ProjectImportProgress,
+  ProjectSource,
+  ProjectSummary,
+} from './project-sources';
 export { openDatabase } from './database';
 export { SqliteProjects } from './sqlite-projects';
 export { SqliteSessions } from './sqlite-sessions';

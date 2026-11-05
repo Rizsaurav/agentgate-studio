@@ -49,4 +49,8 @@ export class SqliteProjects implements ProjectRepository {
       .prepare('UPDATE projects SET repository = ? WHERE id = ?')
       .run(repository, id);
   }
+
+  remove(id: string): void {
+    this.db.prepare('DELETE FROM projects WHERE id = ?').run(id);
+  }
 }

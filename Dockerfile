@@ -32,6 +32,9 @@ CMD ["npm", "run", "eval"]
 # Application: the standalone server and its traced dependencies only. No compiler, no dev tools,
 # no evaluation suite.
 FROM node:24-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git openssh-client \
+ && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     AGENTGATE_DATA_DIR=/data \

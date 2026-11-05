@@ -9,6 +9,7 @@ import {
   documents,
   ollama,
   projects,
+  projectSources,
   sessions,
 } from '@/lib/controller';
 import { releasePassage, removeContext, removeReference } from '@/app/actions';
@@ -18,6 +19,8 @@ import { Panel } from '@/components/panel';
 import { ModelSetup } from '@/components/model-setup';
 import { Icon } from '@/components/icon';
 import { CiStrip, ConnectRepository } from '@/components/ci-status';
+import { ProjectSummary } from '@/components/project-summary';
+import { FetchProjectHistory } from '@/components/project-source-history';
 export const dynamic = 'force-dynamic';
 export default async function ProjectPage({
   params,
@@ -28,6 +31,7 @@ export default async function ProjectPage({
   if (!projectIdSchema.safeParse(id).success) notFound();
   const project = projects().find(id);
   if (!project) notFound();
+  const projectSource = projectSources().find(id);
   const sessionList = sessions().listSessions(id);
   const installed = await ollama()
     .listInstalled()
@@ -206,6 +210,30 @@ export default async function ProjectPage({
           </Panel>
         </div>
       </header>
+      {projectSource && (
+        <section className="soft-surface mt-8">
+          {projectSource.sourceUrl && (
+            <p className="muted">
+              Source:{' '}
+              <a
+                href={projectSource.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {projectSource.sourceUrl}
+              </a>
+              <span>
+                {' · '}
+                {projectSource.fullHistory ? 'Full history' : 'Shallow clone'}
+              </span>
+            </p>
+          )}
+          <ProjectSummary projectId={id} initial={projectSource.summary} />
+          {projectSource.sourceUrl && !projectSource.fullHistory && (
+            <FetchProjectHistory projectId={id} />
+          )}
+        </section>
+      )}
       <section className="ci-section" aria-labelledby="ci-title">
         <div className="section-heading">
           <h2 id="ci-title">CI/CD</h2>

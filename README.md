@@ -60,10 +60,29 @@ Contributing? See [CONTRIBUTING.md](CONTRIBUTING.md) for branches, checks and ho
 ### First five minutes
 
 1. **Models**: press Install on the model marked Best fit for this computer.
-2. **Projects**: create one, then open References and add a `.md` or `.txt` file.
+2. **Projects**: create one, open an existing folder or GitHub repository, then add a `.md` or `.txt` reference.
 3. **Start a session**, pick the model, and ask a question about your document.
 4. **Security & Verification**: see what was blocked, and run the evaluation suite.
 5. **Assistant** (title bar): add an OpenRouter key to get explanations and automatic fixes.
+
+### Open an existing project
+
+From the workspace, choose a local folder or enter a GitHub HTTPS or SSH URL.
+GitHub repositories are cloned shallowly by default; you can fetch full history
+from the project page. Clone progress is shown, and cancel removes the partial
+checkout. Private repositories use Git's existing credential helper or SSH
+keys when running from source; the app never asks for or stores credentials.
+Docker does not inherit host Git credentials, so private repositories need
+credentials configured inside the container. Only `github.com` URLs are
+accepted. Submodules are not cloned and repository code is not executed.
+
+Local folder imports copy the selected files into the app's managed project
+storage. `.git`, `node_modules`, `.next`, `build`, `dist`, `target`, `vendor`,
+and `.venv` directories are skipped. Imports are limited to 5,000 files, 2 MB
+per file, and 50 MB total. The app detects the language, package manager, test
+command, and CI provider when possible; review and correct the summary on the
+project page. Project files remain local under
+`AGENTGATE_DATA_DIR/projects/` (default `~/.agentgate/projects/`).
 
 ### Troubleshooting
 

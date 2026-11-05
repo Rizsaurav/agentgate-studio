@@ -27,6 +27,7 @@ export interface ProjectRepository {
   list(): Project[];
   find(id: string): Project | null;
   setRepository(id: string, repository: string | null): void;
+  remove(id: string): void;
 }
 
 export class ProjectService {
@@ -58,5 +59,9 @@ export class ProjectService {
       raw === '' ? null : repositorySchema.parse(raw),
     );
     return projectSchema.parse(this.repository.find(projectId));
+  }
+
+  remove(id: unknown): void {
+    this.repository.remove(projectIdSchema.parse(id));
   }
 }

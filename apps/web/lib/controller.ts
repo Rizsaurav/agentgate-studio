@@ -25,6 +25,8 @@ import {
   ProtectionPipeline,
   SqliteSecurityEvents,
   ProjectService,
+  ProjectSourceService,
+  SqliteProjectSources,
   RunService,
   SecretCredentialStore,
   CLOUD_PROVIDERS,
@@ -40,6 +42,7 @@ import {
 
 type Controller = {
   projects: ProjectService;
+  projectSources: ProjectSourceService;
   sessions: SessionService;
   runs: RunService;
   ollama: OllamaCatalog;
@@ -96,6 +99,11 @@ function controller(): Controller {
     );
     mkdirSync(docsRoot, { recursive: true });
     const projectService = new ProjectService(projectRepository);
+    const projectSourceService = new ProjectSourceService(
+      projectService,
+      new SqliteProjectSources(db),
+      join(directory, 'projects'),
+    );
     const context = new ContextService(
       new SqliteContext(db),
       projectRepository,
@@ -141,6 +149,7 @@ function controller(): Controller {
     runs.start();
     globalController.controller = {
       projects: projectService,
+      projectSources: projectSourceService,
       sessions: new SessionService(sessionRepository, projectRepository),
       runs,
       ollama,
@@ -170,6 +179,7 @@ function controller(): Controller {
   return globalController.controller;
 }
 export const projects = () => controller().projects;
+export const projectSources = () => controller().projectSources;
 export const sessions = () => controller().sessions;
 export const runs = () => controller().runs;
 export const ollama = () => controller().ollama;
