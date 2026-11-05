@@ -186,6 +186,23 @@ final class AppModel {
 
   private func persist() throws { try workspaceStore.save(workspace) }
 
+  /// What the agents may do in a project. A running harness started with other rules is stopped; the next turn
+  /// starts one with the new rules.
+  func setAccess(_ access: ProjectAccess, for projectId: UUID) {
+    guard let index = workspace.projects.firstIndex(where: { $0.id == projectId }),
+          workspace.projects[index].effectiveAccess != access else { return }
+    workspace.projects[index].access = access
+    do { try persist() } catch { errorMessage = String(describing: error) }
+    if let agent, agent.folder.path == workspace.projects[index].folder, agent.access != access {
+      stopAgentServer()
+    }
+  }
+
+  /// The access of the project that owns a folder; full when none does.
+  private func projectAccess(for folder: URL) -> ProjectAccess {
+    workspace.projects.first(where: { $0.folder == folder.path })?.effectiveAccess ?? .full
+  }
+
   // MARK: Models
 
   func option(_ model: CatalogModel) -> ModelOption {
@@ -548,6 +565,12 @@ final class AppModel {
     guard let folder = streamingFolder else {
       return .block(rule: "unknown-project", reason: "The project folder could not be determined.")
     }
+    // The coding agent's role and the project's access come first: a tool either may not run at all.
+    if Capability.forTool(permission.tool) != nil,
+       case .block(let rule, let reason) = AgentPermissions.check(
+         tool: permission.tool, role: .coder, project: projectAccess(for: folder)) {
+      return .block(rule: rule, reason: reason)
+    }
     if permission.tool == "bash" { return ToolPolicy.evaluate(tool: "bash", detail: permission.detail, folder: folder) }
     guard ["edit", "write", "patch", "multiedit"].contains(permission.tool) else { return .allow }
     let editing = ["edit", "write", "patch", "multiedit"]
@@ -616,13 +639,16 @@ final class AppModel {
   func loadSecurityEntries() { securityEntries = securityLog.entries() }
 
   private func agentServer(folder: URL, runtime: LlamaRuntime) async throws -> AgentServer {
-    if let agent, agent.isRunning, agent.folder == folder, agent.engineKey == runtime.apiKey { return agent }
+    let access = projectAccess(for: folder)
+    if let agent, agent.isRunning, agent.folder == folder, agent.engineKey == runtime.apiKey, agent.access == access {
+      return agent
+    }
     stopAgentServer()
     agentConnected = false
     let server = try await AgentServer.start(
       folder: folder, engineURL: runtime.baseURL, engineKey: runtime.apiKey, model: runtime.alias,
       // The harness's own instructions and tools take about 12K tokens; it must know the model's real context.
-      context: active?.config.context ?? ModelPlanner.preferredContext)
+      context: active?.config.context ?? ModelPlanner.preferredContext, access: access)
     agent = server
     eventTask = Task { [weak self] in
       do {

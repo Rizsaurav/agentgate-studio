@@ -6,12 +6,17 @@ public struct Project: Codable, Sendable, Equatable, Identifiable, Hashable {
   public var createdAt: Date
   /// The folder on this Mac the agent works in. Nil for projects made before folders existed.
   public var folder: String?
+  /// What the agents may do in this project. Nil (projects made before this existed) means full.
+  public var access: ProjectAccess?
 
-  public init(id: UUID, name: String, createdAt: Date, folder: String? = nil) {
+  public var effectiveAccess: ProjectAccess { access ?? .full }
+
+  public init(id: UUID, name: String, createdAt: Date, folder: String? = nil, access: ProjectAccess? = nil) {
     self.id = id
     self.name = name
     self.createdAt = createdAt
     self.folder = folder
+    self.access = access
   }
 }
 

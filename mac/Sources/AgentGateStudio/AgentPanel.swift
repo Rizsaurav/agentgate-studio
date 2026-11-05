@@ -29,6 +29,8 @@ struct AgentPanel: View {
       .pickerStyle(.segmented).frame(width: 260)
       Text(app.autonomy.summary).font(.system(size: 12)).foregroundStyle(Theme.muted)
         .fixedSize(horizontal: false, vertical: true)
+      Text("Permissions").font(.system(size: 13, weight: .semibold))
+      PermissionList(role: .supervisor, access: .full)
       VStack(spacing: 0) {
         ForEach(app.agents) { agent in
           HStack(spacing: 10) {

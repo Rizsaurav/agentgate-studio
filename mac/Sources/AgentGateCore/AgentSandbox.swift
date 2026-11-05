@@ -10,7 +10,10 @@ public enum AgentSandbox {
   static let secretFolders = [".ssh", ".gnupg", ".aws", ".kube", ".docker", "Library/Keychains", ".config/gh", ".netrc"]
 
   /// The profile: allow by default, deny all writes, then allow writes only to `writable`; deny reads of secrets.
-  public static func profile(writable: [URL], home: URL = FileManager.default.homeDirectoryForCurrentUser) -> String {
+  /// Without `network`, outbound connections are refused except to this Mac (the local engine and the harness).
+  public static func profile(
+    writable: [URL], home: URL = FileManager.default.homeDirectoryForCurrentUser, network: Bool = true
+  ) -> String {
     func quoted(_ path: String) -> String {
       "\"" + path.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
     }
@@ -31,7 +34,11 @@ public enum AgentSandbox {
         (literal "/dev/null") (literal "/dev/zero") (literal "/dev/tty") (regex #"^/dev/ttys[0-9]+$") (regex #"^/dev/fd/"))
       (deny file-read* file-write*
       \(secrets))
-      """
+      """ + (network ? "" : """
+
+      (deny network-outbound (remote ip "*:*"))
+      (allow network-outbound (remote ip "localhost:*"))
+      """)
   }
 
   /// What the harness may write: the project, its own state, and the system temporary folders.

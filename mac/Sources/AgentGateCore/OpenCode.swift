@@ -160,6 +160,8 @@ public final class AgentServer: @unchecked Sendable {
   public let folder: URL
   /// The engine key it was started for, so the app can tell when it must restart.
   public let engineKey: String
+  /// The project access the harness was started with; a change needs a new harness.
+  public let access: ProjectAccess
   private let process: Process
 
   public static func binaryDirectory() -> URL? {
@@ -168,7 +170,9 @@ public final class AgentServer: @unchecked Sendable {
   }
 
   /// The harness configuration: one local provider, and permissions that fail closed.
-  static func config(engineURL: URL, engineKey: String, model: String, context: Int) throws -> String {
+  static func config(
+    engineURL: URL, engineKey: String, model: String, context: Int, access: ProjectAccess = .full
+  ) throws -> String {
     let config: [String: Any] = [
       "$schema": "https://opencode.ai/config.json",
       "autoupdate": false, "share": "disabled",
@@ -178,17 +182,14 @@ public final class AgentServer: @unchecked Sendable {
         "models": [model: ["name": model, "tool_call": true, "limit": ["context": context, "output": 4096]]],
       ]],
       // Reads, globs, greps and lists ask too, so ToolCallCheck sees every call; the app answers
-      // valid ones itself without bothering the user.
-      "permission": [
-        "bash": "ask", "edit": "ask", "read": "ask", "glob": "ask", "grep": "ask", "list": "ask",
-        "webfetch": "deny", "external_directory": "deny",
-      ],
+      // valid ones itself without bothering the user. Edits and commands follow the project's access.
+      "permission": AgentPermissions.harnessRules(access),
     ]
     return String(decoding: try JSONSerialization.data(withJSONObject: config), as: UTF8.self)
   }
 
   public static func start(
-    folder: URL, engineURL: URL, engineKey: String, model: String, context: Int,
+    folder: URL, engineURL: URL, engineKey: String, model: String, context: Int, access: ProjectAccess = .full,
     binaries: URL? = binaryDirectory(), timeout: TimeInterval = 90
   ) async throws -> AgentServer {
     guard let exe = binaries?.appendingPathComponent("opencode"),
@@ -206,7 +207,9 @@ public final class AgentServer: @unchecked Sendable {
       throw AgentError.missingBinary(AgentSandbox.executable)
     }
     process.executableURL = URL(fileURLWithPath: AgentSandbox.executable)
-    process.arguments = ["-p", AgentSandbox.profile(writable: AgentSandbox.writable(project: folder, agentHome: home)),
+    process.arguments = ["-p", AgentSandbox.profile(
+                           writable: AgentSandbox.writable(project: folder, agentHome: home),
+                           network: AgentPermissions.sandboxNetwork(access)),
                          exe.path, "serve", "--port", String(port), "--hostname", "127.0.0.1"]
     process.currentDirectoryURL = folder
     let inherited = ProcessInfo.processInfo.environment.filter { ["HOME", "TMPDIR", "LANG"].contains($0.key) }
@@ -217,7 +220,8 @@ public final class AgentServer: @unchecked Sendable {
       "XDG_CONFIG_HOME": home.appendingPathComponent("config").path,
       "XDG_CACHE_HOME": home.appendingPathComponent("cache").path,
       "OPENCODE_SERVER_PASSWORD": password,
-      "OPENCODE_CONFIG_CONTENT": try config(engineURL: engineURL, engineKey: engineKey, model: model, context: context),
+      "OPENCODE_CONFIG_CONTENT": try config(
+        engineURL: engineURL, engineKey: engineKey, model: model, context: context, access: access),
     ]) { $1 }
     let log = LogTail()
     let pipe = Pipe()
@@ -231,7 +235,7 @@ public final class AgentServer: @unchecked Sendable {
     try? EngineRegistry().record(process.processIdentifier)
     let server = AgentServer(
       baseURL: URL(string: "http://127.0.0.1:\(port)")!, password: password, folder: folder,
-      engineKey: engineKey, process: process, log: log)
+      engineKey: engineKey, access: access, process: process, log: log)
     do {
       try await server.waitUntilReady(timeout: timeout)
     } catch {
@@ -243,8 +247,11 @@ public final class AgentServer: @unchecked Sendable {
 
   private let log: LogTail
 
-  private init(baseURL: URL, password: String, folder: URL, engineKey: String, process: Process, log: LogTail) {
+  private init(
+    baseURL: URL, password: String, folder: URL, engineKey: String, access: ProjectAccess, process: Process, log: LogTail
+  ) {
     self.log = log
+    self.access = access
     self.baseURL = baseURL
     self.password = password
     self.folder = folder

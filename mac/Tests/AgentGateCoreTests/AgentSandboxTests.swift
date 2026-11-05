@@ -20,10 +20,12 @@ import Testing
     }
 
     /// Runs a shell command inside a sandbox that may write only the project (no temp folders, to keep this strict).
-    func run(_ command: String) throws -> Int32 {
+    func run(_ command: String, network: Bool = true) throws -> Int32 {
       let process = Process()
       process.executableURL = URL(fileURLWithPath: AgentSandbox.executable)
-      process.arguments = ["-p", AgentSandbox.profile(writable: [project], home: fakeHome), "/bin/sh", "-c", command]
+      process.arguments = [
+        "-p", AgentSandbox.profile(writable: [project], home: fakeHome, network: network), "/bin/sh", "-c", command,
+      ]
       process.currentDirectoryURL = project
       process.standardOutput = FileHandle.nullDevice
       process.standardError = FileHandle.nullDevice
@@ -64,6 +66,28 @@ import Testing
     // A script that starts another shell is held to the same limits.
     #expect(try box.run("/bin/bash -c \"/bin/zsh -c 'touch \(box.outside.path)/deep.txt'\"") != 0)
     #expect(!FileManager.default.fileExists(atPath: box.outside.appendingPathComponent("deep.txt").path))
+  }
+
+  @Test func aProjectWithoutNetworkCannotReachTheInternetButReachesThisMac() throws {
+    let box = try Box()
+    defer { try? FileManager.default.removeItem(at: box.root) }
+    let server = try TestHTTPServer(body: Data("ok".utf8))
+    defer { server.stop() }
+    let local = "/usr/bin/curl -sS --max-time 5 -o /dev/null '\(server.url())'"
+    // The local engine and the harness are on this Mac: still reachable.
+    #expect(try box.run(local, network: false) == 0)
+    // Anything else is refused by the system, by address and by name.
+    #expect(try box.run("/usr/bin/curl -sS --max-time 5 -o /dev/null http://1.1.1.1", network: false) != 0)
+    #expect(try box.run("/usr/bin/curl -sS --max-time 5 -o /dev/null https://github.com", network: false) != 0)
+    #expect(try box.run("/usr/bin/nc -z -w 3 8.8.8.8 53", network: false) != 0)
+    // With network on, the same local request works too, so the refusals above are the sandbox's.
+    #expect(try box.run(local, network: true) == 0)
+  }
+
+  @Test func theNetworkRuleIsOnlyAddedWhenAsked() {
+    let home = URL(fileURLWithPath: "/tmp/h")
+    #expect(!AgentSandbox.profile(writable: [], home: home).contains("network-outbound"))
+    #expect(AgentSandbox.profile(writable: [], home: home, network: false).contains("(deny network-outbound"))
   }
 
   @Test func pathsWithQuotesCannotBreakTheProfile() {

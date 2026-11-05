@@ -140,6 +140,7 @@ struct ProjectPage: View {
           Button { app.route = .workspace } label: { Text("← All projects").font(.system(size: 13)) }
             .buttonStyle(.plain).foregroundStyle(Theme.muted)
           Text(project.name).font(.system(size: 28, weight: .semibold)).tracking(-0.6)
+          ProjectAccessCard(project: project).frame(maxWidth: 560, alignment: .leading)
           Picker("View", selection: $tab) {
             Text("Chats").tag("chats")
             Text("CI/CD").tag("ci")
