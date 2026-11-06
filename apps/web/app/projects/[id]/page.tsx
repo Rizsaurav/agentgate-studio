@@ -9,6 +9,7 @@ import {
   documents,
   ollama,
   projects,
+  projectImports,
   sessions,
 } from '@/lib/controller';
 import { releasePassage, removeContext, removeReference } from '@/app/actions';
@@ -42,6 +43,7 @@ export default async function ProjectPage({
   const contextItems = context().list(id),
     preview = context().render(id),
     references = documents().list(id);
+  const importMetadata = projectImports().find(id);
   const groups = [
     ...(installed.models.length
       ? [
@@ -206,6 +208,23 @@ export default async function ProjectPage({
           </Panel>
         </div>
       </header>
+      {importMetadata?.suggestedQuestions.length ? (
+        <section
+          className="soft-surface mt-8"
+          aria-labelledby="suggestions-title"
+        >
+          <h2 id="suggestions-title" className="mb-3">
+            Suggested questions
+          </h2>
+          <ul className="space-y-2">
+            {importMetadata.suggestedQuestions.map((question, index) => (
+              <li key={`${index}-${question}`} className="muted">
+                {question}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       <section className="ci-section" aria-labelledby="ci-title">
         <div className="section-heading">
           <h2 id="ci-title">CI/CD</h2>

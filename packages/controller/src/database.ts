@@ -180,6 +180,13 @@ ALTER TABLE eval_results ADD COLUMN measures TEXT CHECK(measures IN ('false-posi
 const PROJECT_REPOSITORY = `
 ALTER TABLE projects ADD COLUMN repository TEXT CHECK(repository IS NULL OR length(repository) BETWEEN 3 AND 140);`;
 
+const PROJECT_IMPORT_METADATA = `
+CREATE TABLE project_import_metadata (
+  project_id TEXT PRIMARY KEY NOT NULL REFERENCES projects(id),
+  suggested_questions TEXT NOT NULL,
+  expected_behaviors TEXT NOT NULL
+) STRICT;`;
+
 /** Ordered migrations; PRAGMA user_version is the number applied. Never edit an applied entry. */
 const MIGRATIONS = [
   PROJECTS,
@@ -192,6 +199,7 @@ const MIGRATIONS = [
   LOOKUP_INDEXES,
   EVAL_MEASURES,
   PROJECT_REPOSITORY,
+  PROJECT_IMPORT_METADATA,
 ];
 
 /** Single owner of the application database file, schema, and migrations. */

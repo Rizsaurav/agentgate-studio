@@ -4,6 +4,15 @@ export {
   projectIdSchema,
 } from './projects';
 export type { Project } from './projects';
+export {
+  parseProjectManifest,
+  ProjectImportFailure,
+  ProjectImportService,
+  projectDocumentPathSchema,
+  projectManifestSchema,
+  SqliteProjectImports,
+} from './project-import';
+export type { ProjectImportMetadata, ProjectManifest } from './project-import';
 export { openDatabase } from './database';
 export { SqliteProjects } from './sqlite-projects';
 export { SqliteSessions } from './sqlite-sessions';
