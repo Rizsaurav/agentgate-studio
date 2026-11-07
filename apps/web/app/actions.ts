@@ -12,7 +12,6 @@ import {
   questionSchema,
   runIdSchema,
   sendPromptSchema,
-  startOllama,
 } from '@agentgate/controller';
 import {
   agentModel,
@@ -493,18 +492,23 @@ export async function startEvaluation(form: FormData): Promise<void> {
 }
 
 export type PullResult = { error: string | null };
-export async function pullModel(model: string): Promise<PullResult> {
+export async function pullModel(
+  model: string,
+  fallbacks: string[] = [],
+): Promise<PullResult> {
   if (!(await isLocalRequest()))
     return { error: 'Requests must come from this local workspace.' };
-  return installLocalModel(model);
+  return installLocalModel(model, fallbacks);
 }
 
-/** Starts Ollama in the background if needed, then the download. Local models are opt-in. */
-async function installLocalModel(model: unknown): Promise<PullResult> {
+/** Installs and starts Ollama in the background if needed, then the download. Local models are opt-in. */
+async function installLocalModel(
+  model: unknown,
+  fallbacks: unknown[] = [],
+): Promise<PullResult> {
   try {
-    await startOllama(endpoints().ollamaUrl);
     agentStore().setUsesLocalModels();
-    puller().start(model);
+    puller().start(model, Array.isArray(fallbacks) ? fallbacks : []);
   } catch (error) {
     return { error: userMessage(error, 'The download could not be started.') };
   }
@@ -513,6 +517,23 @@ async function installLocalModel(model: unknown): Promise<PullResult> {
 
 export async function cancelPull(): Promise<void> {
   if (await isLocalRequest()) puller().cancel();
+}
+
+export async function unqueueModel(model: string): Promise<void> {
+  if (await isLocalRequest()) puller().unqueue(model);
+}
+
+/** Deletes an installed local model; the page confirms with the person first. */
+export async function removeModel(model: string): Promise<PullResult> {
+  if (!(await isLocalRequest()))
+    return { error: 'Requests must come from this local workspace.' };
+  try {
+    await puller().uninstall(model);
+  } catch (error) {
+    return { error: userMessage(error, 'The model could not be removed.') };
+  }
+  revalidatePath('/models');
+  return { error: null };
 }
 
 export async function connectAssistant(
