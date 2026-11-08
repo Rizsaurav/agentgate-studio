@@ -21,6 +21,8 @@ public struct AgentAssistant: RepairAssistant {
   public var baseURL: URL
   public var apiKey: @Sendable () throws -> String?
   public var session: URLSession
+  /// Called with each reply's provider-reported usage (nil when the reply had none), for the token counter.
+  public var onUsage: (@Sendable (TokenUsage?) -> Void)?
 
   public init(
     profile: AgentProfile = .builtIn, baseURL: URL? = nil,
@@ -78,13 +80,22 @@ public struct AgentAssistant: RepairAssistant {
         var message: Message
         var finish_reason: String?
       }
+      struct Usage: Decodable { var prompt_tokens: Int?; var completion_tokens: Int? }
       var choices: [Choice]
+      var usage: Usage?
     }
     for attempt in 1...2 {
       let (data, response) = try await session.data(for: request)
       guard let http = response as? HTTPURLResponse else { throw Failure.malformed }
       guard http.statusCode == 200 else { throw Failure.http(http.statusCode) }
-      guard let choice = try? JSONDecoder().decode(Reply.self, from: data).choices.first else { throw Failure.malformed }
+      guard let reply = try? JSONDecoder().decode(Reply.self, from: data), let choice = reply.choices.first else {
+        throw Failure.malformed
+      }
+      // Every reply is billed, including one retried below.
+      onUsage?(reply.usage.flatMap { u in
+        guard let prompt = u.prompt_tokens, let generated = u.completion_tokens else { return nil }
+        return TokenUsage.reported(prompt: prompt, generated: generated)
+      })
       let text = Self.unwrap(choice.message.content ?? "")
       if text.isEmpty || choice.finish_reason == "length" {
         if attempt == 1 { continue }

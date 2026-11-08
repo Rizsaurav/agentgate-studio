@@ -70,6 +70,11 @@ final class AppModel {
 
   private let pipeline = InstallPipeline()
   private let store = ModelStore()
+  let tokenCounter = TokenCounter()
+  /// Token counters, refreshed whenever one changes.
+  private(set) var tokenCounts: [TokenCount] = []
+  private var countedParts: Set<String> = []
+  private var turnReportedUsage = false
   private let workspaceStore = WorkspaceStore()
   private var runtime: LlamaRuntime?
   private var installTask: Task<Bool, Never>?
@@ -186,6 +191,32 @@ final class AppModel {
 
   private func persist() throws { try workspaceStore.save(workspace) }
 
+  // MARK: Tokens
+
+  /// The supervising agent, with its replies counted as cloud usage.
+  private func supervisor() -> AgentAssistant {
+    var assistant = AgentAssistant(profile: activeAgent)
+    let model = activeAgent.model, name = "\(activeAgent.name) · \(activeAgent.model)"
+    assistant.onUsage = { usage in
+      Task { @MainActor in self.countTokens(usage, model: model, name: name, location: .cloud) }
+    }
+    return assistant
+  }
+
+  func countTokens(_ usage: TokenUsage?, model: String, name: String, location: ModelLocation) {
+    do { try tokenCounter.record(usage, model: model, name: name, location: location) }
+    catch { errorMessage = "The token counter could not be saved: \(error)" }
+    tokenCounts = tokenCounter.all()
+  }
+
+  func resetTokens(_ count: TokenCount) {
+    do { try tokenCounter.reset(model: count.model, location: count.location) }
+    catch { errorMessage = String(describing: error) }
+    tokenCounts = tokenCounter.all()
+  }
+
+  func loadTokenCounts() { tokenCounts = tokenCounter.all() }
+
   // MARK: Models
 
   func option(_ model: CatalogModel) -> ModelOption {
@@ -224,7 +255,7 @@ final class AppModel {
           runtime = try await pipeline.load(done, update: report)
           active = done
         } else {
-          let runner = RepairRunner(assistant: agentOn ? AgentAssistant(profile: activeAgent) : nil, autonomy: autonomy) { operation, failure in
+          let runner = RepairRunner(assistant: agentOn ? supervisor() : nil, autonomy: autonomy) { operation, failure in
             await self.askToRepair(operation, failure)
           }
           let (done, runtime) = try await runner.install(model, update: report)
@@ -420,7 +451,7 @@ final class AppModel {
       var source = "Read by fixed rules."
       if agentOn {
         do {
-          needs = try await AgentAssistant(profile: activeAgent).needs(for: task)
+          needs = try await supervisor().needs(for: task)
           source = "Read by \(activeAgent.name)."
         } catch {
           source = "The agent's answer could not be used, so fixed rules read it."
@@ -662,6 +693,11 @@ final class AppModel {
         record(tool.name, tool.detail, .blocked, rule: "harness-refused")
       }
     case .permission(let permission): review(permission)
+    case .usage(let partID, let usage):
+      guard countedParts.insert(partID).inserted, let id = streamingSession,
+            let session = workspace.sessions.first(where: { $0.id == id }) else { break }
+      turnReportedUsage = true
+      countTokens(usage, model: session.modelId, name: session.modelName, location: .local)
     case .connected: agentConnected = true
     case .busy: thinking = true
     case .idle: finishTurn()
@@ -683,6 +719,11 @@ final class AppModel {
 
   private func finishTurn() {
     guard generating else { return }
+    // A turn whose replies carried no usage at all is noted as unreported, never guessed.
+    if !turnReportedUsage, let id = streamingSession, let session = workspace.sessions.first(where: { $0.id == id }) {
+      countTokens(nil, model: session.modelId, name: session.modelName, location: .local)
+    }
+    turnReportedUsage = false
     generating = false
     thinking = false
     pendingPermission = nil
