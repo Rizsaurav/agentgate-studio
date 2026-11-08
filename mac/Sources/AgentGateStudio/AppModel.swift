@@ -70,6 +70,9 @@ final class AppModel {
 
   private let pipeline = InstallPipeline()
   private let store = ModelStore()
+  /// What the last check of each installed model found, and the progress of checks still running.
+  private(set) var integrity: [String: Integrity] = [:]
+  private(set) var verifying: [String: Double] = [:]
   private let workspaceStore = WorkspaceStore()
   private var runtime: LlamaRuntime?
   private var installTask: Task<Bool, Never>?
@@ -246,6 +249,14 @@ final class AppModel {
         failure = InstallFailure(step: update?.step ?? .load, message: String(describing: error), cause: error, logTail: nil)
         update = nil
       }
+      // An installed model that fails to load may have a damaged file: check it, so the message can say so.
+      if !fresh, var shown = failure, let done = installed.first(where: { $0.id == model.id }),
+         let result = try? await FileIntegrityCheck(store: store).verify(done) {
+        integrity[done.id] = result
+        shown.message += result == .intact
+          ? " The model file was checked and is intact." : " " + result.message(for: done)
+        failure = shown
+      }
       if fresh, var record = run {
         record.failure = failure?.message
         run = record
@@ -384,6 +395,36 @@ final class AppModel {
   func dismissFailure() { failure = nil }
 
   func dismissUpdate() { update = nil }
+
+  /// Re-hashes an installed model's file and records whether it is intact.
+  func verify(_ model: InstalledModel) {
+    guard verifying[model.id] == nil else { return }
+    verifying[model.id] = 0
+    integrity[model.id] = nil
+    let id = model.id
+    Task {
+      do {
+        let result = try await FileIntegrityCheck(store: store).verify(model) { fraction in
+          Task { @MainActor in if self.verifying[id] != nil { self.verifying[id] = fraction } }
+        }
+        integrity[id] = result
+      } catch {
+        errorMessage = "\(model.name) could not be checked: \(error)"
+      }
+      verifying[id] = nil
+    }
+  }
+
+  /// Removes a damaged model and installs it again from the catalog.
+  func reinstall(_ model: InstalledModel) {
+    guard let entry = catalog?.model(model.id) else {
+      errorMessage = "\(model.name) is no longer in the catalog, so it cannot be reinstalled. Remove it instead."
+      return
+    }
+    remove(model)
+    integrity[model.id] = nil
+    select(entry)
+  }
 
   func remove(_ model: InstalledModel) {
     if active?.id == model.id {
