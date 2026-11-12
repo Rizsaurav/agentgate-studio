@@ -5,10 +5,15 @@ public struct ChatMessage: Sendable, Equatable, Identifiable, Codable {
   public var id = UUID()
   public var role: Role
   public var content: String
+  /// For an agent answer: everything it did, in order. Nil for plain chat and older saved sessions.
+  public var steps: [AgentStep]?
+  public var usage: TurnUsage?
 
-  public init(role: Role, content: String) {
+  public init(role: Role, content: String, steps: [AgentStep]? = nil, usage: TurnUsage? = nil) {
     self.role = role
     self.content = content
+    self.steps = steps
+    self.usage = usage
   }
 }
 

@@ -215,7 +215,16 @@ public struct FailureReport: Sendable, Equatable, Codable {
 /// Removes keys, tokens and private paths from text that is logged or shown to an assistant.
 public enum Redaction {
   public static func clean(_ text: String, root: URL, label: String) -> String {
-    var out = text.replacingOccurrences(of: root.path, with: label)
+    var out = secrets(text.replacingOccurrences(of: root.path, with: label))
+    out = out.replacingOccurrences(
+      of: #"(?<![\w<])/(Users|home|private|var|tmp|Volumes|Library|opt|etc)/[^\s'"):,]+"#, with: "<path>",
+      options: .regularExpression)
+    return out
+  }
+
+  /// Removes keys and tokens only, for text the user reads on this Mac, where paths are what they need to see.
+  public static func secrets(_ text: String) -> String {
+    var out = text
     let rules: [(String, String)] = [
       (#"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(-----END [A-Z ]*PRIVATE KEY-----|$)"#, "<secret>"),
       (#"(?i)(bearer|api[-_ ]?key)[=: ]+\S+"#, "$1 <secret>"),
@@ -225,7 +234,6 @@ public enum Redaction {
       (#"\bAIza[0-9A-Za-z_\-]{35}\b"#, "<secret>"),
       (#"\bxox[baprs]-[A-Za-z0-9-]{10,}"#, "<secret>"),
       (#"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"#, "<secret>"),
-      (#"(?<![\w<])/(Users|home|private|var|tmp|Volumes|Library|opt|etc)/[^\s'"):,]+"#, "<path>"),
     ]
     for (pattern, template) in rules {
       out = out.replacingOccurrences(of: pattern, with: template, options: .regularExpression)

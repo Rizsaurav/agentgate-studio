@@ -6,8 +6,10 @@ public enum AgentEvent: Sendable, Equatable {
   case message(id: String, role: String)
   /// The full text of one text part so far.
   case text(partID: String, messageID: String, text: String)
-  /// More text for an existing part.
+  /// More text for an existing part (an answer or reasoning part).
   case textDelta(partID: String, messageID: String, delta: String)
+  /// The model's reasoning so far, shown apart from the answer.
+  case reasoning(partID: String, messageID: String, text: String)
   /// A tool call and where it stands: pending, running, completed or error.
   case tool(Tool)
   /// The harness wants the user's yes or no before running something.
@@ -16,6 +18,8 @@ public enum AgentEvent: Sendable, Equatable {
   case usage(partID: String, TokenUsage?)
   /// The harness summarised older turns to fit the context.
   case compacted(partID: String)
+  /// A question was answered, by the user, the app, or the harness itself cancelling it.
+  case permissionReplied(id: String)
   case busy
   case idle
   /// The event stream is open; nothing before this point can be missed.
@@ -28,7 +32,45 @@ public enum AgentEvent: Sendable, Equatable {
     public var status: String
     /// The command or path, as written by the model.
     public var detail: String
+    /// What the tool printed. While a command runs this is its output so far.
     public var output: String
+    /// The harness's id for this call, which a question about it names.
+    public var callID: String?
+    /// The harness's one-line title for the call, once it has one.
+    public var title: String?
+    /// The model's own explanation of a command ("Runs the tests").
+    public var purpose: String?
+    /// A command's exit status, once it has ended.
+    public var exitCode: Int?
+    /// An edit as a unified diff.
+    public var diff: String?
+    /// Why the call failed, for status "error".
+    public var error: String?
+    public var started: Date?
+    public var ended: Date?
+    /// The output was cut by the harness.
+    public var truncated: Bool
+
+    public init(
+      id: String, name: String, status: String, detail: String, output: String, callID: String? = nil, title: String? = nil,
+      purpose: String? = nil, exitCode: Int? = nil, diff: String? = nil, error: String? = nil,
+      started: Date? = nil, ended: Date? = nil, truncated: Bool = false
+    ) {
+      self.id = id
+      self.name = name
+      self.status = status
+      self.detail = detail
+      self.output = output
+      self.callID = callID
+      self.title = title
+      self.purpose = purpose
+      self.exitCode = exitCode
+      self.diff = diff
+      self.error = error
+      self.started = started
+      self.ended = ended
+      self.truncated = truncated
+    }
   }
 
   public struct Permission: Sendable, Equatable, Identifiable {
@@ -37,15 +79,27 @@ public enum AgentEvent: Sendable, Equatable {
     public var detail: String
     /// The folder a glob or grep searches in, when the call names one.
     public var path: String?
+    /// The tool call this question is about, when the harness says.
+    public var callID: String?
 
-    public init(id: String, tool: String, detail: String, path: String? = nil) {
+    public init(id: String, tool: String, detail: String, path: String? = nil, callID: String? = nil) {
       self.id = id
       self.tool = tool
       self.detail = detail
       self.path = path
+      self.callID = callID
     }
   }
 }
+
+/// A value that is dropped instead of failing the whole event when its shape is not the expected one.
+struct Lenient<Value: Decodable>: Decodable {
+  var value: Value?
+  init(from decoder: Decoder) throws { value = try? Value(from: decoder) }
+}
+
+/// The call a question is about.
+struct CallRef: Decodable { var callID: String? }
 
 /// Decodes the harness's event stream. Unknown events are ignored, so a newer harness cannot break the app.
 enum AgentEventDecoder {
@@ -55,15 +109,33 @@ enum AgentEventDecoder {
         struct State: Decodable {
           struct Input: Decodable {
             var command: String?
+            var description: String?
             var filePath: String?
             var pattern: String?
+            var path: String?
+            var url: String?
+          }
+          struct Metadata: Decodable {
+            var output: String?
+            var exit: Int?
+            var diff: String?
+            var truncated: Bool?
+          }
+          struct Time: Decodable {
+            var start: Double?
+            var end: Double?
           }
           var status: String?
           var input: Input?
           var output: String?
+          var title: String?
+          var error: String?
+          var metadata: Metadata?
+          var time: Time?
         }
         var id: String?
         var messageID: String?
+        var callID: String?
         var type: String
         var text: String?
         var tool: String?
@@ -103,6 +175,8 @@ enum AgentEventDecoder {
       var metadata: Metadata?
       var status: Status?
       var error: Failure?
+      var tool: Lenient<CallRef>?
+      var requestID: String?
     }
     var type: String
     var properties: Properties
@@ -120,11 +194,21 @@ enum AgentEventDecoder {
       if part.type == "text", let text = part.text, let message = part.messageID {
         return .text(partID: id, messageID: message, text: text)
       }
+      if part.type == "reasoning", let message = part.messageID {
+        return .reasoning(partID: id, messageID: message, text: part.text ?? "")
+      }
       if part.type == "tool", let name = part.tool {
-        let input = part.state?.input
+        let state = part.state
+        let input = state?.input
+        let date = { (ms: Double?) in ms.map { Date(timeIntervalSince1970: $0 / 1000) } }
         return .tool(.init(
-          id: id, name: name, status: part.state?.status ?? "pending",
-          detail: input?.command ?? input?.filePath ?? input?.pattern ?? "", output: part.state?.output ?? ""))
+          id: id, name: name, status: state?.status ?? "pending",
+          detail: input?.command ?? input?.filePath ?? input?.pattern ?? input?.url ?? input?.path ?? "",
+          // A running command reports its output so far in the metadata; the final output replaces it.
+          output: state?.output ?? state?.metadata?.output ?? "", callID: part.callID,
+          title: state?.title, purpose: input?.description, exitCode: state?.metadata?.exit,
+          diff: state?.metadata?.diff, error: state?.error, started: date(state?.time?.start),
+          ended: date(state?.time?.end), truncated: state?.metadata?.truncated ?? false))
       }
       if part.type == "compaction" { return .compacted(partID: id) }
       if part.type == "step-finish" {
@@ -142,7 +226,9 @@ enum AgentEventDecoder {
     case "permission.asked":
       guard let id = p.id, let tool = p.permission else { return nil }
       let detail = p.metadata?.command ?? (p.patterns ?? []).joined(separator: ", ")
-      return .permission(.init(id: id, tool: tool, detail: detail, path: p.metadata?.path))
+      return .permission(.init(id: id, tool: tool, detail: detail, path: p.metadata?.path, callID: p.tool?.value?.callID))
+    case "permission.replied":
+      return p.requestID.map { .permissionReplied(id: $0) }
     case "session.status":
       return p.status?.type == "busy" ? .busy : nil
     case "session.idle":
@@ -370,13 +456,15 @@ public struct AgentClient: Sendable {
       var permission: String
       var patterns: [String]?
       var metadata: Metadata?
+      var tool: Lenient<CallRef>?
     }
     let data = try await send("GET", "permission")
     guard let items = try? JSONDecoder().decode([Pending].self, from: data) else { throw AgentError.malformed }
     return items.map {
       .init(
         id: $0.id, tool: $0.permission,
-        detail: $0.metadata?.command ?? ($0.patterns ?? []).joined(separator: ", "), path: $0.metadata?.path)
+        detail: $0.metadata?.command ?? ($0.patterns ?? []).joined(separator: ", "), path: $0.metadata?.path,
+        callID: $0.tool?.value?.callID)
     }
   }
 
