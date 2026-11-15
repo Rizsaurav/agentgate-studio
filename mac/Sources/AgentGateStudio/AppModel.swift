@@ -47,13 +47,21 @@ final class AppModel {
   var stepLog: [InstallStep: [String]] { run?.log ?? [:] }
   var stepDetail: InstallStep?
   var agentPanelOpen = false
-  var autonomy = Autonomy(rawValue: UserDefaults.standard.string(forKey: "autonomy") ?? "") ?? .careful {
+  var autonomy = Autonomy(rawValue: UserDefaults.standard.string(forKey: "autonomy") ?? "") ?? .balanced {
     didSet { UserDefaults.standard.set(autonomy.rawValue, forKey: "autonomy") }
   }
   private(set) var failure: InstallFailure?
   private(set) var installing: CatalogModel?
   /// A repair waiting for the user's yes or no.
-  private(set) var pendingRepair: (operation: RepairOperation, report: FailureReport)?
+  private(set) var pendingRepair: (operations: [RepairOperation], report: FailureReport)?
+  /// How long a repair question waits before it counts as no.
+  var approvalMinutes = max(1, UserDefaults.standard.integer(forKey: "approvalMinutes") == 0 ? 10 : UserDefaults.standard.integer(forKey: "approvalMinutes")) {
+    didSet { UserDefaults.standard.set(approvalMinutes, forKey: "approvalMinutes") }
+  }
+  /// Re-downloads over this many GB ask first (except in Hands-off).
+  var askAboveGB = UserDefaults.standard.integer(forKey: "askAboveGB") == 0 ? 10 : UserDefaults.standard.integer(forKey: "askAboveGB") {
+    didSet { UserDefaults.standard.set(askAboveGB, forKey: "askAboveGB") }
+  }
   private var repairAnswer: CheckedContinuation<Bool, Never>?
   /// Whether the repair agent (OpenRouter) is connected. The key itself never leaves the Keychain.
   let agentStore = AgentStore()
@@ -224,9 +232,14 @@ final class AppModel {
           runtime = try await pipeline.load(done, update: report)
           active = done
         } else {
-          let runner = RepairRunner(assistant: agentOn ? AgentAssistant(profile: activeAgent) : nil, autonomy: autonomy) { operation, failure in
-            await self.askToRepair(operation, failure)
+          var runner = RepairRunner(
+            assistant: agentOn ? AgentAssistant(profile: activeAgent) : nil, autonomy: autonomy,
+            approvalTimeout: .seconds(approvalMinutes * 60)
+          ) { operation, failure in
+            await self.askToRepair([operation], failure)
           }
+          runner.approveBatch = { operations, failure in await self.askToRepair(operations, failure) }
+          runner.askAboveBytes = UInt64(askAboveGB) * MemoryBudget.gib
           let (done, runtime) = try await runner.install(model, update: report)
           self.runtime = runtime
           installed = try store.list()
@@ -364,10 +377,10 @@ final class AppModel {
   }
 
   /// Shows the question in the bar. If the runner stops waiting (timeout), the question is taken down as a no.
-  private func askToRepair(_ operation: RepairOperation, _ report: FailureReport) async -> Bool {
+  private func askToRepair(_ operations: [RepairOperation], _ report: FailureReport) async -> Bool {
     await withTaskCancellationHandler {
       await withCheckedContinuation { continuation in
-        pendingRepair = (operation, report)
+        pendingRepair = (operations, report)
         repairAnswer = continuation
       }
     } onCancel: {

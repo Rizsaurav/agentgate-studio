@@ -23,12 +23,18 @@ struct AgentPanel: View {
         .font(.system(size: 12)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
       @Bindable var bound = app
       Picker("Autonomy", selection: $bound.autonomy) {
-        Text("Careful").tag(Autonomy.careful)
-        Text("Balanced").tag(Autonomy.balanced)
+        ForEach(Autonomy.allCases, id: \.self) { Text($0.title).tag($0) }
       }
-      .pickerStyle(.segmented).frame(width: 260)
+      .pickerStyle(.segmented).frame(width: 320)
       Text(app.autonomy.summary).font(.system(size: 12)).foregroundStyle(Theme.muted)
         .fixedSize(horizontal: false, vertical: true)
+      HStack(spacing: 16) {
+        Stepper("Ask before re-downloading over \(app.askAboveGB) GB", value: $bound.askAboveGB, in: 1...200)
+        Stepper("Wait \(app.approvalMinutes) min for an answer", value: $bound.approvalMinutes, in: 1...60)
+      }
+      .font(.system(size: 12))
+      Text("An unanswered question counts as no: nothing is done and the install pauses.")
+        .font(.system(size: 11)).foregroundStyle(Theme.muted)
       VStack(spacing: 0) {
         ForEach(app.agents) { agent in
           HStack(spacing: 10) {
