@@ -33,6 +33,7 @@ struct Shell: View {
     .sheet(isPresented: $app.agentPanelOpen) { AgentPanel().environment(app) }
     .sheet(item: $app.stepDetail) { StepSheet(step: $0).environment(app) }
     .sheet(isPresented: $app.activityOpen) { ActivitySheet().environment(app) }
+    .sheet(item: $app.planReview) { PlanReviewSheet(review: $0).environment(app) }
   }
 
   @ViewBuilder private var page: some View {

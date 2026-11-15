@@ -47,6 +47,16 @@ final class AppModel {
   var stepLog: [InstallStep: [String]] { run?.log ?? [:] }
   var stepDetail: InstallStep?
   var agentPanelOpen = false
+  /// A plan waiting for the user's go-ahead, with its review. Set before anything downloads.
+  var planReview: PendingReview?
+
+  struct PendingReview: Identifiable {
+    var id: String { model.id }
+    var model: CatalogModel
+    var plan: ModelPlan
+    var verdicts: [PlanVerdict]
+    var checking: Bool
+  }
   var autonomy = Autonomy(rawValue: UserDefaults.standard.string(forKey: "autonomy") ?? "") ?? .careful {
     didSet { UserDefaults.standard.set(autonomy.rawValue, forKey: "autonomy") }
   }
@@ -200,6 +210,44 @@ final class AppModel {
   }
 
   var allOptions: [ModelOption] { catalog?.models.map(option) ?? [] }
+
+  func catalogModel(_ id: String) -> CatalogModel? { catalog?.model(id) }
+
+  /// Install entry point for the UI: an installed model loads at once; a new one shows its plan and review first.
+  func requestInstall(_ model: CatalogModel) {
+    guard !installed.contains(where: { $0.id == model.id }), let profile,
+          case .compatible(let plan) = ModelPlanner.plan(model, for: profile, limits: InstallPipeline.supported) else {
+      select(model)
+      return
+    }
+    let onBattery = PowerState.onBattery()
+    let rules = PlanReview.rules(plan, profile: profile, onBattery: onBattery)
+    planReview = PendingReview(model: model, plan: plan, verdicts: [rules], checking: agentOn)
+    guard agentOn else { return }
+    let input = PlanReviewInput(model: model.name, plan: plan, profile: profile, onBattery: onBattery, task: nil)
+    let ids = (catalog?.models ?? []).filter { option($0).plan != nil }.map(\.id)
+    let assistant = AgentAssistant(profile: activeAgent)
+    Task {
+      let raw = try? await assistant.reviewPlan(input, allowedModelIds: ids)
+      guard planReview?.id == model.id else { return }
+      let agent = raw.flatMap { PlanReview.parseAgent($0, allowedModelIds: Set(ids)) }
+      planReview?.verdicts = PlanReview.combine(rules: rules, agent: agent)
+      planReview?.checking = false
+    }
+  }
+
+  func confirmReview() {
+    guard let review = planReview else { return }
+    planReview = nil
+    select(review.model)
+  }
+
+  func cancelReview() { planReview = nil }
+
+  func reviewInstead(_ model: CatalogModel) {
+    planReview = nil
+    requestInstall(model)
+  }
 
   /// Installs the model if needed, then loads it. One install or load at a time.
   @discardableResult
