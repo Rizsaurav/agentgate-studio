@@ -71,6 +71,11 @@ final class AppModel {
   private let pipeline = InstallPipeline()
   private let store = ModelStore()
   let tokenCounter = TokenCounter()
+  private let limitsStore = CloudLimitsStore()
+  /// Cloud spending limits from Profile, and the guard that enforces them for this app session.
+  private(set) var cloudLimits = CloudLimitsStore().load()
+  let costGuard = CostGuard(limits: CloudLimitsStore().load())
+  private(set) var spentToday = 0.0
   /// Token counters, refreshed whenever one changes.
   private(set) var tokenCounts: [TokenCount] = []
   private var countedParts: Set<String> = []
@@ -194,14 +199,29 @@ final class AppModel {
   // MARK: Tokens
 
   /// The supervising agent, with its replies counted as cloud usage.
+  /// Starts a supervising-agent turn: its cloud requests are checked against the limits set on Profile.
   private func supervisor() -> AgentAssistant {
     var assistant = AgentAssistant(profile: activeAgent)
+    costGuard.beginTurn()
+    assistant.costGuard = costGuard
     let model = activeAgent.model, name = "\(activeAgent.name) · \(activeAgent.model)"
     assistant.onUsage = { usage in
-      Task { @MainActor in self.countTokens(usage, model: model, name: name, location: .cloud) }
+      Task { @MainActor in
+        self.countTokens(usage, model: model, name: name, location: .cloud)
+        self.spentToday = self.costGuard.spentToday
+      }
     }
     return assistant
   }
+
+  func setCloudLimits(_ limits: CloudLimits) {
+    let cleaned = limits.cleaned
+    do { try limitsStore.save(cleaned) } catch { errorMessage = "The limits could not be saved: \(error)" }
+    cloudLimits = cleaned
+    costGuard.setLimits(cleaned)
+  }
+
+  func refreshSpend() { spentToday = costGuard.spentToday }
 
   func countTokens(_ usage: TokenUsage?, model: String, name: String, location: ModelLocation) {
     do { try tokenCounter.record(usage, model: model, name: name, location: location) }

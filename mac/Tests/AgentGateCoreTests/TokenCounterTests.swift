@@ -91,23 +91,39 @@ final class UsageBox: @unchecked Sendable {
   var value: TokenUsage? { lock.lock(); defer { lock.unlock() }; return stored }
 }
 
-/// Answers every request with one fixed JSON body.
+/// Answers every request from one session with that session's fixed JSON body. Each session has its own id,
+/// so suites running at the same time never see each other's replies.
 final class StubReplies: URLProtocol, @unchecked Sendable {
-  nonisolated(unsafe) static var body = Data()
+  private static let lock = NSLock()
+  nonisolated(unsafe) private static var bodies: [String: Data] = [:]
+  nonisolated(unsafe) private static var counts: [String: Int] = [:]
 
   static func session(_ json: String) -> URLSession {
-    body = Data(json.utf8)
+    let id = UUID().uuidString
+    lock.withLock { bodies[id] = Data(json.utf8) }
     let config = URLSessionConfiguration.ephemeral
     config.protocolClasses = [StubReplies.self]
+    config.httpAdditionalHeaders = ["X-Stub": id]
     return URLSession(configuration: config)
+  }
+
+  /// Requests that reached the network layer through this session.
+  static func requests(_ session: URLSession) -> Int {
+    let id = session.configuration.httpAdditionalHeaders?["X-Stub"] as? String ?? ""
+    return lock.withLock { counts[id, default: 0] }
   }
 
   override class func canInit(with request: URLRequest) -> Bool { true }
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
   override func startLoading() {
+    let id = request.value(forHTTPHeaderField: "X-Stub") ?? ""
+    let body = Self.lock.withLock { () -> Data in
+      Self.counts[id, default: 0] += 1
+      return Self.bodies[id] ?? Data()
+    }
     let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
     client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-    client?.urlProtocol(self, didLoad: Self.body)
+    client?.urlProtocol(self, didLoad: body)
     client?.urlProtocolDidFinishLoading(self)
   }
   override func stopLoading() {}
