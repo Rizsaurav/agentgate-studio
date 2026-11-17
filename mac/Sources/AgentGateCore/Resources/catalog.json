@@ -96,10 +96,11 @@
     ],
     "thinking": false,
     "sampler": {
-     "temperature": 0,
-     "passRate": 0.7111,
+     "temperature": 0.7,
+     "passRate": 0.7333,
      "measured": "2026-11-17",
-     "engine": "llama.cpp b11765"
+     "engine": "llama.cpp b11765",
+     "topP": 0.8
     }
    }
   },
@@ -161,10 +162,11 @@
     ],
     "thinking": false,
     "sampler": {
-     "temperature": 0,
-     "passRate": 0.7556,
+     "temperature": 0.7,
+     "passRate": 0.7778,
      "measured": "2026-11-17",
-     "engine": "llama.cpp b11765"
+     "engine": "llama.cpp b11765",
+     "topP": 0.8
     }
    }
   },
