@@ -295,7 +295,7 @@ public struct AgentClient: Sendable {
   let baseURL: URL
   let password: String
 
-  private func request(_ method: String, _ path: String, body: [String: Any]? = nil) throws -> URLRequest {
+  func request(_ method: String, _ path: String, body: [String: Any]? = nil) throws -> URLRequest {
     var request = URLRequest(url: baseURL.appendingPathComponent(path), timeoutInterval: 30)
     request.httpMethod = method
     request.setValue("Basic " + Data("opencode:\(password)".utf8).base64EncodedString(), forHTTPHeaderField: "Authorization")

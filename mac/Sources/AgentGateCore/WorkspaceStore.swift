@@ -24,6 +24,8 @@ public struct Session: Codable, Sendable, Equatable, Identifiable {
   public var messages: [ChatMessage]
   /// The harness's id for this conversation, so it continues after a restart.
   public var agentSession: String?
+  /// Tasks run on two models side by side (#89). Nil for sessions saved before comparisons existed.
+  public var comparisons: [Comparison]?
 
   public init(id: UUID, projectId: UUID, modelId: String, modelName: String, createdAt: Date, messages: [ChatMessage]) {
     self.id = id
