@@ -48,6 +48,20 @@ public enum Providers {
              prefixes: ["gsk_"], check: .bearer("https://api.groq.com/openai/v1/models"), keysPage: "https://console.groq.com/keys"),
   ]
 
+  /// The model ids a provider offers to this key, sorted, from its OpenAI-compatible `/models`.
+  public static func models(_ provider: Provider, key: String, session: URLSession = .shared) async throws -> [String] {
+    var request = URLRequest(url: URL(string: provider.baseURL)!.appendingPathComponent("models"), timeoutInterval: 20)
+    request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+    let (data, response) = try await session.data(for: request)
+    let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+    guard (200..<300).contains(code) else {
+      throw ProviderError.listFailed(code == 401 || code == 403 ? "\(provider.name) rejected the key." : "\(provider.name) answered HTTP \(code).")
+    }
+    struct List: Decodable { struct Model: Decodable { var id: String }; var data: [Model] }
+    guard let list = try? JSONDecoder().decode(List.self, from: data) else { throw ProviderError.listFailed("\(provider.name) sent a list that could not be read.") }
+    return list.data.map(\.id).filter { !$0.isEmpty && $0.count <= 200 }.sorted()
+  }
+
   /// The providers a pasted key could belong to. A plain `sk-` key could be OpenAI or DeepSeek, so both are returned.
   public static func candidates(for key: String) -> [Provider] {
     let key = key.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -85,6 +99,16 @@ public enum Providers {
       return .unreachable("\(provider.name) answered HTTP \(code).")
     } catch {
       return .unreachable("\(provider.name) could not be reached: \(error.localizedDescription)")
+    }
+  }
+}
+
+public enum ProviderError: Error, Equatable, CustomStringConvertible {
+  case listFailed(String)
+
+  public var description: String {
+    switch self {
+    case .listFailed(let why): "Could not list the models: \(why)"
     }
   }
 }

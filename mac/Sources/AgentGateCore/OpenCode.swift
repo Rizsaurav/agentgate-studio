@@ -160,6 +160,8 @@ public final class AgentServer: @unchecked Sendable {
   public let folder: URL
   /// The engine key it was started for, so the app can tell when it must restart.
   public let engineKey: String
+  /// The model id the harness was configured for; a different one needs a restart.
+  public let model: String
   private let process: Process
 
   public static func binaryDirectory() -> URL? {
@@ -173,7 +175,8 @@ public final class AgentServer: @unchecked Sendable {
       "$schema": "https://opencode.ai/config.json",
       "autoupdate": false, "share": "disabled",
       "provider": ["local": [
-        "npm": "@ai-sdk/openai-compatible", "name": "Local model",
+        // Every model, local or cloud, goes through the app's own endpoint (Gateway, #71).
+        "npm": "@ai-sdk/openai-compatible", "name": "AGENTGATE",
         "options": ["baseURL": engineURL.appendingPathComponent("v1").absoluteString, "apiKey": engineKey],
         "models": [model: ["name": model, "tool_call": true, "limit": ["context": context, "output": 4096]]],
       ]],
@@ -231,7 +234,7 @@ public final class AgentServer: @unchecked Sendable {
     try? EngineRegistry().record(process.processIdentifier)
     let server = AgentServer(
       baseURL: URL(string: "http://127.0.0.1:\(port)")!, password: password, folder: folder,
-      engineKey: engineKey, process: process, log: log)
+      engineKey: engineKey, model: model, process: process, log: log)
     do {
       try await server.waitUntilReady(timeout: timeout)
     } catch {
@@ -243,7 +246,8 @@ public final class AgentServer: @unchecked Sendable {
 
   private let log: LogTail
 
-  private init(baseURL: URL, password: String, folder: URL, engineKey: String, process: Process, log: LogTail) {
+  private init(baseURL: URL, password: String, folder: URL, engineKey: String, model: String, process: Process, log: LogTail) {
+    self.model = model
     self.log = log
     self.baseURL = baseURL
     self.password = password

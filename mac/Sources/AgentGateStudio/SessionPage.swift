@@ -51,6 +51,9 @@ struct SessionPage: View {
   }
 
   private func modelState(_ session: Session) -> String {
+    if let (provider, _) = ModelID.parseCloud(session.modelId) {
+      return "Cloud · files the agent reads are sent to \(provider.name)"
+    }
     if app.active?.id == session.modelId { return "Local · loaded" }
     if app.installing?.id == session.modelId { return "Local · loading…" }
     return "Local · loads when you send a task"
@@ -119,6 +122,20 @@ struct SessionPage: View {
     Menu {
       ForEach(app.installed) { model in
         Button("\(model.name) · \(model.quant.rawValue)") { app.switchModel(of: session.id, to: model) }
+      }
+      if !app.keyedProviders.isEmpty {
+        Divider()
+        ForEach(app.keyedProviders) { provider in
+          Menu("\(provider.name) (cloud)") {
+            if let models = app.cloudModels[provider.id] {
+              ForEach(models, id: \.self) { model in
+                Button(model) { app.switchToCloud(session.id, provider: provider, model: model) }
+              }
+            } else {
+              Button("List models") { Task { await app.loadCloudModels(provider) } }
+            }
+          }
+        }
       }
       Divider()
       Button("Install another model…") { app.route = .models }
