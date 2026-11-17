@@ -607,8 +607,8 @@ final class AppModel {
           throw AgentError.missingBinary("\(model.name) could not be loaded.")
         }
       }
-      guard let runtime else { throw AgentError.missingBinary("\(model.name) could not be loaded.") }
-      let server = try await agentServer(folder: copy.folder, runtime: runtime)
+      guard runtime != nil else { throw AgentError.missingBinary("\(model.name) could not be loaded.") }
+      let server = try await agentServer(folder: copy.folder, model: model.id)
       let agentId = try await server.client.createSession(title: "Compare: \(task.prefix(50))")
       comparisonAgentSession = agentId
       for _ in 0..<100 where !agentConnected { try await Task.sleep(nanoseconds: 50_000_000) }

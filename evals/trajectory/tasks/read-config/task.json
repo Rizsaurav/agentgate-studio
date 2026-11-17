@@ -1,0 +1,11 @@
+{
+  "id": "read-config",
+  "kind": "read",
+  "prompt": "What deployment region is set in config/settings.ini? Answer with the region name.",
+  "maxSeconds": 300,
+  "checks": [
+    {
+      "answerContains": "eu-north-2"
+    }
+  ]
+}

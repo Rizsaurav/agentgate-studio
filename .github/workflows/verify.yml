@@ -52,6 +52,20 @@ jobs:
             git archive FETCH_HEAD evals/tools/results | tar -x -C "$base"
           fi
           swift run --package-path mac agentgate-tooleval check --base "$base/evals/tools/results"
+      # Harness trajectory tasks (evals/trajectory, #118): a task that passed may not start failing unless it
+      # is listed as flaky. Measured on a Mac with the harness and models; CI compares the committed results.
+      - name: Trajectory tasks did not regress
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          base="$RUNNER_TEMP/trajectory-base"
+          mkdir -p "$base/evals/trajectory/results"
+          git fetch --depth 1 origin "$BASE_REF"
+          if git cat-file -e FETCH_HEAD:evals/trajectory/results 2>/dev/null; then
+            git archive FETCH_HEAD evals/trajectory/results | tar -x -C "$base"
+          fi
+          swift run --package-path mac agentgate-tooleval trajectory-check --base "$base/evals/trajectory/results"
 
   # Required: Promptfoo security and functional suite against the real application pipeline and
   # the real LLM Guard scanner. The model is a scripted fixture: no paid API key is used anywhere.

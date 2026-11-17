@@ -1,0 +1,20 @@
+{
+  "id": "add-feature-with-test",
+  "kind": "feature",
+  "prompt": "Add a function slugify(text) to text_utils.py that lowercases the text and replaces spaces with '-'. Add a unit test for it in test_text_utils.py. Run the tests with: python3 -m unittest -q",
+  "maxSeconds": 300,
+  "checks": [
+    {
+      "command": "python3 -c \"from text_utils import slugify; assert slugify('Hello World') == 'hello-world'\""
+    },
+    {
+      "command": "python3 -m unittest -q"
+    },
+    {
+      "fileContains": {
+        "path": "test_text_utils.py",
+        "text": "slugify"
+      }
+    }
+  ]
+}
