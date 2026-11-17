@@ -3,8 +3,8 @@
 Generated from `evals/tools/results/` by `swift run --package-path mac agentgate-tooleval report`. Do not edit by hand.
 
 Each model is run on the bundled engine against the 45-case suite in `evals/tools/cases/`, at temperature 0 with a fixed seed. A case passes when the calls the model makes (names and arguments) or its refusal to call match what the case expects; prose is never graded. A model needs 75% to be offered as **Ready** for agent sessions; below that it is **Chat only**.
-Each case runs 3 times and passes on a majority. The engine is not bit-for-bit repeatable even at temperature 0, so a case whose runs disagree is listed as flaky below.
 
+Each case runs on 3 fresh loads of the engine and passes on a majority. The engine is not bit-for-bit repeatable across loads even at temperature 0, so a case whose runs disagree, or whose result changed since the previous committed run, is listed as flaky below.
 
 | Model | Quant | Pass rate | Readiness | single | selection | multiple | missing-argument | nested | parallel | recovery | long-output | refusal | Engine | Mac | Date | Commit |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |

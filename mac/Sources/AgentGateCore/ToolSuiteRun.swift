@@ -112,8 +112,10 @@ public struct ToolScoreReport: Codable, Sendable, Equatable {
       "",
     ]
     if reports.isEmpty { return (lines + ["No results yet.", ""]).joined(separator: "\n") }
-    lines.insert("Each case runs \(reports[0].cases.first?.runs ?? 0) times and passes on a majority. The engine is not bit-for-bit repeatable even at temperature 0, so a case whose runs disagree is listed as flaky below.", at: lines.count - 1)
-    lines.insert("", at: lines.count - 1)
+    lines += [
+      "Each case runs on \(reports[0].cases.first?.runs ?? 0) fresh loads of the engine and passes on a majority. The engine is not bit-for-bit repeatable across loads even at temperature 0, so a case whose runs disagree, or whose result changed since the previous committed run, is listed as flaky below.",
+      "",
+    ]
     let header = ["Model", "Quant", "Pass rate", "Readiness"] + ToolSuite.categories + ["Engine", "Mac", "Date", "Commit"]
     lines.append("| " + header.joined(separator: " | ") + " |")
     lines.append("|" + String(repeating: " --- |", count: header.count))
