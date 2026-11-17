@@ -1,0 +1,11 @@
+{
+  "id": "search-definition",
+  "kind": "search",
+  "prompt": "Which file defines the function parse_invoice? Answer with its path.",
+  "maxSeconds": 300,
+  "checks": [
+    {
+      "answerContains": "billing/invoice.py"
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "id": "fix-failing-test",
+  "kind": "fix-test",
+  "prompt": "The tests fail. Find the bug and fix it. Do not change the tests. Run the tests with: python3 -m unittest -q",
+  "maxSeconds": 300,
+  "checks": [
+    {
+      "command": "python3 -m unittest -q"
+    },
+    {
+      "fileUnchanged": "test_calc.py"
+    }
+  ]
+}

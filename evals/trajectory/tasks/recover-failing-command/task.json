@@ -1,0 +1,17 @@
+{
+  "id": "recover-failing-command",
+  "kind": "recover",
+  "prompt": "Run ./build.sh. It fails; find out why and fix the project so that ./build.sh succeeds.",
+  "maxSeconds": 300,
+  "checks": [
+    {
+      "command": "sh build.sh"
+    },
+    {
+      "fileContains": {
+        "path": "report.txt",
+        "text": "total"
+      }
+    }
+  ]
+}

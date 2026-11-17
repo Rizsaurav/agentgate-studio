@@ -1,0 +1,23 @@
+{
+  "id": "multi-file-rename",
+  "kind": "multi-file",
+  "prompt": "Rename the function get_user to fetch_user everywhere in the project, including every call site and the tests. Run the tests with: python3 -m unittest -q",
+  "maxSeconds": 300,
+  "checks": [
+    {
+      "command": "python3 -m unittest -q"
+    },
+    {
+      "noTextInFiles": {
+        "suffix": ".py",
+        "text": "get_user"
+      }
+    },
+    {
+      "fileContains": {
+        "path": "users.py",
+        "text": "def fetch_user"
+      }
+    }
+  ]
+}
