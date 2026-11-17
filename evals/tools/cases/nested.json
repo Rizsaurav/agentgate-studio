@@ -1,168 +1,158 @@
 [
- {
-  "id": "nested-event-location",
-  "category": "nested",
-  "description": "An object argument with nested fields.",
-  "tools": [
-   "create_event"
-  ],
-  "messages": [
-   {
-    "role": "user",
-    "content": "Create an event 'Design review' at 2026-11-18T14:00 in Berlin, room 4."
-   }
-  ],
-  "expect": {
-   "calls": [
-    {
-     "name": "create_event",
-     "arguments": {
-      "title": {
-       "contains": "design review"
-      },
-      "start": {
-       "contains": "2026-11-18T14:00"
-      },
-      "location": {
-       "object": {
-        "city": {
-         "contains": "berlin"
-        },
-        "room": {
-         "contains": "4"
+  {
+    "id": "nested-event-location",
+    "category": "nested",
+    "description": "An object argument with nested fields.",
+    "tools": ["create_event"],
+    "messages": [
+      {
+        "role": "user",
+        "content": "Create an event 'Design review' at 2026-11-18T14:00 in Berlin, room 4."
+      }
+    ],
+    "expect": {
+      "calls": [
+        {
+          "name": "create_event",
+          "arguments": {
+            "title": {
+              "contains": "design review"
+            },
+            "start": {
+              "contains": "2026-11-18T14:00"
+            },
+            "location": {
+              "object": {
+                "city": {
+                  "contains": "berlin"
+                },
+                "room": {
+                  "contains": "4"
+                }
+              }
+            }
+          }
         }
-       }
-      }
-     }
+      ]
     }
-   ]
-  }
- },
- {
-  "id": "nested-event-attendees",
-  "category": "nested",
-  "description": "An array of objects.",
-  "tools": [
-   "create_event"
-  ],
-  "messages": [
-   {
-    "role": "user",
-    "content": "Create 'Kickoff' at 2026-12-01T09:00 with Ada (ada@example.com) and Linus (linus@example.com)."
-   }
-  ],
-  "expect": {
-   "calls": [
-    {
-     "name": "create_event",
-     "arguments": {
-      "title": {
-       "contains": "kickoff"
-      },
-      "start": {
-       "contains": "2026-12-01T09:00"
-      },
-      "attendees": {
-       "present": true
+  },
+  {
+    "id": "nested-event-attendees",
+    "category": "nested",
+    "description": "An array of objects.",
+    "tools": ["create_event"],
+    "messages": [
+      {
+        "role": "user",
+        "content": "Create 'Kickoff' at 2026-12-01T09:00 with Ada (ada@example.com) and Linus (linus@example.com)."
       }
-     }
-    }
-   ]
-  }
- },
- {
-  "id": "nested-issue-assignee",
-  "category": "nested",
-  "description": "An object argument with a required field.",
-  "tools": [
-   "create_issue"
-  ],
-  "messages": [
-   {
-    "role": "user",
-    "content": "Open an issue titled 'Crash on launch' assigned to octocat."
-   }
-  ],
-  "expect": {
-   "calls": [
-    {
-     "name": "create_issue",
-     "arguments": {
-      "title": {
-       "contains": "crash on launch"
-      },
-      "assignee": {
-       "object": {
-        "login": {
-         "equals": "octocat"
+    ],
+    "expect": {
+      "calls": [
+        {
+          "name": "create_event",
+          "arguments": {
+            "title": {
+              "contains": "kickoff"
+            },
+            "start": {
+              "contains": "2026-12-01T09:00"
+            },
+            "attendees": {
+              "present": true
+            }
+          }
         }
-       }
-      }
-     }
+      ]
     }
-   ]
-  }
- },
- {
-  "id": "nested-issue-labels",
-  "category": "nested",
-  "description": "An array of strings.",
-  "tools": [
-   "create_issue"
-  ],
-  "messages": [
-   {
-    "role": "user",
-    "content": "Open an issue 'Slow startup' with the labels bug and performance."
-   }
-  ],
-  "expect": {
-   "calls": [
-    {
-     "name": "create_issue",
-     "arguments": {
-      "title": {
-       "contains": "slow startup"
-      },
-      "labels": {
-       "present": true
+  },
+  {
+    "id": "nested-issue-assignee",
+    "category": "nested",
+    "description": "An object argument with a required field.",
+    "tools": ["create_issue"],
+    "messages": [
+      {
+        "role": "user",
+        "content": "Open an issue titled 'Crash on launch' assigned to octocat."
       }
-     }
-    }
-   ]
-  }
- },
- {
-  "id": "nested-search-options",
-  "category": "nested",
-  "description": "An options object with a boolean.",
-  "tools": [
-   "search_files"
-  ],
-  "messages": [
-   {
-    "role": "user",
-    "content": "Search for 'Token' case-sensitively, only in .swift files."
-   }
-  ],
-  "expect": {
-   "calls": [
-    {
-     "name": "search_files",
-     "arguments": {
-      "query": {
-       "contains": "Token"
-      },
-      "options": {
-       "object": {
-        "caseSensitive": {
-         "equals": true
+    ],
+    "expect": {
+      "calls": [
+        {
+          "name": "create_issue",
+          "arguments": {
+            "title": {
+              "contains": "crash on launch"
+            },
+            "assignee": {
+              "object": {
+                "login": {
+                  "equals": "octocat"
+                }
+              }
+            }
+          }
         }
-       }
-      }
-     }
+      ]
     }
-   ]
+  },
+  {
+    "id": "nested-issue-labels",
+    "category": "nested",
+    "description": "An array of strings.",
+    "tools": ["create_issue"],
+    "messages": [
+      {
+        "role": "user",
+        "content": "Open an issue 'Slow startup' with the labels bug and performance."
+      }
+    ],
+    "expect": {
+      "calls": [
+        {
+          "name": "create_issue",
+          "arguments": {
+            "title": {
+              "contains": "slow startup"
+            },
+            "labels": {
+              "present": true
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "nested-search-options",
+    "category": "nested",
+    "description": "An options object with a boolean.",
+    "tools": ["search_files"],
+    "messages": [
+      {
+        "role": "user",
+        "content": "Search for 'Token' case-sensitively, only in .swift files."
+      }
+    ],
+    "expect": {
+      "calls": [
+        {
+          "name": "search_files",
+          "arguments": {
+            "query": {
+              "contains": "Token"
+            },
+            "options": {
+              "object": {
+                "caseSensitive": {
+                  "equals": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
   }
- }
 ]
