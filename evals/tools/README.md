@@ -53,3 +53,14 @@ Each model runs at temperature 0 with seed 42, on 3 fresh loads of the engine; a
 - Ready needs a pass rate of at least `ToolSuite.readyPassRate` (75%). A measured model below it is installed as Chat only even if the one-call install check passed. Unmeasured models keep the install check's result.
 - CI fails a pull request that lowers a committed model's pass rate by more than `ToolSuite.regressionMargin` (5 points) or deletes its results, compared with the target branch (`agentgate-tooleval check`).
 - Unit tests fail when the results were measured on a different set of cases, when `docs/MODEL_SCORES.md` is stale, or when the catalog's scores differ from the results.
+
+## Nightly catalog refresh
+
+`.github/workflows/catalog-refresh.yml` runs every night (and on demand from the Actions tab):
+
+1. Rebuilds `catalog.json` from Hugging Face with `mac/scripts/build_catalog.py` (each request is retried at most three times; the job stops after 120 minutes).
+2. Compares it with the committed catalog with `mac/scripts/catalog_diff.py`. A changed checksum for a file already in the catalog **fails the job** and nothing is proposed, because the upstream file may have been replaced. New, changed and removed models, licence changes, and gated or removed repositories are listed in the report.
+3. Scores each new or changed tool-calling model with this suite, using the best file under 3 GB, on the runner's CPU (`agentgate-tooleval run --cpu --loads 1`), at most two models per run. Larger or further models are listed for a run on a Mac. On CPU a 0.6B model takes about half an hour; long-output cases can take minutes per request, so CPU mode allows 15 minutes per request. A run where any request fails writes no results rather than counting it as a wrong answer.
+4. Opens a pull request with the catalog diff, the results and the report. It never merges. A change that is already proposed (same catalog) is not proposed again.
+
+Scheduled workflows run only from the default branch, so the nightly run starts once this workflow reaches `main`. Pull requests opened with the workflow token do not start CI; close and reopen the pull request to run the checks.

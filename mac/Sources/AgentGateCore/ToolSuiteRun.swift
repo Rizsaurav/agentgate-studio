@@ -138,6 +138,8 @@ public struct ToolScoreReport: Codable, Sendable, Equatable {
 /// Runs the suite against an OpenAI-compatible endpoint (the bundled engine), one case at a time.
 public struct ToolSuiteRunner: Sendable {
   public static let seed = 42
+  /// Starts the reason of a case whose request failed, as opposed to a wrong answer.
+  public static let requestFailed = "request failed: "
   public static let temperature = 0.0
 
   public var baseURL: URL
@@ -164,7 +166,7 @@ public struct ToolSuiteRunner: Sendable {
       } catch is CancellationError {
         throw CancellationError()
       } catch {
-        reason = "request failed: \(error)"
+        reason = Self.requestFailed + String(describing: error)
       }
       let outcome = CaseOutcome(
         id: item.id, category: item.category, runs: 1, passes: reason == nil ? 1 : 0, reason: reason ?? "",

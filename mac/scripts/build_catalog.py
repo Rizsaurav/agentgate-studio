@@ -9,6 +9,7 @@ Tool-calling scores come from the suite's results (evals/tools/results, written 
 """
 import json
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -40,14 +41,21 @@ TIERS = {
 }
 
 
-def get(path):
-    try:
-        with urllib.request.urlopen(f"https://huggingface.co/{path}", timeout=60) as r:
-            return json.load(r)
-    except urllib.error.HTTPError as e:
-        if e.code in (401, 404):
-            return None
-        raise
+def get(path, attempts=3):
+    """JSON from Hugging Face; None when gated or missing. Network errors and 5xx are retried, at most `attempts` times."""
+    for attempt in range(1, attempts + 1):
+        try:
+            with urllib.request.urlopen(f"https://huggingface.co/{path}", timeout=60) as r:
+                return json.load(r)
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403, 404):
+                return None
+            if e.code < 500 or attempt == attempts:
+                raise
+        except urllib.error.URLError:
+            if attempt == attempts:
+                raise
+        time.sleep(5 * attempt)
 
 
 def tree(repo):

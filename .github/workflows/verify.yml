@@ -35,6 +35,8 @@ jobs:
       - uses: actions/checkout@v4
       - run: swift build --package-path mac
       - run: swift test --package-path mac
+      - name: Catalog refresh scripts
+        run: python3 -m unittest discover -s mac/scripts -p 'test_*.py'
       # Tool-calling scores (evals/tools/results, #80) may not drop by more than the margin in
       # ToolSuite.regressionMargin compared with the branch the pull request targets. The scores are
       # measured on a Mac with the model downloaded and committed; CI compares them, it runs no model.
