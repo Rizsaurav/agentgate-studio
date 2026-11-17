@@ -61,7 +61,7 @@ struct SessionPage: View {
 
   private func conversation(_ session: Session) -> some View {
     VStack(spacing: 0) {
-      if session.messages.isEmpty {
+      if session.messages.isEmpty && (session.comparisons ?? []).isEmpty {
         VStack(spacing: 12) {
           IconTile(symbol: "sparkle", size: 56)
           Text("What are we working on?").font(.system(size: 15, weight: .semibold))
@@ -72,7 +72,10 @@ struct SessionPage: View {
           ScrollView {
             LazyVStack(alignment: .leading, spacing: 18) {
               ForEach(session.messages) { message in
-                Turn(message: message, thinking: app.thinking && message.id == session.messages.last?.id).id(message.id)
+                Turn(message: message, thinking: app.thinking && app.comparisonProgress == nil && message.id == session.messages.last?.id).id(message.id)
+              }
+              ForEach(session.comparisons ?? []) { comparison in
+                ComparisonView(comparison: comparison).id(comparison.id)
               }
             }
             .padding(22)
@@ -107,6 +110,12 @@ struct SessionPage: View {
         modelMenu(session)
         Text(modelState(session)).font(.system(size: 11)).foregroundStyle(Theme.muted)
         Spacer()
+        if let progress = app.comparisonProgress {
+          ProgressView().controlSize(.small)
+          Text("Comparing: \(progress.modelName) (\(progress.side) of \(progress.of))")
+            .font(.system(size: 11)).foregroundStyle(Theme.muted)
+        }
+        compareMenu(session)
         Button { send() } label: { Label("Send", systemImage: "arrow.up") }
           .buttonStyle(PrimaryButtonStyle())
           .keyboardShortcut(.return, modifiers: .command)
@@ -153,6 +162,41 @@ struct SessionPage: View {
     .accessibilityLabel("Model")
   }
 
+  /// Runs the task in the box (or the last task sent) on this session's model and on another one:
+  /// another installed model, or a cloud model of a provider the user has a key for.
+  private func compareMenu(_ session: Session) -> some View {
+    let others = app.installed.filter { $0.id != session.modelId }
+    let task = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      ? session.messages.last(where: { $0.role == .user })?.content ?? "" : draft
+    func run(_ id: String) {
+      draft = ""
+      app.compare(in: session.id, task: task, with: id)
+    }
+    return Menu {
+      ForEach(others) { model in
+        Button("\(session.modelName) and \(model.name)") { run(model.id) }
+      }
+      ForEach(app.keyedProviders) { provider in
+        Menu("\(provider.name) (cloud)") {
+          if let models = app.cloudModels[provider.id] {
+            ForEach(models, id: \.self) { model in
+              let id = ModelID.cloud(provider, model)
+              if id != session.modelId { Button(model) { run(id) } }
+            }
+          } else {
+            Button("List models") { Task { await app.loadCloudModels(provider) } }
+          }
+        }
+      }
+    } label: {
+      Label("Compare with…", systemImage: "square.split.2x1").font(.system(size: 12))
+    }
+    .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+    .disabled(!app.agentOn || app.generating || app.comparisonProgress != nil || (others.isEmpty && app.keyedProviders.isEmpty)
+              || task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    .help("Runs the task on both models, one after the other, each in its own copy of the project. The project itself is not changed. A cloud model is sent what the agent reads in that copy.")
+  }
+
   private func send() {
     let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty, app.agentOn else { return }
@@ -177,5 +221,70 @@ private struct Turn: View {
     }
     .font(.system(size: 14))
     .frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+/// Two models' answers to the same task, side by side.
+private struct ComparisonView: View {
+  let comparison: Comparison
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      Label("Compared: \(comparison.task)", systemImage: "square.split.2x1")
+        .font(.system(size: 13, weight: .semibold)).lineLimit(2)
+      Text("Each model worked in its own copy of the project; the project was not changed.")
+        .font(.system(size: 11)).foregroundStyle(Theme.muted)
+      HStack(alignment: .top, spacing: 12) {
+        ForEach(comparison.sides) { side in
+          SideView(side: side).frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+      }
+    }
+    .padding(14)
+    .background(RoundedRectangle(cornerRadius: 12).fill(Theme.surface))
+  }
+}
+
+private struct SideView: View {
+  let side: ComparisonSide
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text(side.modelName).font(.system(size: 13, weight: .semibold))
+      Text(stats).font(.system(size: 11)).foregroundStyle(Theme.muted)
+      if let error = side.error {
+        Text(error).font(.system(size: 12)).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+      }
+      Text(side.answer.isEmpty ? "No answer." : side.answer)
+        .font(.system(size: 12)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+      if !side.tools.isEmpty {
+        DisclosureGroup("\(plural(side.tools.count, "tool call"))") {
+          VStack(alignment: .leading, spacing: 4) {
+            ForEach(Array(side.tools.enumerated()), id: \.offset) { _, call in
+              Text("\(call.name) \(call.detail) · \(call.status)").font(.system(size: 11, design: .monospaced)).lineLimit(2)
+            }
+          }
+        }
+        .font(.system(size: 12))
+      }
+      if !side.filesChanged.isEmpty {
+        DisclosureGroup("\(plural(side.filesChanged.count, "file")) changed in its copy") {
+          VStack(alignment: .leading, spacing: 2) {
+            ForEach(side.filesChanged, id: \.self) { Text($0).font(.system(size: 11, design: .monospaced)) }
+          }
+        }
+        .font(.system(size: 12))
+      }
+    }
+    .padding(12)
+    .background(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.line))
+  }
+
+  private var stats: String {
+    var parts = [String(format: "%.1f s", side.seconds)]
+    if let input = side.inputTokens, let output = side.outputTokens { parts.append("\(input) in / \(output) out tokens") }
+    else { parts.append("tokens not reported") }
+    parts.append(plural(side.tools.count, "tool call"))
+    return parts.joined(separator: " · ")
   }
 }

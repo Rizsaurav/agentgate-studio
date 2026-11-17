@@ -487,6 +487,17 @@ final class AppModel {
   private var agentConnected = false
   private var loggedRefusals: Set<String> = []
   private var parts: [(id: String, messageID: String, text: String)] = []
+  /// A comparison in progress (#89): which side is running.
+  struct ComparisonProgress: Equatable {
+    var side: Int
+    var of: Int
+    var modelName: String
+  }
+  private(set) var comparisonProgress: ComparisonProgress?
+  /// While a comparison side runs: its private copy of the project, its harness session and its answer.
+  private var comparisonFolder: URL?
+  private var comparisonAgentSession: String?
+  private var comparisonAnswer = ""
   private var roles: [String: String] = [:]
 
   /// Sends a task in a session. The agent harness runs it in the project's folder with the session's model.
@@ -534,6 +545,117 @@ final class AppModel {
     }
   }
 
+  /// A model a comparison side can use: an installed local model, or a cloud model whose provider has a key.
+  /// Returns its display name, or nil when it cannot be used.
+  func comparableName(_ id: String) -> String? {
+    if let (provider, model) = ModelID.parseCloud(id) {
+      return provider.keychain.exists() ? "\(model) (\(provider.name))" : nil
+    }
+    return installed.first { $0.id == id }?.name
+  }
+
+  /// Runs `task` on the session's model and then on `otherId`, one after the other, each in its own copy
+  /// of the project made before either run, so both start from the same state and the project itself
+  /// is never changed. Edits and commands still ask, as in any session. The result is saved with the session.
+  func compare(in sessionId: UUID, task: String, with otherId: String) {
+    let task = task.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !generating, comparisonProgress == nil, !task.isEmpty,
+          let session = workspace.sessions.first(where: { $0.id == sessionId }),
+          session.modelId != otherId,
+          let firstName = comparableName(session.modelId), let secondName = comparableName(otherId) else { return }
+    let first = (id: session.modelId, name: firstName)
+    let second = (id: otherId, name: secondName)
+    guard let folder = project(session.projectId)?.folder else {
+      errorMessage = "This project has no folder. Open a folder to compare models on it."
+      return
+    }
+    let project = URL(fileURLWithPath: folder)
+    let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("agentgate-compare", isDirectory: true)
+    Task {
+      var record = Comparison(task: task)
+      defer { comparisonProgress = nil }
+      // Both copies are made before the first run, so the second side cannot see the first side's edits.
+      var copies: [ProjectCopy] = []
+      do {
+        for _ in 0..<2 { copies.append(try ProjectCopy.make(of: project, in: scratch)) }
+      } catch {
+        copies.forEach { $0.discard() }
+        errorMessage = "Could not copy the project for a comparison: \(error)"
+        return
+      }
+      for (index, (model, copy)) in zip([first, second], copies).enumerated() {
+        comparisonProgress = ComparisonProgress(side: index + 1, of: 2, modelName: model.name)
+        record.sides.append(await runComparisonSide(model, task: task, copy: copy, in: sessionId))
+        copy.discard()
+      }
+      guard let index = workspace.sessions.firstIndex(where: { $0.id == sessionId }) else { return }
+      workspace.sessions[index].comparisons = (workspace.sessions[index].comparisons ?? []) + [record]
+      do { try persist() } catch { errorMessage = String(describing: error) }
+    }
+  }
+
+  /// One side: a local model is loaded first; a cloud model goes through the gateway with no loading.
+  private func runComparisonSide(_ model: (id: String, name: String), task: String, copy: ProjectCopy, in sessionId: UUID) async -> ComparisonSide {
+    var side = ComparisonSide(modelId: model.id, modelName: model.name)
+    comparisonFolder = copy.folder
+    comparisonAnswer = ""
+    comparisonAgentSession = nil
+    parts = []
+    roles = [:]
+    activity = []
+    generating = true
+    thinking = true
+    streamingSession = sessionId
+    let start = Date()
+    defer {
+      comparisonFolder = nil
+      comparisonAgentSession = nil
+      // The harness was started in the copy; the next task starts one in the project again.
+      stopAgentServer()
+    }
+    do {
+      if !ModelID.isCloud(model.id), active?.id != model.id || runtime?.isRunning != true {
+        guard let entry = catalog?.model(model.id), let load = select(entry), await load.value, runtime != nil else {
+          throw AgentError.missingBinary("\(model.name) could not be loaded.")
+        }
+      }
+      let server = try await agentServer(folder: copy.folder, model: model.id)
+      let agentId = try await server.client.createSession(title: "Compare: \(task.prefix(50))")
+      comparisonAgentSession = agentId
+      for _ in 0..<100 where !agentConnected { try await Task.sleep(nanoseconds: 50_000_000) }
+      try await server.client.prompt(session: agentId, text: task, model: model.id)
+      try await watchForQuestions(server)
+      if generating {
+        side.error = "Stopped after 30 minutes."
+        try? await server.client.abort(session: agentId)
+        finishTurn()
+      }
+      do {
+        if let tokens = try await server.client.tokens(session: agentId) {
+          side.inputTokens = tokens.input
+          side.outputTokens = tokens.output
+        }
+      } catch {
+        side.error = [side.error, "Token counts could not be read (\(error))."].compactMap { $0 }.joined(separator: " ")
+      }
+    } catch {
+      side.error = String(describing: error)
+      finishTurn()
+    }
+    side.seconds = (Date().timeIntervalSince(start) * 10).rounded() / 10
+    // Paths in the copy are shown relative to the project, like everywhere else.
+    side.answer = Redaction.clean(comparisonAnswer, root: copy.folder, label: "<project>")
+    side.tools = activity.map {
+      ComparisonSide.ToolCall(name: $0.tool, detail: Redaction.clean($0.detail, root: copy.folder, label: "<project>"), status: $0.status)
+    }
+    do {
+      side.filesChanged = try copy.changes()
+    } catch {
+      side.error = [side.error, "Changed files could not be listed (\(error))."].compactMap { $0 }.joined(separator: " ")
+    }
+    return side
+  }
+
   /// A backstop for the event stream: while a turn runs, look for a pending question every two seconds.
   /// A turn is capped at 30 minutes.
   private func watchForQuestions(_ server: AgentServer) async throws {
@@ -547,7 +669,8 @@ final class AppModel {
 
   func stopAgent() {
     guard generating, let id = streamingSession,
-          let agentId = workspace.sessions.first(where: { $0.id == id })?.agentSession, let agent else { return }
+          let agentId = comparisonAgentSession ?? workspace.sessions.first(where: { $0.id == id })?.agentSession,
+          let agent else { return }
     Task { try? await agent.client.abort(session: agentId) }
   }
 
@@ -570,6 +693,7 @@ final class AppModel {
   // MARK: Security
 
   private var streamingFolder: URL? {
+    if let comparisonFolder { return comparisonFolder }
     guard let id = streamingSession,
           let folder = workspace.sessions.first(where: { $0.id == id }).flatMap({ project($0.projectId)?.folder })
     else { return nil }
@@ -716,6 +840,8 @@ final class AppModel {
     let text = parts.filter { roles[$0.messageID] == "assistant" }.map(\.text).joined(separator: "\n\n")
     guard !text.isEmpty else { return }
     thinking = false
+    // A comparison's answers are kept apart from the conversation.
+    if comparisonFolder != nil { comparisonAnswer = text; return }
     workspace.sessions[index].messages[last].content = text
   }
 
@@ -729,6 +855,7 @@ final class AppModel {
   }
 
   private func append(_ text: String, to sessionId: UUID) {
+    if comparisonFolder != nil { comparisonAnswer += text; return }
     guard let index = workspace.sessions.firstIndex(where: { $0.id == sessionId }),
           let last = workspace.sessions[index].messages.indices.last else { return }
     workspace.sessions[index].messages[last].content += text
