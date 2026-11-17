@@ -251,7 +251,10 @@ private struct CatalogRow: View {
   }
 
   private var detail: String {
-    let tools = option.model.toolCalling ? "tools" : "chat only"
+    var tools = option.model.toolCalling ? "tools" : "chat only"
+    if option.model.toolCalling, let score = option.model.toolScore {
+      tools = "tools \(Int((score.passRate * 100).rounded()))%"
+    }
     if let plan = option.plan {
       return "\(option.model.publisher) · \(plan.quant.rawValue) · \(ModelPlanner.gb(plan.downloadBytes)) · \(tools)"
     }
@@ -261,6 +264,10 @@ private struct CatalogRow: View {
 
   private var help: String {
     if case .incompatible(let reason) = option.state { return reason }
-    return option.plan?.reason ?? ""
+    var lines = [option.plan?.reason ?? ""]
+    if let score = option.model.toolScore {
+      lines.append("Tool-calling suite: \(Int((score.passRate * 100).rounded()))% at \(score.quant), \(score.engine), \(score.measured).")
+    }
+    return lines.filter { !$0.isEmpty }.joined(separator: "\n")
   }
 }

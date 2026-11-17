@@ -3,6 +3,9 @@
 
 Run after changing MODELS or TIERS. Sizes, checksums and architecture come from Hugging Face,
 so the catalog never carries hand-typed numbers.
+
+Tool-calling scores come from the suite's results (evals/tools/results, written by
+`agentgate-tooleval run`). `--scores` copies them into the existing catalog without the network.
 """
 import json
 import sys
@@ -81,6 +84,23 @@ def licence(repo):
     return (info.get("cardData") or {}).get("license") or "see model card"
 
 
+RESULTS = Path(__file__).resolve().parents[2] / "evals/tools/results"
+
+
+def apply_scores(catalog):
+    """Sets each model's toolScore from its measured results: the highest-quality quant measured."""
+    results = [json.loads(f.read_text()) for f in sorted(RESULTS.glob("*.json"))] if RESULTS.is_dir() else []
+    for entry in catalog["models"]:
+        mine = sorted((r for r in results if r["model"] == entry["id"]), key=lambda r: QUANTS.index(r["quant"]))
+        if mine:
+            best = mine[0]
+            entry["toolScore"] = {"passRate": round(best["passed"] / best["total"], 4), "quant": best["quant"],
+                                  "engine": best["engine"], "measured": best["date"]}
+        else:
+            entry.pop("toolScore", None)
+    return catalog
+
+
 def build():
     models = []
     for mid, name, publisher, gguf_repo, source, mlx, tools in MODELS:
@@ -111,10 +131,11 @@ def build():
                 entry["mlx"] = variants
         models.append(entry)
         print(f"{mid}: {[f['quant'] for f in files]} source={'source' in entry} mlx={[v['bits'] for v in entry.get('mlx', [])]}", file=sys.stderr)
-    return {"version": 1, "tiers": TIERS, "models": models}
+    return apply_scores({"version": 1, "tiers": TIERS, "models": models})
 
 
 if __name__ == "__main__":
     out = Path(__file__).resolve().parent.parent / "Sources/AgentGateCore/Resources/catalog.json"
-    out.write_text(json.dumps(build(), indent=1) + "\n")
+    catalog = apply_scores(json.loads(out.read_text())) if "--scores" in sys.argv[1:] else build()
+    out.write_text(json.dumps(catalog, indent=1) + "\n")
     print(f"wrote {out}", file=sys.stderr)

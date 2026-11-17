@@ -26,6 +26,14 @@ public struct RuntimeConfig: Codable, Sendable, Equatable {
   public var flashAttention: Bool
   public var threads: Int
 
+  public init(context: Int, gpuLayers: Int, kvCacheType: String, flashAttention: Bool, threads: Int) {
+    self.context = context
+    self.gpuLayers = gpuLayers
+    self.kvCacheType = kvCacheType
+    self.flashAttention = flashAttention
+    self.threads = threads
+  }
+
   public static func `for`(_ plan: ModelPlan, profile: HardwareProfile, kvCacheType: String = "q8_0") -> RuntimeConfig {
     RuntimeConfig(
       context: plan.context,

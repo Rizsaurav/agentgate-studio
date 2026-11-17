@@ -1,0 +1,189 @@
+[
+ {
+  "id": "multiple-weather-and-stock",
+  "category": "multiple",
+  "description": "Two different tools in one reply.",
+  "tools": [
+   "get_weather",
+   "get_stock_price"
+  ],
+  "messages": [
+   {
+    "role": "user",
+    "content": "Tell me the weather in Oslo and the price of NVDA."
+   }
+  ],
+  "expect": {
+   "calls": [
+    {
+     "name": "get_weather",
+     "arguments": {
+      "city": {
+       "contains": "oslo"
+      }
+     }
+    },
+    {
+     "name": "get_stock_price",
+     "arguments": {
+      "symbol": {
+       "equals": "NVDA"
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "id": "multiple-read-and-list",
+  "category": "multiple",
+  "description": "Read a file and list a folder.",
+  "tools": [
+   "read_file",
+   "list_directory"
+  ],
+  "messages": [
+   {
+    "role": "user",
+    "content": "Open Package.swift and also list the Tests folder."
+   }
+  ],
+  "expect": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": {
+       "contains": "Package.swift"
+      }
+     }
+    },
+    {
+     "name": "list_directory",
+     "arguments": {
+      "path": {
+       "contains": "Tests"
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "id": "multiple-user-and-email",
+  "category": "multiple",
+  "description": "Lookup and an explicit, complete send.",
+  "tools": [
+   "lookup_user",
+   "send_email"
+  ],
+  "messages": [
+   {
+    "role": "user",
+    "content": "Look up bob@example.com, and send an email to alice@example.com with subject 'Lunch' and body 'Noon works.'"
+   }
+  ],
+  "expect": {
+   "calls": [
+    {
+     "name": "lookup_user",
+     "arguments": {
+      "email": {
+       "equals": "bob@example.com"
+      }
+     }
+    },
+    {
+     "name": "send_email",
+     "arguments": {
+      "to": {
+       "equals": "alice@example.com"
+      },
+      "subject": {
+       "contains": "lunch"
+      },
+      "body": {
+       "contains": "noon"
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "id": "multiple-convert-and-weather",
+  "category": "multiple",
+  "description": "Two tools, with a number argument.",
+  "tools": [
+   "convert_currency",
+   "get_weather"
+  ],
+  "messages": [
+   {
+    "role": "user",
+    "content": "Convert 50 GBP to JPY, and what's the weather in Tokyo?"
+   }
+  ],
+  "expect": {
+   "calls": [
+    {
+     "name": "convert_currency",
+     "arguments": {
+      "amount": {
+       "equals": 50
+      },
+      "from": {
+       "equals": "GBP"
+      },
+      "to": {
+       "equals": "JPY"
+      }
+     }
+    },
+    {
+     "name": "get_weather",
+     "arguments": {
+      "city": {
+       "contains": "tokyo"
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "id": "multiple-search-and-tests",
+  "category": "multiple",
+  "description": "Search and run tests together.",
+  "tools": [
+   "search_files",
+   "run_tests"
+  ],
+  "messages": [
+   {
+    "role": "user",
+    "content": "Search for 'deprecated' and run the WebTests target."
+   }
+  ],
+  "expect": {
+   "calls": [
+    {
+     "name": "search_files",
+     "arguments": {
+      "query": {
+       "contains": "deprecated"
+      }
+     }
+    },
+    {
+     "name": "run_tests",
+     "arguments": {
+      "target": {
+       "equals": "WebTests"
+      }
+     }
+    }
+   ]
+  }
+ }
+]

@@ -1,0 +1,233 @@
+[
+ {
+  "id": "recovery-wrong-path",
+  "category": "recovery",
+  "description": "Corrects a path after a not-found error.",
+  "tools": [
+   "read_file"
+  ],
+  "messages": [
+   {
+    "role": "user",
+    "content": "Read the readme."
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "call_1",
+      "type": "function",
+      "function": {
+       "name": "read_file",
+       "arguments": "{\"path\": \"readme.txt\"}"
+      }
+     }
+    ]
+   },
+   {
+    "role": "tool",
+    "tool_call_id": "call_1",
+    "content": "Error: readme.txt not found. Files here: README.md, Package.swift, LICENSE"
+   }
+  ],
+  "expect": {
+   "calls": [
+    {
+     "name": "read_file",
+     "arguments": {
+      "path": {
+       "equals": "README.md"
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "id": "recovery-bad-city",
+  "category": "recovery",
+  "description": "Uses the suggestion in the error.",
+  "tools": [
+   "get_weather"
+  ],
+  "messages": [
+   {
+    "role": "user",
+    "content": "Weather in Pariss?"
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "call_1",
+      "type": "function",
+      "function": {
+       "name": "get_weather",
+       "arguments": "{\"city\": \"Pariss\"}"
+      }
+     }
+    ]
+   },
+   {
+    "role": "tool",
+    "tool_call_id": "call_1",
+    "content": "Error: unknown city 'Pariss'. Did you mean 'Paris'?"
+   }
+  ],
+  "expect": {
+   "calls": [
+    {
+     "name": "get_weather",
+     "arguments": {
+      "city": {
+       "contains": "paris"
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "id": "recovery-currency-code",
+  "category": "recovery",
+  "description": "Fixes an argument format.",
+  "tools": [
+   "convert_currency"
+  ],
+  "messages": [
+   {
+    "role": "user",
+    "content": "Convert 5 dollars to euros."
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "call_1",
+      "type": "function",
+      "function": {
+       "name": "convert_currency",
+       "arguments": "{\"amount\": 5, \"from\": \"dollars\", \"to\": \"euros\"}"
+      }
+     }
+    ]
+   },
+   {
+    "role": "tool",
+    "tool_call_id": "call_1",
+    "content": "Error: 'from' and 'to' must be three-letter ISO codes such as USD or EUR."
+   }
+  ],
+  "expect": {
+   "calls": [
+    {
+     "name": "convert_currency",
+     "arguments": {
+      "amount": {
+       "equals": 5
+      },
+      "from": {
+       "equals": "USD"
+      },
+      "to": {
+       "equals": "EUR"
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "id": "recovery-missing-target",
+  "category": "recovery",
+  "description": "Adds the argument the error names.",
+  "tools": [
+   "run_tests"
+  ],
+  "messages": [
+   {
+    "role": "user",
+    "content": "Run the tests for AgentGateCoreTests."
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "call_1",
+      "type": "function",
+      "function": {
+       "name": "run_tests",
+       "arguments": "{}"
+      }
+     }
+    ]
+   },
+   {
+    "role": "tool",
+    "tool_call_id": "call_1",
+    "content": "Error: missing required argument 'target'. Example: {\"target\": \"AgentGateCoreTests\"}"
+   }
+  ],
+  "expect": {
+   "calls": [
+    {
+     "name": "run_tests",
+     "arguments": {
+      "target": {
+       "equals": "AgentGateCoreTests"
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "id": "recovery-retry-transient",
+  "category": "recovery",
+  "description": "Retries the same call after a transient error.",
+  "tools": [
+   "lookup_user"
+  ],
+  "messages": [
+   {
+    "role": "user",
+    "content": "Look up ada@example.com."
+   },
+   {
+    "role": "assistant",
+    "content": "",
+    "tool_calls": [
+     {
+      "id": "call_1",
+      "type": "function",
+      "function": {
+       "name": "lookup_user",
+       "arguments": "{\"email\": \"ada@example.com\"}"
+      }
+     }
+    ]
+   },
+   {
+    "role": "tool",
+    "tool_call_id": "call_1",
+    "content": "Error: service busy (503). The request can be retried now."
+   }
+  ],
+  "expect": {
+   "calls": [
+    {
+     "name": "lookup_user",
+     "arguments": {
+      "email": {
+       "equals": "ada@example.com"
+      }
+     }
+    }
+   ]
+  }
+ }
+]

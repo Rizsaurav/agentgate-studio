@@ -1,0 +1,141 @@
+[
+ {
+  "id": "selection-stock-among-three",
+  "category": "selection",
+  "description": "Several tools offered; only one fits.",
+  "tools": [
+   "get_weather",
+   "get_stock_price",
+   "convert_currency"
+  ],
+  "messages": [
+   {
+    "role": "user",
+    "content": "What is MSFT trading at?"
+   }
+  ],
+  "expect": {
+   "calls": [
+    {
+     "name": "get_stock_price",
+     "arguments": {
+      "symbol": {
+       "equals": "MSFT"
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "id": "selection-search-not-read",
+  "category": "selection",
+  "description": "Searching, not reading one file.",
+  "tools": [
+   "read_file",
+   "search_files"
+  ],
+  "messages": [
+   {
+    "role": "user",
+    "content": "Find every file that mentions FIXME."
+   }
+  ],
+  "expect": {
+   "calls": [
+    {
+     "name": "search_files",
+     "arguments": {
+      "query": {
+       "contains": "FIXME"
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "id": "selection-event-not-email",
+  "category": "selection",
+  "description": "A calendar request goes to the calendar tool.",
+  "tools": [
+   "send_email",
+   "create_event"
+  ],
+  "messages": [
+   {
+    "role": "user",
+    "content": "Put 'Sprint planning' on my calendar for 2026-11-20T10:00."
+   }
+  ],
+  "expect": {
+   "calls": [
+    {
+     "name": "create_event",
+     "arguments": {
+      "title": {
+       "contains": "sprint planning"
+      },
+      "start": {
+       "contains": "2026-11-20T10:00"
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "id": "selection-tests-not-read",
+  "category": "selection",
+  "description": "Running tests, not reading test files.",
+  "tools": [
+   "read_file",
+   "run_tests"
+  ],
+  "messages": [
+   {
+    "role": "user",
+    "content": "Run the AgentGateCoreTests test target."
+   }
+  ],
+  "expect": {
+   "calls": [
+    {
+     "name": "run_tests",
+     "arguments": {
+      "target": {
+       "equals": "AgentGateCoreTests"
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "id": "selection-user-not-weather",
+  "category": "selection",
+  "description": "An unrelated tool is offered first.",
+  "tools": [
+   "get_weather",
+   "lookup_user"
+  ],
+  "messages": [
+   {
+    "role": "user",
+    "content": "Who owns the account ada@example.com?"
+   }
+  ],
+  "expect": {
+   "calls": [
+    {
+     "name": "lookup_user",
+     "arguments": {
+      "email": {
+       "equals": "ada@example.com"
+      }
+     }
+    }
+   ]
+  }
+ }
+]

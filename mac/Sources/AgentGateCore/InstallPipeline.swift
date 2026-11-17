@@ -137,8 +137,9 @@ public struct InstallPipeline: Sendable {
       let readiness = try await at(.test, "Asking for a short reply, then a tool call…") {
         let result = try await verifier.verify(baseURL: runtime.baseURL, apiKey: runtime.apiKey, model: model.id)
         if runtime.outOfMemory { throw RuntimeError.outOfMemory }
-        // A model the catalog marks as without tools is never offered for agent sessions.
-        return model.toolCalling ? result : .chatOnly
+        // A model the catalog marks as without tools is never offered for agent sessions, nor one
+        // whose measured tool-calling score (evals/tools) is below the bar, even if this one probe passed.
+        return model.toolCalling ? ToolSuite.readiness(probe: result, measured: model.toolScore?.passRate) : .chatOnly
       }
       let installed = InstalledModel(
         id: model.id, name: model.name, quant: plan.quant, file: file.file, sha256: file.sha256,
