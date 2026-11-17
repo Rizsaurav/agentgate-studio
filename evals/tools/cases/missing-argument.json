@@ -1,87 +1,77 @@
 [
- {
-  "id": "missing-city",
-  "category": "missing-argument",
-  "description": "A required argument is missing: ask, do not invent.",
-  "tools": [
-   "get_weather"
-  ],
-  "messages": [
-   {
-    "role": "user",
-    "content": "What's the weather like?"
-   }
-  ],
-  "expect": {
-   "noCall": true
+  {
+    "id": "missing-city",
+    "category": "missing-argument",
+    "description": "A required argument is missing: ask, do not invent.",
+    "tools": ["get_weather"],
+    "messages": [
+      {
+        "role": "user",
+        "content": "What's the weather like?"
+      }
+    ],
+    "expect": {
+      "noCall": true
+    }
+  },
+  {
+    "id": "missing-amount",
+    "category": "missing-argument",
+    "description": "No amount given for a conversion.",
+    "tools": ["convert_currency"],
+    "messages": [
+      {
+        "role": "user",
+        "content": "Convert my money to euros."
+      }
+    ],
+    "expect": {
+      "noCall": true
+    }
+  },
+  {
+    "id": "missing-recipient",
+    "category": "missing-argument",
+    "description": "No address and no text for an email.",
+    "tools": ["send_email"],
+    "messages": [
+      {
+        "role": "user",
+        "content": "Send an email to my manager."
+      }
+    ],
+    "expect": {
+      "noCall": true
+    }
+  },
+  {
+    "id": "missing-event-time",
+    "category": "missing-argument",
+    "description": "An event without a start time.",
+    "tools": ["create_event"],
+    "messages": [
+      {
+        "role": "user",
+        "content": "Schedule a meeting called Retro."
+      }
+    ],
+    "expect": {
+      "noCall": true
+    }
+  },
+  {
+    "id": "missing-user-email",
+    "category": "missing-argument",
+    "description": "A lookup with no address.",
+    "tools": ["lookup_user"],
+    "messages": [
+      {
+        "role": "user",
+        "content": "Look up that user for me."
+      }
+    ],
+    "expect": {
+      "noCall": true
+    }
   }
- },
- {
-  "id": "missing-amount",
-  "category": "missing-argument",
-  "description": "No amount given for a conversion.",
-  "tools": [
-   "convert_currency"
-  ],
-  "messages": [
-   {
-    "role": "user",
-    "content": "Convert my money to euros."
-   }
-  ],
-  "expect": {
-   "noCall": true
-  }
- },
- {
-  "id": "missing-recipient",
-  "category": "missing-argument",
-  "description": "No address and no text for an email.",
-  "tools": [
-   "send_email"
-  ],
-  "messages": [
-   {
-    "role": "user",
-    "content": "Send an email to my manager."
-   }
-  ],
-  "expect": {
-   "noCall": true
-  }
- },
- {
-  "id": "missing-event-time",
-  "category": "missing-argument",
-  "description": "An event without a start time.",
-  "tools": [
-   "create_event"
-  ],
-  "messages": [
-   {
-    "role": "user",
-    "content": "Schedule a meeting called Retro."
-   }
-  ],
-  "expect": {
-   "noCall": true
-  }
- },
- {
-  "id": "missing-user-email",
-  "category": "missing-argument",
-  "description": "A lookup with no address.",
-  "tools": [
-   "lookup_user"
-  ],
-  "messages": [
-   {
-    "role": "user",
-    "content": "Look up that user for me."
-   }
-  ],
-  "expect": {
-   "noCall": true
-  }
- }
 ]

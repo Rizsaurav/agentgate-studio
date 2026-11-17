@@ -16,8 +16,17 @@ A case lists the tools offered, the chat messages to send, and what a correct re
   "category": "single",
   "description": "One tool, one obvious argument.",
   "tools": ["get_weather"],
-  "messages": [{ "role": "user", "content": "What is the weather in Paris right now?" }],
-  "expect": { "calls": [{ "name": "get_weather", "arguments": { "city": { "contains": "paris" } } }] }
+  "messages": [
+    { "role": "user", "content": "What is the weather in Paris right now?" }
+  ],
+  "expect": {
+    "calls": [
+      {
+        "name": "get_weather",
+        "arguments": { "city": { "contains": "paris" } }
+      }
+    ]
+  }
 }
 ```
 

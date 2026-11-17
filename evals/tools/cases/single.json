@@ -1,164 +1,152 @@
 [
- {
-  "id": "single-weather",
-  "category": "single",
-  "description": "One tool, one obvious argument.",
-  "tools": [
-   "get_weather"
-  ],
-  "messages": [
-   {
-    "role": "user",
-    "content": "What is the weather in Paris right now?"
-   }
-  ],
-  "expect": {
-   "calls": [
-    {
-     "name": "get_weather",
-     "arguments": {
-      "city": {
-       "contains": "paris"
+  {
+    "id": "single-weather",
+    "category": "single",
+    "description": "One tool, one obvious argument.",
+    "tools": ["get_weather"],
+    "messages": [
+      {
+        "role": "user",
+        "content": "What is the weather in Paris right now?"
       }
-     }
+    ],
+    "expect": {
+      "calls": [
+        {
+          "name": "get_weather",
+          "arguments": {
+            "city": {
+              "contains": "paris"
+            }
+          }
+        }
+      ]
     }
-   ]
-  }
- },
- {
-  "id": "single-read-file",
-  "category": "single",
-  "description": "Reads the file the user names.",
-  "tools": [
-   "read_file"
-  ],
-  "messages": [
-   {
-    "role": "user",
-    "content": "Show me what is in README.md."
-   }
-  ],
-  "expect": {
-   "calls": [
-    {
-     "name": "read_file",
-     "arguments": {
-      "path": {
-       "contains": "README.md"
+  },
+  {
+    "id": "single-read-file",
+    "category": "single",
+    "description": "Reads the file the user names.",
+    "tools": ["read_file"],
+    "messages": [
+      {
+        "role": "user",
+        "content": "Show me what is in README.md."
       }
-     }
+    ],
+    "expect": {
+      "calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": {
+              "contains": "README.md"
+            }
+          }
+        }
+      ]
     }
-   ]
-  }
- },
- {
-  "id": "single-convert-number",
-  "category": "single",
-  "description": "Passes a number as a number, and both currency codes.",
-  "tools": [
-   "convert_currency"
-  ],
-  "messages": [
-   {
-    "role": "user",
-    "content": "Convert 100 US dollars to euros."
-   }
-  ],
-  "expect": {
-   "calls": [
-    {
-     "name": "convert_currency",
-     "arguments": {
-      "amount": {
-       "equals": 100
-      },
-      "from": {
-       "equals": "USD"
-      },
-      "to": {
-       "equals": "EUR"
+  },
+  {
+    "id": "single-convert-number",
+    "category": "single",
+    "description": "Passes a number as a number, and both currency codes.",
+    "tools": ["convert_currency"],
+    "messages": [
+      {
+        "role": "user",
+        "content": "Convert 100 US dollars to euros."
       }
-     }
+    ],
+    "expect": {
+      "calls": [
+        {
+          "name": "convert_currency",
+          "arguments": {
+            "amount": {
+              "equals": 100
+            },
+            "from": {
+              "equals": "USD"
+            },
+            "to": {
+              "equals": "EUR"
+            }
+          }
+        }
+      ]
     }
-   ]
-  }
- },
- {
-  "id": "single-stock",
-  "category": "single",
-  "description": "Maps a company to its ticker argument.",
-  "tools": [
-   "get_stock_price"
-  ],
-  "messages": [
-   {
-    "role": "user",
-    "content": "What is the current price of AAPL?"
-   }
-  ],
-  "expect": {
-   "calls": [
-    {
-     "name": "get_stock_price",
-     "arguments": {
-      "symbol": {
-       "equals": "AAPL"
+  },
+  {
+    "id": "single-stock",
+    "category": "single",
+    "description": "Maps a company to its ticker argument.",
+    "tools": ["get_stock_price"],
+    "messages": [
+      {
+        "role": "user",
+        "content": "What is the current price of AAPL?"
       }
-     }
+    ],
+    "expect": {
+      "calls": [
+        {
+          "name": "get_stock_price",
+          "arguments": {
+            "symbol": {
+              "equals": "AAPL"
+            }
+          }
+        }
+      ]
     }
-   ]
-  }
- },
- {
-  "id": "single-lookup-user",
-  "category": "single",
-  "description": "Copies an email address exactly.",
-  "tools": [
-   "lookup_user"
-  ],
-  "messages": [
-   {
-    "role": "user",
-    "content": "Look up the account for grace.hopper@example.com."
-   }
-  ],
-  "expect": {
-   "calls": [
-    {
-     "name": "lookup_user",
-     "arguments": {
-      "email": {
-       "equals": "grace.hopper@example.com"
+  },
+  {
+    "id": "single-lookup-user",
+    "category": "single",
+    "description": "Copies an email address exactly.",
+    "tools": ["lookup_user"],
+    "messages": [
+      {
+        "role": "user",
+        "content": "Look up the account for grace.hopper@example.com."
       }
-     }
+    ],
+    "expect": {
+      "calls": [
+        {
+          "name": "lookup_user",
+          "arguments": {
+            "email": {
+              "equals": "grace.hopper@example.com"
+            }
+          }
+        }
+      ]
     }
-   ]
-  }
- },
- {
-  "id": "single-list-directory",
-  "category": "single",
-  "description": "Lists the folder the user names.",
-  "tools": [
-   "list_directory"
-  ],
-  "messages": [
-   {
-    "role": "user",
-    "content": "What is inside the Sources folder?"
-   }
-  ],
-  "expect": {
-   "calls": [
-    {
-     "name": "list_directory",
-     "arguments": {
-      "path": {
-       "contains": "Sources"
+  },
+  {
+    "id": "single-list-directory",
+    "category": "single",
+    "description": "Lists the folder the user names.",
+    "tools": ["list_directory"],
+    "messages": [
+      {
+        "role": "user",
+        "content": "What is inside the Sources folder?"
       }
-     }
+    ],
+    "expect": {
+      "calls": [
+        {
+          "name": "list_directory",
+          "arguments": {
+            "path": {
+              "contains": "Sources"
+            }
+          }
+        }
+      ]
     }
-   ]
   }
- }
 ]
