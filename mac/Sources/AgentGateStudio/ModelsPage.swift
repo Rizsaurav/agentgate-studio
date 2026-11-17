@@ -268,6 +268,9 @@ private struct CatalogRow: View {
     if let score = option.model.toolScore {
       lines.append("Tool-calling suite: \(Int((score.passRate * 100).rounded()))% at \(score.quant), \(score.engine), \(score.measured).")
     }
+    if !option.model.profile.knownIssues.isEmpty {
+      lines.append("Known issues: " + option.model.profile.knownIssues.joined(separator: " "))
+    }
     return lines.filter { !$0.isEmpty }.joined(separator: "\n")
   }
 }

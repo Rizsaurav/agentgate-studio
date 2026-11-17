@@ -19,6 +19,8 @@ public struct ToolScoreReport: Codable, Sendable, Equatable {
   public var hardware: String
   public var date: String
   public var temperature: Double
+  /// Set only in sampler sweeps (evals/tools/sampler); nil means the engine's default.
+  public var topP: Double?
   public var seed: Int
   public var passed: Int
   public var total: Int
@@ -69,11 +71,11 @@ public struct ToolScoreReport: Codable, Sendable, Equatable {
     self.categories = categories
   }
 
-  public func write(to folder: URL) throws -> URL {
+  public func write(to folder: URL, suffix: String = "") throws -> URL {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-    let url = folder.appendingPathComponent("\(key).json")
+    let url = folder.appendingPathComponent("\(key)\(suffix).json")
     try (encoder.encode(self) + Data("\n".utf8)).write(to: url, options: .atomic)
     return url
   }
@@ -146,6 +148,9 @@ public struct ToolSuiteRunner: Sendable {
   public var baseURL: URL
   public var apiKey: String
   public var model: String
+  /// Sampler for this run. The suite uses temperature 0 so scores compare; sweeps (#79) try others.
+  public var temperature = ToolSuiteRunner.temperature
+  public var topP: Double?
   /// Per request. A case that times out fails; the run goes on.
   public var timeout: TimeInterval = 120
 
@@ -192,8 +197,8 @@ public struct ToolSuiteRunner: Sendable {
 
   /// Sends one case and returns the calls made and the reply text.
   func ask(_ item: ToolCase, _ suite: ToolSuite) async throws -> ([MadeCall], String) {
-    let payload: [String: Any] = [
-      "model": model, "temperature": Self.temperature, "seed": Self.seed, "max_tokens": 512,
+    var payload: [String: Any] = [
+      "model": model, "temperature": temperature, "seed": Self.seed, "max_tokens": 512,
       "messages": item.messages.map(\.foundation),
       "tools": item.tools.compactMap { suite.tools[$0]?.foundation },
       "tool_choice": "auto",
@@ -202,6 +207,7 @@ public struct ToolSuiteRunner: Sendable {
       // Thinking models (Qwen3) answer directly, as they do in agent sessions on small Macs.
       "chat_template_kwargs": ["enable_thinking": false],
     ]
+    if let topP { payload["top_p"] = topP }
     var request = URLRequest(url: baseURL.appendingPathComponent("v1/chat/completions"), timeoutInterval: timeout)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")

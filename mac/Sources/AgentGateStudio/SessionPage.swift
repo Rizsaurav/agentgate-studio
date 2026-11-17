@@ -106,6 +106,7 @@ struct SessionPage: View {
       HStack {
         modelMenu(session)
         Text(modelState(session)).font(.system(size: 11)).foregroundStyle(Theme.muted)
+          .help(app.catalog?.model(session.modelId).map { "Applied automatically: \($0.profile.summary)" + ($0.profile.knownIssues.isEmpty ? "" : "\nKnown issues: " + $0.profile.knownIssues.joined(separator: " ")) } ?? "")
         Spacer()
         Button { send() } label: { Label("Send", systemImage: "arrow.up") }
           .buttonStyle(PrimaryButtonStyle())

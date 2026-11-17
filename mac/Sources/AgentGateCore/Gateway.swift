@@ -3,7 +3,9 @@ import Network
 
 /// Where a model id goes: the local engine, or a cloud provider with the user's key.
 public enum ModelRoute: Sendable, Equatable {
-  case local(baseURL: URL, key: String, model: String)
+  /// `profile` is applied to every request: thinking switched off where the model has a switch, and the
+  /// measured sampler where the client set none.
+  case local(baseURL: URL, key: String, model: String, profile: CapabilityProfile? = nil)
   case cloud(Provider, model: String)
 }
 
@@ -159,8 +161,9 @@ public final class Gateway: @unchecked Sendable {
     let upstream: URLRequest
     let label: String
     switch route {
-    case .local(let base, let localKey, let model):
+    case .local(let base, let localKey, let model, let profile):
       body["model"] = model
+      profile?.apply(to: &body)
       upstream = Self.upstream(base.appendingPathComponent("v1/chat/completions"), key: localKey, body: body)
       label = "the local engine"
     case .cloud(let provider, let model):
