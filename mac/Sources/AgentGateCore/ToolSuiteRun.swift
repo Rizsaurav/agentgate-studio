@@ -42,7 +42,8 @@ public struct ToolScoreReport: Codable, Sendable, Equatable {
     copy.knownFlaky = Set(previous.knownFlaky + flipped).filter(current.contains).sorted()
     return copy
   }
-  public var key: String { "\(model)-\(quant)" }
+  /// File name of the results: a cloud model's "/" becomes "--".
+  public var key: String { "\(model.replacingOccurrences(of: "/", with: "--"))-\(quant)" }
   public var readiness: Readiness { ToolSuite.readiness(probe: .ready, measured: passRate) }
 
   public init(

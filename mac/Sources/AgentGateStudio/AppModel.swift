@@ -71,7 +71,12 @@ final class AppModel {
   private let pipeline = InstallPipeline()
   private let store = ModelStore()
   private let workspaceStore = WorkspaceStore()
-  private var runtime: LlamaRuntime?
+  private var runtime: LlamaRuntime? { didSet { localRoute.set(runtime) } }
+  /// The app's one endpoint for every model (#71). The harness only ever talks to this.
+  private(set) var gateway: Gateway?
+  private let localRoute = LocalRoute()
+  /// Models each cloud provider offers to the user's key, by provider id, once listed.
+  private(set) var cloudModels: [String: [String]] = [:]
   private var installTask: Task<Bool, Never>?
 
   func start() {
@@ -82,6 +87,11 @@ final class AppModel {
       self.profile = profile
       tiers = ModelPlanner.tiers(catalog, for: profile)
       installed = try store.list()
+      let route = localRoute
+      gateway = try Gateway(resolve: { id in
+        if let (provider, model) = ModelID.parseCloud(id) { return .cloud(provider, model: model) }
+        return route.route(for: id)
+      })
       resumable = runStore.unfinished(installed: Set(installed.map(\.id)))
       refreshAgents()
       workspace = try workspaceStore.load()
@@ -152,6 +162,27 @@ final class AppModel {
       errorMessage = String(describing: error)
       return false
     }
+  }
+
+  /// Lists the models a provider offers to the user's key, for the session's model menu.
+  func loadCloudModels(_ provider: Provider) async {
+    do {
+      guard let key = try provider.keychain.read() else { return }
+      cloudModels[provider.id] = try await Providers.models(provider, key: key)
+    } catch {
+      errorMessage = String(describing: error)
+    }
+  }
+
+  /// Providers the user has a key for.
+  var keyedProviders: [Provider] { Providers.all.filter { $0.keychain.exists() } }
+
+  /// Switches a session to a cloud model. What the agent reads in the project is then sent to that provider.
+  func switchToCloud(_ sessionId: UUID, provider: Provider, model: String) {
+    guard let index = workspace.sessions.firstIndex(where: { $0.id == sessionId }) else { return }
+    workspace.sessions[index].modelId = ModelID.cloud(provider, model)
+    workspace.sessions[index].modelName = "\(model) (\(provider.name))"
+    do { try persist() } catch { errorMessage = String(describing: error) }
   }
 
   /// Switches an existing session to another installed model and loads it.
@@ -476,14 +507,17 @@ final class AppModel {
     activity = []
     Task {
       do {
-        // Load the session's model, or reload it if its engine has died since the last message.
-        if active?.id != session.modelId || runtime?.isRunning != true {
+        // A cloud model needs its provider's key; a local one is loaded, or reloaded if its engine has died.
+        if let (provider, _) = ModelID.parseCloud(session.modelId) {
+          guard provider.keychain.exists() else {
+            throw ProviderError.listFailed("there is no \(provider.name) key. Add one on the Profile page.")
+          }
+        } else if active?.id != session.modelId || runtime?.isRunning != true {
           guard let entry = catalog?.model(session.modelId), let task = select(entry), await task.value else {
             throw AgentError.missingBinary("The model for this session could not be loaded.")
           }
         }
-        guard let runtime else { return }
-        let server = try await agentServer(folder: URL(fileURLWithPath: folder), runtime: runtime)
+        let server = try await agentServer(folder: URL(fileURLWithPath: folder), model: session.modelId)
         var agentId = workspace.sessions.first { $0.id == sessionId }?.agentSession
         if agentId == nil {
           agentId = try await server.client.createSession(title: String(text.prefix(60)))
@@ -615,14 +649,18 @@ final class AppModel {
 
   func loadSecurityEntries() { securityEntries = securityLog.entries() }
 
-  private func agentServer(folder: URL, runtime: LlamaRuntime) async throws -> AgentServer {
-    if let agent, agent.isRunning, agent.folder == folder, agent.engineKey == runtime.apiKey { return agent }
+  /// The harness for `folder`, configured for `model` and pointed at the gateway, so local and cloud
+  /// models run through the same harness, tools and checks.
+  private func agentServer(folder: URL, model: String) async throws -> AgentServer {
+    guard let gateway else { throw AgentError.missingBinary("The model endpoint is not running.") }
+    if let agent, agent.isRunning, agent.folder == folder, agent.model == model, agent.engineKey == gateway.key { return agent }
     stopAgentServer()
     agentConnected = false
     let server = try await AgentServer.start(
-      folder: folder, engineURL: runtime.baseURL, engineKey: runtime.apiKey, model: runtime.alias,
+      folder: folder, engineURL: gateway.baseURL, engineKey: gateway.key, model: model,
       // The harness's own instructions and tools take about 12K tokens; it must know the model's real context.
-      context: active?.config.context ?? ModelPlanner.preferredContext)
+      // Cloud models have far more than a local one; providers do not report it, so a conservative 128K is used.
+      context: ModelID.isCloud(model) ? 128_000 : active?.config.context ?? ModelPlanner.preferredContext)
     agent = server
     eventTask = Task { [weak self] in
       do {
@@ -694,5 +732,22 @@ final class AppModel {
     guard let index = workspace.sessions.firstIndex(where: { $0.id == sessionId }),
           let last = workspace.sessions[index].messages.indices.last else { return }
     workspace.sessions[index].messages[last].content += text
+  }
+}
+
+/// The loaded local model, readable from the gateway's own queue.
+final class LocalRoute: @unchecked Sendable {
+  private let lock = NSLock()
+  private var current: (alias: String, baseURL: URL, key: String)?
+
+  func set(_ runtime: LlamaRuntime?) {
+    lock.withLock { current = runtime.map { ($0.alias, $0.baseURL, $0.apiKey) } }
+  }
+
+  func route(for id: String) -> ModelRoute? {
+    lock.withLock {
+      guard let current, current.alias == id else { return nil }
+      return .local(baseURL: current.baseURL, key: current.key, model: current.alias)
+    }
   }
 }

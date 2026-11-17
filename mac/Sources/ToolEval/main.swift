@@ -12,6 +12,8 @@ let usage = """
       --cpu          run on the CPU only (CI runners without a usable GPU); requests may take up to 15 minutes
       --loads N      fresh engine loads per model (default 3; see CaseOutcome)
       --timeout S    seconds per request (default 120, or 900 with --cpu)
+    agentgate-tooleval run --cloud <provider>/<model>                Score a cloud model with the key saved in the app.
+  Every request goes through the app's model endpoint (Gateway), as in a session.
     agentgate-tooleval report                                        Regenerate docs/MODEL_SCORES.md.
     agentgate-tooleval check --base <results folder>                 Fail if a score dropped by more than \(Int(ToolSuite.regressionMargin * 100)) points.
 
@@ -93,7 +95,12 @@ func score(model: CatalogModel, quant: String, file: URL, suite: ToolSuite, opti
     print("\(model.id) \(quant): load \(load) of \(options.loads) on \(engineName(engine))…")
     let runtime = try await LlamaRuntime.start(model: file, alias: model.id, config: config, binaries: engine)
     defer { runtime.stop() }
-    var runner = ToolSuiteRunner(baseURL: runtime.baseURL, apiKey: runtime.apiKey, model: model.id)
+    // Through the same endpoint the harness uses, so the suite measures what a session gets.
+    let gateway = try Gateway(resolve: { id in
+      id == model.id ? .local(baseURL: runtime.baseURL, key: runtime.apiKey, model: model.id) : nil
+    })
+    defer { gateway.stop() }
+    var runner = ToolSuiteRunner(baseURL: gateway.baseURL, apiKey: gateway.key, model: model.id)
     runner.timeout = options.timeout
     runs.append(try await runner.run(suite))
   }
@@ -122,6 +129,30 @@ func score(model: CatalogModel, quant: String, file: URL, suite: ToolSuite, opti
   return report
 }
 
+/// Scores a cloud model through the gateway with the key saved in the app's Keychain. One run: there is
+/// no engine to reload, and the provider decides what is repeatable.
+func scoreCloud(_ id: String, suite: ToolSuite, options: RunOptions) async throws -> ToolScoreReport {
+  guard let (provider, _) = ModelID.parseCloud(id) else { throw Failure(description: "\(id) is not <provider>/<model>.") }
+  guard provider.keychain.exists() else { throw Failure(description: "There is no \(provider.name) key. Add one on the app's Profile page.") }
+  let gateway = try Gateway(resolve: { requested in requested == id ? ModelID.parseCloud(id).map { .cloud($0.0, model: $0.1) } : nil })
+  defer { gateway.stop() }
+  print("\(id): scoring through the gateway…")
+  var runner = ToolSuiteRunner(baseURL: gateway.baseURL, apiKey: gateway.key, model: id)
+  runner.timeout = options.timeout
+  let outcomes = try await runner.run(suite)
+  let broken = outcomes.filter { $0.reason.hasPrefix(ToolSuiteRunner.requestFailed) }
+  if let first = broken.first {
+    throw Failure(description: "\(broken.count) request(s) failed, so no results were written. First: \(first.id): \(first.reason.prefix(200))")
+  }
+  let report = ToolScoreReport(
+    model: id, quant: "cloud", engine: provider.name, commit: commit(), hardware: "cloud",
+    date: String(ISO8601DateFormatter().string(from: Date()).prefix(10)),
+    temperature: ToolSuiteRunner.temperature, seed: ToolSuiteRunner.seed, cases: outcomes)
+  let url = try report.write(to: resultsFolder)
+  print("\(id): \(report.passed)/\(report.total) → \(url.path)")
+  return report
+}
+
 func writeReport() throws {
   let reports = try ToolScoreReport.loadAll(from: resultsFolder)
   try ToolScoreReport.markdown(reports).write(to: scoresDoc, atomically: true, encoding: .utf8)
@@ -135,7 +166,9 @@ func main() async throws {
     let suite = try ToolSuite.load(from: suiteFolder)
     let catalog = try Catalog.bundled()
     let options = try RunOptions(args)
-    if args.contains("--all") {
+    if let cloud = option("--cloud", in: args) {
+      _ = try await scoreCloud(cloud, suite: suite, options: options)
+    } else if args.contains("--all") {
       let installed = try ModelStore().list()
       guard !installed.isEmpty else { throw Failure(description: "No models are installed in the app. Install one, or use --model with --gguf.") }
       for item in installed {

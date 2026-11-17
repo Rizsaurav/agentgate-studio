@@ -31,6 +31,8 @@ final class TestHTTPServer: @unchecked Sendable {
   private var firstConsumed = false
   private(set) var rangeHeaders: [String] = []
   private(set) var requestCount = 0
+  /// The last request as received (head and body), for tests that check what was forwarded.
+  private(set) var lastRequest = ""
   private var held: [NWConnection] = []
   var port: UInt16 { listener.port?.rawValue ?? 0 }
 
@@ -57,10 +59,10 @@ final class TestHTTPServer: @unchecked Sendable {
 
   private func serve(_ connection: NWConnection) {
     connection.start(queue: queue)
-    connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [self] data, _, _, _ in
-      let request = String(decoding: data ?? Data(), as: UTF8.self)
+    receiveRequest(connection, Data()) { [self] data in
+      let request = String(decoding: data, as: UTF8.self)
       let path = request.split(separator: " ").dropFirst().first.map(String.init) ?? "/"
-      lock.withLock { requestCount += 1 }
+      lock.withLock { requestCount += 1; lastRequest = request }
       guard path == servedPath else {
         send(connection, head: "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n", body: Data())
         return
@@ -96,6 +98,22 @@ final class TestHTTPServer: @unchecked Sendable {
         connection.send(content: Data(head.utf8) + slice.prefix(n), completion: .contentProcessed { _ in })
       default: send(connection, head: head, body: slice)
       }
+    }
+  }
+
+  /// Reads the head and, when it has a Content-Length, the whole body: clients may send them separately.
+  private func receiveRequest(_ connection: NWConnection, _ buffer: Data, then: @escaping (Data) -> Void) {
+    connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [self] data, _, complete, error in
+      let buffer = buffer + (data ?? Data())
+      if let end = buffer.range(of: Data("\r\n\r\n".utf8)) {
+        let head = String(decoding: buffer[..<end.lowerBound], as: UTF8.self).lowercased()
+        let length = head.split(separator: "\r\n").first { $0.hasPrefix("content-length:") }
+          .flatMap { Int($0.dropFirst("content-length:".count).trimmingCharacters(in: .whitespaces)) } ?? 0
+        if buffer.count - end.upperBound >= length || complete || error != nil { return then(buffer) }
+      } else if complete || error != nil {
+        return then(buffer)
+      }
+      receiveRequest(connection, buffer, then: then)
     }
   }
 
