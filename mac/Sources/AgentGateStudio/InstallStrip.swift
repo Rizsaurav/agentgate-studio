@@ -33,7 +33,9 @@ struct InstallStrip: View {
           progress: nil, trailing: AnyView(EmptyView()))
     } else if let update = app.update {
       let progress = update.totalBytes > 0 ? Double(update.completedBytes) / Double(update.totalBytes) : nil
-      bar(step: update.step, failed: false, message: update.message, progress: update.step == .download ? progress : nil,
+      bar(step: update.step, failed: false,
+          message: update.message + (app.installNote.map { "\n\($0)" } ?? ""),
+          progress: update.step == .download ? progress : nil,
           trailing: AnyView(Group {
             if app.installing != nil { Button("Cancel") { app.cancelInstall() }.controlSize(.small) }
             else { Button { app.dismissUpdate() } label: { Image(systemName: "xmark") }.buttonStyle(.borderless) }

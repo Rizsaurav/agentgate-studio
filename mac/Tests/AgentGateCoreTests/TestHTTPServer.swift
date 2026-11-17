@@ -19,6 +19,8 @@ final class TestHTTPServer: @unchecked Sendable {
     case cutFirstThenIgnoreRange(after: Int)
     /// Answers every request with this error status and no body.
     case answer(status: Int)
+    /// Sends this many body bytes at full speed, then the rest at `bytesPerSecond`, like a congested mirror.
+    case throttleAfter(bytes: Int, bytesPerSecond: Int)
   }
 
   let body: Data
@@ -94,8 +96,21 @@ final class TestHTTPServer: @unchecked Sendable {
         // Send a prefix and keep the connection open without sending more.
         lock.withLock { held.append(connection) }
         connection.send(content: Data(head.utf8) + slice.prefix(n), completion: .contentProcessed { _ in })
+      case .throttleAfter(let fast, let rate):
+        connection.send(content: Data(head.utf8) + slice.prefix(fast), completion: .contentProcessed { _ in })
+        drip(connection, slice.dropFirst(fast), chunk: max(1, rate / 10))
       default: send(connection, head: head, body: slice)
       }
+    }
+  }
+
+  /// Sends `rest` a chunk every 100 ms until it is done or the connection goes away.
+  private func drip(_ connection: NWConnection, _ rest: Data, chunk: Int) {
+    guard !rest.isEmpty, connection.state == .ready else { connection.cancel(); return }
+    queue.asyncAfter(deadline: .now() + 0.1) { [self] in
+      connection.send(content: rest.prefix(chunk), completion: .contentProcessed { [self] error in
+        if error == nil { drip(connection, rest.dropFirst(chunk), chunk: chunk) } else { connection.cancel() }
+      })
     }
   }
 

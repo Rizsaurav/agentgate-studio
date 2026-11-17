@@ -36,7 +36,15 @@ final class AppModel {
   private(set) var tiers: [Tier: ModelPlan] = [:]
   private(set) var installed: [InstalledModel] = []
   private(set) var active: InstalledModel?
-  private(set) var update: InstallUpdate?
+  private(set) var update: InstallUpdate? {
+    didSet { if let update, installing != nil { watch(update) } }
+  }
+  /// The watcher's latest note about the running install (#107); it explains, it never acts.
+  private(set) var installNote: String?
+  private var watcher = InstallWatcher()
+  private var watchTask: Task<Void, Never>?
+  private var memoryPressure = false
+  private var pressureSource: DispatchSourceMemoryPressure?
   /// What each install step reported, for the dialog behind each dot in the status bar.
   /// The current or last install's record; the step dots read from it.
   private(set) var run: InstallRun?
@@ -311,8 +319,12 @@ final class AppModel {
     resumable.removeAll { $0.modelId == model.id }
     installing = model
     stopRuntime()
+    startWatching()
     let task = Task { () -> Bool in
-      defer { installing = nil }
+      defer {
+        installing = nil
+        stopWatching()
+      }
       do {
         let report: @Sendable (InstallUpdate) -> Void = { update in
           Task { @MainActor in
@@ -526,6 +538,55 @@ final class AppModel {
     remove(model)
     integrity[model.id] = nil
     select(entry)
+  }
+
+  // MARK: Live watching (#107)
+
+  private func startWatching() {
+    watcher = InstallWatcher()
+    installNote = nil
+    memoryPressure = false
+    let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
+    source.setEventHandler { [weak self] in MainActor.assumeIsolated { self?.memoryPressure = true } }
+    source.resume()
+    pressureSource = source
+    // Bounded by the install: cancelled when it ends.
+    watchTask = Task { [weak self] in
+      while !Task.isCancelled {
+        try? await Task.sleep(for: .seconds(2))
+        guard let self, self.installing != nil else { return }
+        let sample = SystemSample.current(memoryPressure: self.memoryPressure)
+        self.memoryPressure = false
+        if let signal = self.watcher.observe(sample, at: Date()) { self.show(signal) }
+      }
+    }
+  }
+
+  private func stopWatching() {
+    watchTask?.cancel()
+    watchTask = nil
+    pressureSource?.cancel()
+    pressureSource = nil
+  }
+
+  private func watch(_ update: InstallUpdate) {
+    if let signal = watcher.observe(update, at: Date()) { show(signal) }
+  }
+
+  /// Shows the fixed sentence at once; with the agent on, replaces it with the agent's wording.
+  private func show(_ signal: WatchSignal) {
+    installNote = signal.fact
+    guard agentOn else { return }
+    let assistant = AgentAssistant(profile: activeAgent)
+    Task {
+      do {
+        let worded = try await assistant.phrase(signal)
+        if installNote == signal.fact { installNote = worded }
+      } catch {
+        // The fixed sentence is already shown; the agent's wording is optional.
+        installNote = signal.fact
+      }
+    }
   }
 
   func remove(_ model: InstalledModel) {
