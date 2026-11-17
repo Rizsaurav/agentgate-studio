@@ -28,6 +28,7 @@ import {
   runs,
   security,
   sessions,
+  telemetry,
 } from '@/lib/controller';
 import { assistant } from '@/lib/assistant';
 import { githubCi } from '@/lib/github';
@@ -682,4 +683,18 @@ export async function fixWithAgent(
     return { error: 'The session could not be started.' };
   }
   redirect(`/projects/${parsed.data.projectId}/sessions/${sessionId}`);
+}
+
+/** Switches run telemetry on or off (#10). Off stops every write; what is stored stays until cleared. */
+export async function setTelemetry(form: FormData): Promise<void> {
+  if (!(await isLocalRequest())) return;
+  telemetry().setEnabled(form.get('enabled') === 'on');
+  revalidatePath('/security');
+}
+
+/** Deletes every stored run trace. */
+export async function clearTelemetry(): Promise<void> {
+  if (!(await isLocalRequest())) return;
+  telemetry().clear();
+  revalidatePath('/security');
 }

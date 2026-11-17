@@ -187,6 +187,30 @@ CREATE TABLE project_import_metadata (
   expected_behaviors TEXT NOT NULL
 ) STRICT;`;
 
+// Run telemetry (#10): numbers, model ids and rule names only; never prompt, answer or passage text.
+const TELEMETRY = `
+CREATE TABLE traces (
+  run_id TEXT PRIMARY KEY NOT NULL,
+  project_id TEXT NOT NULL,
+  model TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  duration_ms REAL NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('completed','blocked','failed','cancelled')),
+  rule TEXT
+) STRICT;
+CREATE INDEX traces_project_started ON traces(project_id, started_at);
+CREATE INDEX traces_started ON traces(started_at);
+CREATE TABLE spans (
+  id TEXT PRIMARY KEY NOT NULL,
+  run_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  start_ms REAL NOT NULL,
+  duration_ms REAL NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('ok','blocked','error','cancelled')),
+  attributes TEXT NOT NULL
+) STRICT;
+CREATE INDEX spans_run ON spans(run_id);`;
+
 /** Ordered migrations; PRAGMA user_version is the number applied. Never edit an applied entry. */
 const MIGRATIONS = [
   PROJECTS,
@@ -200,6 +224,7 @@ const MIGRATIONS = [
   EVAL_MEASURES,
   PROJECT_REPOSITORY,
   PROJECT_IMPORT_METADATA,
+  TELEMETRY,
 ];
 
 /** Single owner of the application database file, schema, and migrations. */

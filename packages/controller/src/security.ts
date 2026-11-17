@@ -81,7 +81,8 @@ export class SqliteSecurityEvents implements SecurityEventRepository {
 }
 
 export type Blocked = { allowed: false; rule: string; reason: string };
-export type Decision = { allowed: true } | Blocked;
+/** An allowed decision may carry the scanner's score, for telemetry; it is never used to decide. */
+export type Decision = { allowed: true; score?: number } | Blocked;
 export type RunContext = { projectId: string; runId: string };
 export type PassageScreening = { passages: Passage[]; blocked: Blocked | null };
 
@@ -151,7 +152,9 @@ export class ProtectionPipeline implements RunGuard {
         evidence: safeExcerpt(prompt),
         score: verdict.score,
       });
-    return { allowed: true };
+    return verdict
+      ? { allowed: true, score: verdict.score }
+      : { allowed: true };
   }
 
   async screenPassages(

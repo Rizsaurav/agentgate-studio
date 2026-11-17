@@ -1,6 +1,14 @@
 import Link from 'next/link';
 import { checkServices } from '@agentgate/controller';
-import { agentStore, endpoints, projects, security } from '@/lib/controller';
+import {
+  agentStore,
+  endpoints,
+  projects,
+  security,
+  telemetry,
+} from '@/lib/controller';
+import { clearTelemetry, setTelemetry } from '@/app/actions';
+import { Button } from '@/components/ui/button';
 import { EvaluationsPanel } from '@/components/evaluations-panel';
 import { Icon } from '@/components/icon';
 export const dynamic = 'force-dynamic';
@@ -55,6 +63,37 @@ export default async function SecurityPage({
           <span className="status-label">Disabled</span>
         </div>
       </div>
+      <section
+        className="soft-surface mb-5"
+        aria-labelledby="telemetry-heading"
+      >
+        <h2 id="telemetry-heading">Run telemetry</h2>
+        <p>
+          Each run&apos;s stage timings, tokens, scanner scores and blocking
+          rule are kept on this computer for 30 days. No prompt, answer or
+          document text is stored.
+        </p>
+        <div className="flex gap-3 items-center">
+          <form action={setTelemetry}>
+            <input
+              type="hidden"
+              name="enabled"
+              value={telemetry().enabled ? 'off' : 'on'}
+            />
+            <Button type="submit" variant="outline">
+              {telemetry().enabled ? 'Turn off' : 'Turn on'}
+            </Button>
+          </form>
+          <form action={clearTelemetry}>
+            <Button type="submit" variant="outline">
+              Clear telemetry
+            </Button>
+          </form>
+          <span className="status-label">
+            {telemetry().enabled ? 'On' : 'Off'}
+          </span>
+        </div>
+      </section>
       {!scanner?.ok && (
         <p role="alert" className="error-message mb-5">
           Tasks and new documents are blocked until the security scanner is
