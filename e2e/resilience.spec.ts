@@ -165,6 +165,9 @@ test('main pages fit a 390px phone without horizontal scrolling', async ({
       'A very long project name that must wrap instead of forcing the page to scroll sideways',
     );
   await page.getByRole('button', { name: /Create project/ }).click();
+  // Creating a project redirects to it. Read the URL only after that navigation, or a redirect
+  // still under way lands during a later page.evaluate and destroys its context.
+  await page.waitForURL(/\/projects\/[^/]+$/);
   const projectPath = page.url().replace(server.url, '');
   for (const path of [
     '/',
