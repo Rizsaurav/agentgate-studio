@@ -162,26 +162,39 @@ struct SessionPage: View {
     .accessibilityLabel("Model")
   }
 
-  /// Runs the task in the box (or the last task sent) on this session's model and on another one.
+  /// Runs the task in the box (or the last task sent) on this session's model and on another one:
+  /// another installed model, or a cloud model of a provider the user has a key for.
   private func compareMenu(_ session: Session) -> some View {
     let others = app.installed.filter { $0.id != session.modelId }
     let task = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       ? session.messages.last(where: { $0.role == .user })?.content ?? "" : draft
+    func run(_ id: String) {
+      draft = ""
+      app.compare(in: session.id, task: task, with: id)
+    }
     return Menu {
       ForEach(others) { model in
-        Button("\(session.modelName) and \(model.name)") {
-          draft = ""
-          app.compare(in: session.id, task: task, with: model.id)
+        Button("\(session.modelName) and \(model.name)") { run(model.id) }
+      }
+      ForEach(app.keyedProviders) { provider in
+        Menu("\(provider.name) (cloud)") {
+          if let models = app.cloudModels[provider.id] {
+            ForEach(models, id: \.self) { model in
+              let id = ModelID.cloud(provider, model)
+              if id != session.modelId { Button(model) { run(id) } }
+            }
+          } else {
+            Button("List models") { Task { await app.loadCloudModels(provider) } }
+          }
         }
       }
     } label: {
       Label("Compare with…", systemImage: "square.split.2x1").font(.system(size: 12))
     }
     .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
-    .disabled(!app.agentOn || app.generating || app.comparisonProgress != nil || others.isEmpty
+    .disabled(!app.agentOn || app.generating || app.comparisonProgress != nil || (others.isEmpty && app.keyedProviders.isEmpty)
               || task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-    .help(others.isEmpty ? "Install a second model to compare." :
-      "Runs the task on both models, one after the other, each in its own copy of the project. The project itself is not changed.")
+    .help("Runs the task on both models, one after the other, each in its own copy of the project. The project itself is not changed. A cloud model is sent what the agent reads in that copy.")
   }
 
   private func send() {

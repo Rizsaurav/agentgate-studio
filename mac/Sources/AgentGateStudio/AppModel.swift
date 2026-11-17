@@ -545,6 +545,15 @@ final class AppModel {
     }
   }
 
+  /// A model a comparison side can use: an installed local model, or a cloud model whose provider has a key.
+  /// Returns its display name, or nil when it cannot be used.
+  func comparableName(_ id: String) -> String? {
+    if let (provider, model) = ModelID.parseCloud(id) {
+      return provider.keychain.exists() ? "\(model) (\(provider.name))" : nil
+    }
+    return installed.first { $0.id == id }?.name
+  }
+
   /// Runs `task` on the session's model and then on `otherId`, one after the other, each in its own copy
   /// of the project made before either run, so both start from the same state and the project itself
   /// is never changed. Edits and commands still ask, as in any session. The result is saved with the session.
@@ -552,8 +561,10 @@ final class AppModel {
     let task = task.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !generating, comparisonProgress == nil, !task.isEmpty,
           let session = workspace.sessions.first(where: { $0.id == sessionId }),
-          let first = installed.first(where: { $0.id == session.modelId }),
-          let second = installed.first(where: { $0.id == otherId }), first.id != second.id else { return }
+          session.modelId != otherId,
+          let firstName = comparableName(session.modelId), let secondName = comparableName(otherId) else { return }
+    let first = (id: session.modelId, name: firstName)
+    let second = (id: otherId, name: secondName)
     guard let folder = project(session.projectId)?.folder else {
       errorMessage = "This project has no folder. Open a folder to compare models on it."
       return
@@ -583,7 +594,8 @@ final class AppModel {
     }
   }
 
-  private func runComparisonSide(_ model: InstalledModel, task: String, copy: ProjectCopy, in sessionId: UUID) async -> ComparisonSide {
+  /// One side: a local model is loaded first; a cloud model goes through the gateway with no loading.
+  private func runComparisonSide(_ model: (id: String, name: String), task: String, copy: ProjectCopy, in sessionId: UUID) async -> ComparisonSide {
     var side = ComparisonSide(modelId: model.id, modelName: model.name)
     comparisonFolder = copy.folder
     comparisonAnswer = ""
@@ -602,13 +614,12 @@ final class AppModel {
       stopAgentServer()
     }
     do {
-      if active?.id != model.id || runtime?.isRunning != true {
-        guard let entry = catalog?.model(model.id), let load = select(entry), await load.value else {
+      if !ModelID.isCloud(model.id), active?.id != model.id || runtime?.isRunning != true {
+        guard let entry = catalog?.model(model.id), let load = select(entry), await load.value, runtime != nil else {
           throw AgentError.missingBinary("\(model.name) could not be loaded.")
         }
       }
-      guard let runtime else { throw AgentError.missingBinary("\(model.name) could not be loaded.") }
-      let server = try await agentServer(folder: copy.folder, runtime: runtime)
+      let server = try await agentServer(folder: copy.folder, model: model.id)
       let agentId = try await server.client.createSession(title: "Compare: \(task.prefix(50))")
       comparisonAgentSession = agentId
       for _ in 0..<100 where !agentConnected { try await Task.sleep(nanoseconds: 50_000_000) }
