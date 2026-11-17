@@ -72,6 +72,10 @@ final class AppModel {
   private let store = ModelStore()
   private let workspaceStore = WorkspaceStore()
   private var runtime: LlamaRuntime?
+  /// Measurements of installed models on this Mac, by model id (#109).
+  private(set) var measurements: [String: MeasuredProfile] = [:]
+  /// The model being measured, if any.
+  private(set) var measuring: String?
   private var installTask: Task<Bool, Never>?
 
   func start() {
@@ -82,6 +86,7 @@ final class AppModel {
       self.profile = profile
       tiers = ModelPlanner.tiers(catalog, for: profile)
       installed = try store.list()
+      try loadMeasurements()
       resumable = runStore.unfinished(installed: Set(installed.map(\.id)))
       refreshAgents()
       workspace = try workspaceStore.load()
@@ -232,6 +237,8 @@ final class AppModel {
           installed = try store.list()
           active = done
           runStore.remove(model.id)
+          // Measure what it really does on this Mac while it is loaded.
+          Task { await self.measure(done) }
         }
         return true
       } catch let failure as InstallFailure {
@@ -385,6 +392,33 @@ final class AppModel {
 
   func dismissUpdate() { update = nil }
 
+  private func loadMeasurements() throws {
+    guard let mac = profile?.label else { return }
+    var found: [String: MeasuredProfile] = [:]
+    for model in installed {
+      if let measured = try store.measurement(model.id, on: mac) { found[model.id] = measured }
+    }
+    measurements = found
+  }
+
+  /// Measures speed and tool calling of an installed model on this Mac, loading it first if needed.
+  func measure(_ model: InstalledModel) async {
+    guard measuring == nil, let mac = profile?.label, let entry = catalog?.model(model.id) else { return }
+    measuring = model.id
+    defer { measuring = nil }
+    if active?.id != model.id || runtime == nil {
+      guard await select(entry)?.value == true else { return }
+    }
+    guard let runtime, active?.id == model.id else { return }
+    do {
+      let measured = try await ModelMeasurer(baseURL: runtime.baseURL, apiKey: runtime.apiKey, model: runtime.alias).measure(on: mac)
+      try store.saveMeasurement(measured, for: model.id)
+      try loadMeasurements()
+    } catch {
+      errorMessage = "Could not measure \(model.name): \(error)"
+    }
+  }
+
   func remove(_ model: InstalledModel) {
     if active?.id == model.id {
       stopRuntime()
@@ -393,6 +427,7 @@ final class AppModel {
     do {
       try store.remove(model.id)
       installed = try store.list()
+      measurements[model.id] = nil
     } catch {
       errorMessage = String(describing: error)
     }
@@ -426,10 +461,10 @@ final class AppModel {
           source = "The agent's answer could not be used, so fixed rules read it."
         }
       }
-      suggestions = ModelAdvisor.suggest(catalog, for: profile, installed: installed, needs: needs)
+      suggestions = ModelAdvisor.suggest(catalog, for: profile, installed: installed, needs: needs, measured: measurements)
       let wants = [needs.tools ? "tools" : nil, needs.longContext ? "long context" : nil, needs.priority == .balanced ? nil : needs.priority.rawValue]
         .compactMap { $0 }.joined(separator: ", ")
-      advisorNote = (wants.isEmpty ? "No special needs." : "Needs \(wants).") + " " + source + " Scores are estimates until measured on this Mac."
+      advisorNote = (wants.isEmpty ? "No special needs." : "Needs \(wants).") + " " + source + (measurements.isEmpty ? " Speeds are estimates until a model is measured on this Mac." : " Speeds are measured on this Mac where a model has been measured, and estimated from them for the rest.")
     }
   }
 

@@ -55,7 +55,7 @@ func commit() -> String {
 /// Recorded with the results for people reading them; a probe failure is shown as "unknown", not hidden.
 func hardware() -> String {
   guard let profile = try? HardwareProbe.current(modelsDirectory: FileManager.default.temporaryDirectory) else { return "unknown" }
-  return "\(profile.chip), \(profile.memoryBytes / (1 << 30)) GB"
+  return profile.label
 }
 
 /// Fresh engine loads per model. Results vary a little between loads, never within one; see `CaseOutcome`.

@@ -214,10 +214,20 @@ private struct InstalledRow: View {
         Text(model.name).font(.system(size: 13, weight: .medium))
         Text("\(model.quant.rawValue) · \(model.config.context / 1024)K context · \(ModelPlanner.gb(model.bytes))")
           .font(.system(size: 12)).foregroundStyle(Theme.muted)
+        if let measured = app.measurements[model.id] {
+          Text("On this Mac: \(measured.summary)").font(.system(size: 12)).foregroundStyle(Theme.muted)
+            .help("Measured \(measured.measuredAt.formatted(date: .abbreviated, time: .shortened)) on \(measured.mac).")
+        }
       }
       Spacer()
       if active { StatusPill(text: "Loaded", tone: .ok) }
       else if model.readiness == .chatOnly { StatusPill(text: "Chat only", tone: .pending) }
+      if app.measurements[model.id]?.callsTools == false { StatusPill(text: "Tool check failed", tone: .pending) }
+      Button(app.measuring == model.id ? "Measuring…" : app.measurements[model.id] == nil ? "Measure" : "Measure again") {
+        Task { await app.measure(model) }
+      }
+      .buttonStyle(SubtleButtonStyle()).disabled(app.measuring != nil || app.installing != nil)
+      .help("Loads the model if needed and measures its speed and tool calling on this Mac. Takes about a minute.")
       Button("Remove") { confirm = true }.buttonStyle(SubtleButtonStyle())
         .accessibilityLabel("Remove \(model.name)")
         .confirmationDialog("Remove \(model.name)?", isPresented: $confirm) {

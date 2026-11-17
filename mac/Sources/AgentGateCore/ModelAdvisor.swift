@@ -51,10 +51,13 @@ public struct ModelSuggestion: Sendable, Identifiable {
 }
 
 /// Ranks models for a task on this Mac. Deterministic, like the planner: the same task needs, catalog and Mac
-/// always give the same answer. Scores are estimates from size and fit until measured results exist (#109).
+/// always give the same answer. Speed comes from measurements on this Mac where they exist (#109), and is
+/// estimated from file size for the rest, calibrated against the measured ones.
 public enum ModelAdvisor {
+  /// - Parameter measured: measurements on this Mac, by model id.
   public static func suggest(
-    _ catalog: Catalog, for profile: HardwareProfile, installed: [InstalledModel], needs: TaskNeeds, limit: Int = 3
+    _ catalog: Catalog, for profile: HardwareProfile, installed: [InstalledModel], needs: TaskNeeds,
+    measured: [String: MeasuredProfile] = [:], limit: Int = 3
   ) -> [ModelSuggestion] {
     struct Candidate { var model: CatalogModel; var plan: ModelPlan?; var installed: InstalledModel?; var memory: UInt64; var context: Int; var params: Double; var bits: Double; var weights: UInt64 }
     var candidates: [Candidate] = []
@@ -62,6 +65,8 @@ public enum ModelAdvisor {
       if let done = installed.first(where: { $0.id == model.id }) {
         // A model that failed its tool check is never offered for tool work.
         if needs.tools && done.readiness != .ready { continue }
+        // Nor one that failed the tool check when measured on this Mac.
+        if needs.tools && measured[model.id]?.callsTools == false { continue }
         let weights = done.bytes
         candidates.append(Candidate(
           model: model, plan: nil, installed: done, memory: weights, context: done.config.context,
@@ -84,7 +89,17 @@ public enum ModelAdvisor {
       return high > low ? (log(value) - low) / (high - low) : 1
     }
     let allParams = candidates.map { max($0.params, 1) }
-    let allWeights = candidates.map { Double(max($0.weights, 1)) }
+    // Generation is memory-bound, so tokens per second fall with the bytes read per token: k / weights.
+    // k is calibrated from the measured models (any k gives the same ranking when none is measured,
+    // because speed is spread on a log scale), and measured models use their real speed.
+    let calibration = candidates.compactMap { c in measured[c.model.id].map { $0.tokensPerSecond * Double(max(c.weights, 1)) } }
+      .filter { $0 > 0 }.sorted()
+    let k = calibration.isEmpty ? 1 : calibration[calibration.count / 2]
+    func tokensPerSecond(_ c: Candidate) -> Double {
+      if let real = measured[c.model.id]?.tokensPerSecond, real > 0 { return real }
+      return k / Double(max(c.weights, 1))
+    }
+    let allSpeeds = candidates.map(tokensPerSecond)
     let budget = Double(max(profile.modelBudgetBytes, 1))
     let weights: (quality: Double, speed: Double, fit: Double, context: Double) = switch needs.priority {
     case .quality: (0.65, 0.1, 0.1, 0.15)
@@ -94,8 +109,7 @@ public enum ModelAdvisor {
     var ranked: [ModelSuggestion] = candidates.map { c in
       // Quality grows with parameters (log scale) and, a little, with how faithful the quantization is.
       let quality = spread(max(c.params, 1), allParams) * pow(min(c.bits / 8.5, 1), 0.5)
-      // Generation is memory-bound, so speed falls with the bytes read per token.
-      let speed = 1 - spread(Double(max(c.weights, 1)), allWeights)
+      let speed = spread(tokensPerSecond(c), allSpeeds)
       let fit = max(0, 1 - Double(c.memory) / budget)
       let context = min(Double(c.context) / 32768, 1) * (needs.longContext ? 1.5 : 1)
       var score = weights.quality * quality + weights.speed * speed + weights.fit * fit + weights.context * context
@@ -106,7 +120,12 @@ public enum ModelAdvisor {
       reasons.append(c.installed != nil ? "Already installed" : "\(ModelPlanner.gb(c.plan?.downloadBytes ?? 0)) download")
       reasons.append("About \(Int((c.params / 1e9).rounded(.up)))B parameters at \(c.installed?.quant.rawValue ?? c.plan?.quant.rawValue ?? "")")
       reasons.append("\(c.context / 1024)K context")
-      if c.model.toolCalling { reasons.append("Calls tools") }
+      if let m = measured[c.model.id] {
+        reasons.append("Measured on this Mac: \(m.summary)")
+        reasons.append(m.callsTools ? "Calls tools" : "Chat only: it failed the tool check on this Mac")
+      } else if c.model.toolCalling {
+        reasons.append("Calls tools")
+      }
       reasons.append("Uses \(ModelPlanner.gb(c.memory)) of the \(ModelPlanner.gb(profile.modelBudgetBytes)) this Mac has for a model")
       return ModelSuggestion(model: c.model, plan: c.plan, installed: c.installed != nil, score: score, reasons: reasons)
     }
