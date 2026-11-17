@@ -1,6 +1,10 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { PROVIDER_INFO, projectIdSchema } from '@agentgate/controller';
+import {
+  PROVIDER_INFO,
+  projectIdSchema,
+  summarizeTraces,
+} from '@agentgate/controller';
 import {
   agentStore,
   cloud,
@@ -11,7 +15,9 @@ import {
   projects,
   projectImports,
   sessions,
+  telemetry,
 } from '@/lib/controller';
+import { RunPerformance } from '@/components/run-performance';
 import { releasePassage, removeContext, removeReference } from '@/app/actions';
 import { AddContext, AddReference } from '@/components/knowledge-forms';
 import { StartSession } from '@/components/start-session';
@@ -258,6 +264,7 @@ export default async function ProjectPage({
           <ConnectRepository projectId={id} repository={null} />
         )}
       </section>
+      <RunPerformance summary={summarizeTraces(telemetry().recent(id))} />
       <div className="project-session-grid">
         <section aria-labelledby="sessions-title">
           <div className="section-heading">

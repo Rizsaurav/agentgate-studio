@@ -1,7 +1,14 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { projectIdSchema, sessionIdSchema } from '@agentgate/controller';
-import { projects, security, sessions, context } from '@/lib/controller';
+import {
+  context,
+  projects,
+  scannerThreshold,
+  security,
+  sessions,
+  telemetry,
+} from '@/lib/controller';
 import { RunTraces } from '@/components/run-traces';
 import { SessionChat } from '@/components/session-chat';
 import { Panel } from '@/components/panel';
@@ -34,6 +41,7 @@ export default async function SessionPage({
     .map((run) => ({
       run,
       trace: sessions().traceForRun(run, security().forRun(run.id)),
+      timing: telemetry().find(run.id) ?? null,
     }));
   return (
     <>
@@ -154,7 +162,11 @@ export default async function SessionPage({
           </section>
         </aside>
       </div>
-      <RunTraces items={traceItems} totalRuns={runs.length} />
+      <RunTraces
+        items={traceItems}
+        totalRuns={runs.length}
+        threshold={scannerThreshold()}
+      />
     </>
   );
 }

@@ -166,7 +166,7 @@ export default async function SecurityPage({
           ) : (
             <ul className="findings-list">
               {events.map((event) => (
-                <li key={event.id}>
+                <li key={event.id} id={`finding-${event.id}`}>
                   <div className="finding-heading">
                     <span
                       className={`status-label ${event.outcome === 'released' ? '' : 'failure'}`}

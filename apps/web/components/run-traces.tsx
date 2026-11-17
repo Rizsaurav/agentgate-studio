@@ -1,9 +1,14 @@
 import Link from 'next/link';
-import type {
-  Run,
-  RunStatus,
-  RunTrace,
-  RunTraceStage,
+import {
+  SPAN_LABELS,
+  formatDuration,
+  slowestSpan,
+  usage,
+  type Run,
+  type RunStatus,
+  type RunTrace,
+  type RunTraceStage,
+  type Trace,
 } from '@agentgate/controller';
 
 const STAGE_STATUS_LABELS: Record<RunTraceStage['status'], string> = {
@@ -52,7 +57,107 @@ function shortPrompt(prompt: string): string {
   return points.length > 200 ? `${points.slice(0, 200).join('')}…` : prompt;
 }
 
-export type RunTraceItem = { run: Run; trace: RunTrace | null };
+export type RunTraceItem = {
+  run: Run;
+  trace: RunTrace | null;
+  /** Stage timings, tokens and scores from run telemetry (#10); null when none was recorded. */
+  timing: Trace | null;
+};
+
+const SPAN_STATUS_TONE: Record<Trace['spans'][number]['status'], Tone> = {
+  ok: 'ok',
+  blocked: 'bad',
+  error: 'bad',
+  cancelled: 'neutral',
+};
+
+/**
+ * Where the time went, stage by stage, with the numbers the run recorded. Bars are decorative;
+ * every duration is also given as text, so the view reads the same without them.
+ */
+function Timeline({ timing, threshold }: { timing: Trace; threshold: number }) {
+  const slowest = slowestSpan(timing);
+  const used = usage(timing);
+  const total = Math.max(timing.durationMs, 1);
+  return (
+    <div className="mt-4">
+      <p className="text-xs font-semibold uppercase tracking-widest muted">
+        Timeline
+      </p>
+      <p className="mt-2 text-sm">
+        {formatDuration(timing.durationMs)} in all
+        {slowest && (
+          <>
+            ; most of it in{' '}
+            <span className="font-medium">{SPAN_LABELS[slowest.name]}</span> (
+            {formatDuration(slowest.durationMs)})
+          </>
+        )}
+        {timing.rule && (
+          <>
+            . Blocked by rule <span className="font-mono">{timing.rule}</span>
+          </>
+        )}
+        .
+        {used.inputTokens !== null && (
+          <>
+            {' '}
+            {used.inputTokens} tokens in, {used.outputTokens ?? 0} out
+            {used.costUsd !== null && `, $${used.costUsd.toFixed(4)}`}.
+          </>
+        )}
+      </p>
+      <ol className="mt-3 space-y-2">
+        {timing.spans.map((span) => {
+          const score = span.attributes['agentgate.scanner.score'];
+          const passages = span.attributes['agentgate.passages'];
+          return (
+            <li key={`${span.name}-${span.startMs}`} className="text-sm">
+              <div className="flex flex-wrap items-baseline gap-3">
+                <span
+                  className="trace-badge shrink-0"
+                  data-tone={SPAN_STATUS_TONE[span.status]}
+                >
+                  {span.status}
+                </span>
+                <span className="font-medium">{SPAN_LABELS[span.name]}</span>
+                <span className="muted">{formatDuration(span.durationMs)}</span>
+                {score !== undefined && (
+                  <span className="muted">
+                    scanner score {score.toFixed(2)} (blocks at{' '}
+                    {threshold.toFixed(2)})
+                  </span>
+                )}
+                {passages !== undefined && (
+                  <span className="muted">
+                    {passages} passage{passages === 1 ? '' : 's'}
+                  </span>
+                )}
+                {span.attributes['agentgate.rule'] && (
+                  <span className="font-mono">
+                    {span.attributes['agentgate.rule']}
+                  </span>
+                )}
+              </div>
+              <div
+                aria-hidden="true"
+                className="mt-1 h-1.5 rounded bg-white/10"
+              >
+                <div
+                  className="h-1.5 rounded bg-violet-400"
+                  style={{
+                    marginLeft: `${(span.startMs / total) * 100}%`,
+                    width: `${Math.max((span.durationMs / total) * 100, 0.5)}%`,
+                  }}
+                />
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
 
 /**
  * Per-run timelines built only from already-stored run events, retrieved
@@ -62,9 +167,12 @@ export type RunTraceItem = { run: Run; trace: RunTrace | null };
 export function RunTraces({
   items,
   totalRuns,
+  threshold,
 }: {
   items: RunTraceItem[];
   totalRuns: number;
+  /** The scanner's prompt-injection threshold, shown beside each score. */
+  threshold: number;
 }) {
   if (items.length === 0) return null;
   const shown = items;
@@ -86,7 +194,7 @@ export function RunTraces({
         </p>
       )}
       <ol className="space-y-4">
-        {shown.map(({ run, trace }, index) => (
+        {shown.map(({ run, trace, timing }, index) => (
           <li key={run.id} className="activity-panel">
             {trace === null ? (
               <>
@@ -153,6 +261,7 @@ export function RunTraces({
                     </li>
                   ))}
                 </ol>
+                {timing && <Timeline timing={timing} threshold={threshold} />}
                 {trace.sources.length > 0 && (
                   <div className="mt-4">
                     <p className="text-xs font-semibold uppercase tracking-widest muted">
@@ -175,9 +284,12 @@ export function RunTraces({
                     <ul className="mt-2 space-y-2 text-sm">
                       {trace.securityEvents.map((event) => (
                         <li key={event.id}>
-                          <span className="font-mono text-sm">
+                          <Link
+                            href={`/security#finding-${event.id}`}
+                            className="font-mono text-sm underline"
+                          >
                             {event.rule}
-                          </span>{' '}
+                          </Link>{' '}
                           · {SECURITY_STAGE_LABELS[event.stage]} ·{' '}
                           {event.outcome}
                           {event.score !== null &&
