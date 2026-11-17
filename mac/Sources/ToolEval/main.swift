@@ -9,6 +9,9 @@ let usage = """
   Usage (from the repository root):
     agentgate-tooleval run --model <catalog id> --gguf <file.gguf>   Score one model file.
     agentgate-tooleval run --all                                     Score every model installed in the app.
+      --cpu          run on the CPU only (CI runners without a usable GPU); requests may take up to 15 minutes
+      --loads N      fresh engine loads per model (default 3; see CaseOutcome)
+      --timeout S    seconds per request (default 120, or 900 with --cpu)
     agentgate-tooleval report                                        Regenerate docs/MODEL_SCORES.md.
     agentgate-tooleval check --base <results folder>                 Fail if a score dropped by more than \(Int(ToolSuite.regressionMargin * 100)) points.
 
@@ -58,25 +61,49 @@ func hardware() -> String {
   return "\(profile.chip), \(profile.memoryBytes / (1 << 30)) GB"
 }
 
-/// Fresh engine loads per model. Results vary a little between loads, never within one; see `CaseOutcome`.
-let loads = 3
+/// How a model is run. Loads: results vary a little between Metal loads, never within one; see `CaseOutcome`.
+struct RunOptions {
+  var cpuOnly = false
+  var loads = 3
+  var timeout: TimeInterval = 120
+
+  init(_ args: [String]) throws {
+    cpuOnly = args.contains("--cpu")
+    if cpuOnly { timeout = 900 }
+    if let text = option("--loads", in: args) {
+      guard let n = Int(text), (1...10).contains(n) else { throw Failure(description: "--loads takes 1 to 10.") }
+      loads = n
+    }
+    if let text = option("--timeout", in: args) {
+      guard let n = TimeInterval(text), n > 0 else { throw Failure(description: "--timeout takes a number of seconds.") }
+      timeout = n
+    }
+  }
+}
 
 /// Runs the suite on `loads` fresh loads of `file`, writes the merged results and returns them.
-func score(model: CatalogModel, quant: String, file: URL, suite: ToolSuite) async throws -> ToolScoreReport {
+func score(model: CatalogModel, quant: String, file: URL, suite: ToolSuite, options: RunOptions) async throws -> ToolScoreReport {
   let engine = engineDirectory()
   // A fixed, modest context so every model is measured the same way; the long-output cases fit in it.
   let config = RuntimeConfig(
-    context: 16_384, gpuLayers: 999, kvCacheType: ModelPlanner.kvCacheType(model), flashAttention: true,
+    context: 16_384, gpuLayers: options.cpuOnly ? 0 : 999, kvCacheType: ModelPlanner.kvCacheType(model), flashAttention: true,
     threads: max(1, ProcessInfo.processInfo.activeProcessorCount / 2))
   var runs: [[CaseOutcome]] = []
-  for load in 1...loads {
-    print("\(model.id) \(quant): load \(load) of \(loads) on \(engineName(engine))…")
+  for load in 1...options.loads {
+    print("\(model.id) \(quant): load \(load) of \(options.loads) on \(engineName(engine))…")
     let runtime = try await LlamaRuntime.start(model: file, alias: model.id, config: config, binaries: engine)
     defer { runtime.stop() }
-    let runner = ToolSuiteRunner(baseURL: runtime.baseURL, apiKey: runtime.apiKey, model: model.id)
+    var runner = ToolSuiteRunner(baseURL: runtime.baseURL, apiKey: runtime.apiKey, model: model.id)
+    runner.timeout = options.timeout
     runs.append(try await runner.run(suite))
   }
   let outcomes = ToolSuiteRunner.merge(runs)
+  // A request that failed (timeout, engine error) says nothing about the model: publishing it as a
+  // failed case would understate the score, so nothing is written.
+  let broken = outcomes.filter { $0.reason.hasPrefix(ToolSuiteRunner.requestFailed) }
+  if let first = broken.first {
+    throw Failure(description: "\(broken.count) request(s) failed, so no results were written. First: \(first.id): \(first.reason.prefix(200))\nRetry, or raise --timeout.")
+  }
   for outcome in outcomes {
     let mark = outcome.flaky ? "FLAKY \(outcome.passes)/\(outcome.runs)" : outcome.passed ? "pass" : "FAIL"
     print("  \(mark) \(outcome.id)\(outcome.reason.isEmpty ? "" : ": \(outcome.reason)")")
@@ -107,12 +134,13 @@ func main() async throws {
   case "run":
     let suite = try ToolSuite.load(from: suiteFolder)
     let catalog = try Catalog.bundled()
+    let options = try RunOptions(args)
     if args.contains("--all") {
       let installed = try ModelStore().list()
       guard !installed.isEmpty else { throw Failure(description: "No models are installed in the app. Install one, or use --model with --gguf.") }
       for item in installed {
         guard let model = catalog.model(item.id) else { print("skipping \(item.id): not in the catalog"); continue }
-        _ = try await score(model: model, quant: item.quant.rawValue, file: ModelStore().fileURL(item), suite: suite)
+        _ = try await score(model: model, quant: item.quant.rawValue, file: ModelStore().fileURL(item), suite: suite, options: options)
       }
     } else {
       guard let id = option("--model", in: args), let path = option("--gguf", in: args) else { throw Failure(description: usage) }
@@ -121,7 +149,7 @@ func main() async throws {
       guard let entry = model.gguf.files.first(where: { $0.file == file.lastPathComponent }) else {
         throw Failure(description: "\(file.lastPathComponent) is not a file the catalog lists for \(id).")
       }
-      _ = try await score(model: model, quant: entry.quant.rawValue, file: file, suite: suite)
+      _ = try await score(model: model, quant: entry.quant.rawValue, file: file, suite: suite, options: options)
     }
     try writeReport()
   case "report":

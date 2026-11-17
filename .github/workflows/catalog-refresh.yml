@@ -1,0 +1,102 @@
+name: Catalog refresh
+# Nightly: rebuilds the model catalog from Hugging Face, scores new or changed models with the
+# tool-calling suite (evals/tools), and opens a pull request for a person to review. Never merges.
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+concurrency:
+  group: catalog-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: refresh
+    # Same runner as the mac CI job, so the engine and Swift toolchain match.
+    runs-on: macos-26
+    timeout-minutes: 120
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rebuild the catalog from Hugging Face
+        run: |
+          echo "WORK=$RUNNER_TEMP/refresh" >> "$GITHUB_ENV"
+          WORK="$RUNNER_TEMP/refresh"
+          mkdir -p "$WORK"
+          cp mac/Sources/AgentGateCore/Resources/catalog.json "$WORK/old.json"
+          # build_catalog.py retries each request at most three times; the job's time limit bounds the rest.
+          python3 mac/scripts/build_catalog.py
+
+      - name: Compare with the committed catalog
+        id: diff
+        run: |
+          set +e
+          python3 mac/scripts/catalog_diff.py "$WORK/old.json" mac/Sources/AgentGateCore/Resources/catalog.json \
+            --report "$WORK/report.md" --score "$WORK/score.tsv"
+          code=$?
+          set -e
+          cat "$WORK/report.md" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$code" -eq 2 ]; then
+            echo "A file's checksum changed for an existing catalog entry. See the errors above; nothing is proposed."
+            exit 1
+          fi
+          if [ "$code" -ne 0 ] && [ "$code" -ne 1 ]; then exit "$code"; fi
+          echo "changed=$([ "$code" -eq 1 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "hash=$(shasum -a 256 mac/Sources/AgentGateCore/Resources/catalog.json | cut -c1-12)" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if this change is already proposed
+        id: branch
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          branch="chore/catalog-refresh-${{ steps.diff.outputs.hash }}"
+          echo "name=$branch" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --heads origin "$branch" > /dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "$branch already proposes this catalog."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Score new and changed models
+        if: steps.diff.outputs.changed == 'true' && steps.branch.outputs.exists == 'false'
+        run: |
+          [ -s "$WORK/score.tsv" ] || { echo "Nothing to score."; exit 0; }
+          sh mac/scripts/fetch_runtime.sh
+          while IFS="$(printf '\t')" read -r id repo file sha; do
+            echo "::group::$id ($file)"
+            curl -fsSL --retry 3 --max-time 3600 < /dev/null -o "$WORK/$file" "https://huggingface.co/$repo/resolve/main/$file"
+            echo "$sha  $WORK/$file" | shasum -a 256 -c -
+            # Hosted runners have no usable GPU for the engine: CPU only, where results do not vary between
+            # loads, so one load is enough. A request that times out stops the run instead of counting as a fail.
+            swift run --package-path mac agentgate-tooleval run --cpu --loads 1 --model "$id" --gguf "$WORK/$file" < /dev/null
+            rm -f "$WORK/$file"
+            echo "::endgroup::"
+          done < "$WORK/score.tsv"
+          python3 mac/scripts/build_catalog.py --scores
+          swift run --package-path mac agentgate-tooleval report
+
+      - name: Open a pull request
+        if: steps.diff.outputs.changed == 'true' && steps.branch.outputs.exists == 'false'
+        env:
+          BRANCH: ${{ steps.branch.outputs.name }}
+          BASE: ${{ github.ref_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git add mac/Sources/AgentGateCore/Resources/catalog.json evals/tools/results docs/MODEL_SCORES.md
+          git commit -m "chore: H13 nightly catalog refresh"
+          git push origin "$BRANCH"
+          {
+            cat "$WORK/report.md"
+            echo
+            echo "Opened by the nightly catalog refresh. Review the diff and the scores, then merge or close. This job never merges."
+            echo
+            echo "Pull requests opened with the workflow token do not start CI: close and reopen this one to run the checks."
+          } > "$WORK/body.md"
+          gh pr create --base "$BASE" --head "$BRANCH" --title "chore: H13 nightly catalog refresh" --body-file "$WORK/body.md"
