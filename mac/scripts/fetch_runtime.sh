@@ -2,10 +2,12 @@
 # Downloads the pinned llama.cpp macOS build into dist/runtime/llama and verifies its checksum.
 # The app bundles these binaries; nothing is installed on the user's Mac.
 set -eu
-TAG=b11765
-SHA256=411350ac7aa943907db7867b3b3a112166f60d7dc9748c7f7528f3e5f223a4f2
-URL="https://github.com/ggml-org/llama.cpp/releases/download/$TAG/llama-$TAG-bin-macos-arm64.tar.gz"
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+# The pin lives in one place, shared with the app: Sources/AgentGateCore/Resources/engines.json.
+PINS="$ROOT/Sources/AgentGateCore/Resources/engines.json"
+TAG=$(plutil -extract engines.llama.tag raw -o - "$PINS")
+SHA256=$(plutil -extract engines.llama.sha256 raw -o - "$PINS")
+URL=$(plutil -extract engines.llama.url raw -o - "$PINS")
 OUT="$ROOT/dist/runtime/llama"
 if [ -f "$OUT/.tag" ] && [ "$(cat "$OUT/.tag")" = "$TAG" ]; then echo "llama.cpp $TAG already present"; exit 0; fi
 WORK=$(mktemp -d)

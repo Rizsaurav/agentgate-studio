@@ -14,7 +14,7 @@ let package = Package(
   ],
   targets: [
     // Model manager logic, free of UI so it is unit-tested directly.
-    .target(name: "AgentGateCore", resources: [.copy("Resources/catalog.json")]),
+    .target(name: "AgentGateCore", resources: [.copy("Resources/catalog.json"), .copy("Resources/engines.json")]),
     .executableTarget(
       name: "AgentGateStudio",
       dependencies: ["AgentGateCore", .product(name: "SwiftTerm", package: "SwiftTerm")]),

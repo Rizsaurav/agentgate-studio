@@ -72,6 +72,13 @@ final class AppModel {
   private let store = ModelStore()
   private let workspaceStore = WorkspaceStore()
   private var runtime: LlamaRuntime?
+  /// Newer pinned engine versions found by "Check for updates", by engine (#91).
+  private(set) var engineUpdates: [EngineKind: EnginePin] = [:]
+  /// The engine being checked or updated, and what happened last.
+  private(set) var engineBusy: EngineKind?
+  private(set) var checkingEngines = false
+  private(set) var engineMessage: String?
+  private let engineUpdater = EngineUpdater()
   private var installTask: Task<Bool, Never>?
 
   func start() {
@@ -396,6 +403,82 @@ final class AppModel {
     } catch {
       errorMessage = String(describing: error)
     }
+  }
+
+  func engineTag(_ kind: EngineKind) -> String {
+    let bundled = kind == .llama ? LlamaRuntime.bundledDirectory : AgentServer.bundledDirectory
+    return engineUpdater.currentTag(kind, bundled: bundled) ?? "unknown"
+  }
+
+  func canRollBackEngine(_ kind: EngineKind) -> Bool { (try? engineUpdater.store.state())?[kind]?.active != nil }
+
+  /// Reads the pinned versions published with the released app and lists the ones that differ.
+  func checkEngineUpdates() async {
+    checkingEngines = true
+    defer { checkingEngines = false }
+    do {
+      let (data, response) = try await URLSession.shared.data(from: EngineManifest.publishedURL)
+      guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+        throw EngineUpdateError.invalidManifest("the server answered \((response as? HTTPURLResponse)?.statusCode ?? 0)")
+      }
+      engineUpdates = engineUpdater.available(
+        try EngineManifest.decode(data),
+        bundled: [.llama: LlamaRuntime.bundledDirectory, .opencode: AgentServer.bundledDirectory])
+      engineMessage = engineUpdates.isEmpty ? "The engines are up to date." : nil
+    } catch {
+      engineMessage = "Could not check for engine updates: \(error)"
+    }
+  }
+
+  /// Installs a newer engine after the user asked for it. It is used only if it loads a model and passes
+  /// the install check; otherwise it is removed and the current version stays. Models and projects are not touched.
+  func updateEngine(_ kind: EngineKind) async {
+    guard engineBusy == nil, let pin = engineUpdates[kind] else { return }
+    let reload = active.flatMap { catalog?.model($0.id) }
+    let trial: EngineUpdater.Trial
+    switch kind {
+    case .llama:
+      guard let model = active ?? installed.min(by: { $0.bytes < $1.bytes }) else {
+        engineMessage = "Install a model first: a new engine is checked by loading one."
+        return
+      }
+      // The trial loads its own copy of the model, so the running one is stopped first.
+      stopAgentServer()
+      stopRuntime()
+      trial = EngineTrial.llama(model: model, store: store)
+    case .opencode:
+      guard let runtime else {
+        engineMessage = "Load a model first: a new harness is checked against the running engine."
+        return
+      }
+      stopAgentServer()
+      trial = EngineTrial.opencode(runtime: runtime)
+    }
+    engineBusy = kind
+    engineMessage = "Downloading and checking \(kind.label) \(pin.tag)…"
+    defer { engineBusy = nil }
+    do {
+      try await engineUpdater.install(kind, pin, trial: trial)
+      engineUpdates[kind] = nil
+      engineMessage = "\(kind.label) \(pin.tag) passed its check and is now in use."
+    } catch {
+      engineMessage = String(describing: error)
+    }
+    if kind == .llama, let reload { select(reload) }
+  }
+
+  /// Goes back to the previous engine version (or the one built into the app).
+  func rollBackEngine(_ kind: EngineKind) {
+    let reload = active.flatMap { catalog?.model($0.id) }
+    stopAgentServer()
+    if kind == .llama { stopRuntime() }
+    do {
+      try engineUpdater.store.rollBack(kind)
+      engineMessage = "Back to \(kind.label) \(engineTag(kind))."
+    } catch {
+      engineMessage = String(describing: error)
+    }
+    if kind == .llama, let reload { select(reload) }
   }
 
   func stopRuntime() {

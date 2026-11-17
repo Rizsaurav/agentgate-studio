@@ -54,11 +54,15 @@ public final class LlamaRuntime: @unchecked Sendable {
   private let log: LogTail
   private let output: FileHandle?
 
-  /// Where the bundled engine lives: the app's Resources, or `AGENTGATE_LLAMA_DIR` when run from source.
+  /// The engine to run: `AGENTGATE_LLAMA_DIR` when run from source, else an update that passed its
+  /// trial (#91), else the copy bundled in the app.
   public static func binaryDirectory() -> URL? {
     if let dir = ProcessInfo.processInfo.environment["AGENTGATE_LLAMA_DIR"] { return URL(fileURLWithPath: dir) }
-    return Bundle.main.resourceURL?.appendingPathComponent("runtime/llama")
+    return EngineStore().activeDirectory(.llama) ?? bundledDirectory
   }
+
+  /// The copy shipped inside the app.
+  public static var bundledDirectory: URL? { Bundle.main.resourceURL?.appendingPathComponent("runtime/llama") }
 
   private init(baseURL: URL, apiKey: String, alias: String, process: Process, log: LogTail, output: FileHandle?) {
     self.output = output
