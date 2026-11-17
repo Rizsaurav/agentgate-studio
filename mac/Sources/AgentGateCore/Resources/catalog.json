@@ -86,6 +86,22 @@
     "quant": "Q8_0",
     "engine": "llama.cpp b11765",
     "measured": "2026-11-17"
+   },
+   "profile": {
+    "toolCallFormat": "hermes",
+    "promptVariant": "compact",
+    "knownIssues": [
+     "Rarely tries again after a tool returns an error.",
+     "Loses track of details in long tool output."
+    ],
+    "thinking": false,
+    "sampler": {
+     "temperature": 0.7,
+     "passRate": 0.7333,
+     "measured": "2026-11-17",
+     "engine": "llama.cpp b11765",
+     "topP": 0.8
+    }
    }
   },
   {
@@ -137,6 +153,21 @@
     "quant": "Q8_0",
     "engine": "llama.cpp b11765",
     "measured": "2026-11-17"
+   },
+   "profile": {
+    "toolCallFormat": "hermes",
+    "promptVariant": "compact",
+    "knownIssues": [
+     "Rarely tries again after a tool returns an error."
+    ],
+    "thinking": false,
+    "sampler": {
+     "temperature": 0.7,
+     "passRate": 0.7778,
+     "measured": "2026-11-17",
+     "engine": "llama.cpp b11765",
+     "topP": 0.8
+    }
    }
   },
   {
@@ -201,7 +232,12 @@
      "repo": "mlx-community/Llama-3.2-3B-Instruct-4bit",
      "bytes": 1807496278
     }
-   ]
+   ],
+   "profile": {
+    "toolCallFormat": "llama3-json",
+    "promptVariant": "compact",
+    "knownIssues": []
+   }
   },
   {
    "id": "phi-4-mini",
@@ -253,6 +289,11 @@
    "source": {
     "repo": "microsoft/Phi-4-mini-instruct",
     "bytes": 7672066216
+   },
+   "profile": {
+    "toolCallFormat": "phi",
+    "promptVariant": "compact",
+    "knownIssues": []
    }
   },
   {
@@ -305,6 +346,13 @@
    "source": {
     "repo": "unsloth/gemma-3-4b-it",
     "bytes": 8600277880
+   },
+   "profile": {
+    "toolCallFormat": "none",
+    "promptVariant": "full",
+    "knownIssues": [
+     "Cannot call tools: chat only."
+    ]
    }
   },
   {
@@ -374,7 +422,12 @@
      "repo": "mlx-community/Qwen3-4B-Instruct-2507-4bit",
      "bytes": 2263022417
     }
-   ]
+   ],
+   "profile": {
+    "toolCallFormat": "hermes",
+    "promptVariant": "full",
+    "knownIssues": []
+   }
   },
   {
    "id": "qwen3-8b",
@@ -437,7 +490,13 @@
      "repo": "mlx-community/Qwen3-8B-4bit",
      "bytes": 4607835174
     }
-   ]
+   ],
+   "profile": {
+    "toolCallFormat": "hermes",
+    "promptVariant": "full",
+    "knownIssues": [],
+    "thinking": false
+   }
   },
   {
    "id": "gemma-3-12b",
@@ -489,6 +548,13 @@
    "source": {
     "repo": "unsloth/gemma-3-12b-it",
     "bytes": 24374793024
+   },
+   "profile": {
+    "toolCallFormat": "none",
+    "promptVariant": "full",
+    "knownIssues": [
+     "Cannot call tools: chat only."
+    ]
    }
   },
   {
@@ -552,7 +618,13 @@
      "repo": "mlx-community/Qwen3-14B-4bit",
      "bytes": 8307898514
     }
-   ]
+   ],
+   "profile": {
+    "toolCallFormat": "hermes",
+    "promptVariant": "full",
+    "knownIssues": [],
+    "thinking": false
+   }
   },
   {
    "id": "gpt-oss-20b",
@@ -576,6 +648,11 @@
       "sha256": "27cd6c432c7672cb812a92f611cf3ba7bbc35928262bb1e1253ff4ee6ae35901"
      }
     ]
+   },
+   "profile": {
+    "toolCallFormat": "harmony",
+    "promptVariant": "full",
+    "knownIssues": []
    }
   },
   {
@@ -624,6 +701,11 @@
       "sha256": "830d8937494e80e64b0ab03ed69a7f29b80dbe5c4d0656517be6620f231a3fdd"
      }
     ]
+   },
+   "profile": {
+    "toolCallFormat": "mistral",
+    "promptVariant": "full",
+    "knownIssues": []
    }
   },
   {
@@ -693,7 +775,12 @@
      "repo": "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit",
      "bytes": 17181071994
     }
-   ]
+   ],
+   "profile": {
+    "toolCallFormat": "hermes",
+    "promptVariant": "full",
+    "knownIssues": []
+   }
   },
   {
    "id": "qwen3-32b",
@@ -756,7 +843,13 @@
      "repo": "mlx-community/Qwen3-32B-4bit",
      "bytes": 18429850874
     }
-   ]
+   ],
+   "profile": {
+    "toolCallFormat": "hermes",
+    "promptVariant": "full",
+    "knownIssues": [],
+    "thinking": false
+   }
   }
  ]
 }

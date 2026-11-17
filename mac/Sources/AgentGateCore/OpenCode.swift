@@ -170,8 +170,8 @@ public final class AgentServer: @unchecked Sendable {
   }
 
   /// The harness configuration: one local provider, and permissions that fail closed.
-  static func config(engineURL: URL, engineKey: String, model: String, context: Int) throws -> String {
-    let config: [String: Any] = [
+  static func config(engineURL: URL, engineKey: String, model: String, context: Int, profile: CapabilityProfile? = nil) throws -> String {
+    var config: [String: Any] = [
       "$schema": "https://opencode.ai/config.json",
       "autoupdate": false, "share": "disabled",
       "provider": ["local": [
@@ -187,11 +187,21 @@ public final class AgentServer: @unchecked Sendable {
         "webfetch": "deny", "external_directory": "deny",
       ],
     ]
+    // The model's profile (#79): its measured sampler, and the compact instructions for small models.
+    if let profile {
+      var build: [String: Any] = [:]
+      if let sampler = profile.sampler {
+        build["temperature"] = sampler.temperature
+        if let topP = sampler.topP { build["top_p"] = topP }
+      }
+      if profile.promptVariant == .compact { build["prompt"] = CapabilityProfile.compactPrompt }
+      if !build.isEmpty { config["agent"] = ["build": build] }
+    }
     return String(decoding: try JSONSerialization.data(withJSONObject: config), as: UTF8.self)
   }
 
   public static func start(
-    folder: URL, engineURL: URL, engineKey: String, model: String, context: Int,
+    folder: URL, engineURL: URL, engineKey: String, model: String, context: Int, profile: CapabilityProfile? = nil,
     binaries: URL? = binaryDirectory(), timeout: TimeInterval = 90
   ) async throws -> AgentServer {
     guard let exe = binaries?.appendingPathComponent("opencode"),
@@ -220,7 +230,7 @@ public final class AgentServer: @unchecked Sendable {
       "XDG_CONFIG_HOME": home.appendingPathComponent("config").path,
       "XDG_CACHE_HOME": home.appendingPathComponent("cache").path,
       "OPENCODE_SERVER_PASSWORD": password,
-      "OPENCODE_CONFIG_CONTENT": try config(engineURL: engineURL, engineKey: engineKey, model: model, context: context),
+      "OPENCODE_CONFIG_CONTENT": try config(engineURL: engineURL, engineKey: engineKey, model: model, context: context, profile: profile),
     ]) { $1 }
     let log = LogTail()
     let pipe = Pipe()

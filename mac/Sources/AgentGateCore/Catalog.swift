@@ -106,6 +106,8 @@ public struct CatalogModel: Codable, Sendable, Equatable, Identifiable {
   public var source: Source?
   public var mlx: [MLXVariant]?
   public var toolScore: ToolScore?
+  /// How the harness treats this model (#79). Every model has one.
+  public var profile: CapabilityProfile
 
   public func file(_ quant: Quantization) -> GGUFFile? { gguf.files.first { $0.quant == quant } }
   public func mlxVariant(bits: Int) -> MLXVariant? { mlx?.first { $0.bits == bits } }
@@ -179,6 +181,10 @@ public struct Catalog: Codable, Sendable, Equatable {
       if let source = model.source {
         try Self.checkRepo(source.repo, model.id)
         guard source.bytes > 0 else { throw fail("\(model.id) has a bad source size") }
+      }
+      try model.profile.validate(model.id)
+      if model.profile.toolCallFormat == "none" && model.toolCalling {
+        throw fail("\(model.id) calls tools but its profile has no tool-call format")
       }
       if let score = model.toolScore {
         guard (0...1).contains(score.passRate), Quantization(rawValue: score.quant) != nil, !score.engine.isEmpty,

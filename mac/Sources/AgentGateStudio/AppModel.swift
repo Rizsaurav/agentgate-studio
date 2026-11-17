@@ -88,6 +88,7 @@ final class AppModel {
       tiers = ModelPlanner.tiers(catalog, for: profile)
       installed = try store.list()
       let route = localRoute
+      route.profiles = Dictionary(uniqueKeysWithValues: catalog.models.map { ($0.id, $0.profile) })
       gateway = try Gateway(resolve: { id in
         if let (provider, model) = ModelID.parseCloud(id) { return .cloud(provider, model: model) }
         return route.route(for: id)
@@ -660,7 +661,8 @@ final class AppModel {
       folder: folder, engineURL: gateway.baseURL, engineKey: gateway.key, model: model,
       // The harness's own instructions and tools take about 12K tokens; it must know the model's real context.
       // Cloud models have far more than a local one; providers do not report it, so a conservative 128K is used.
-      context: ModelID.isCloud(model) ? 128_000 : active?.config.context ?? ModelPlanner.preferredContext)
+      context: ModelID.isCloud(model) ? 128_000 : active?.config.context ?? ModelPlanner.preferredContext,
+      profile: catalog?.model(model)?.profile)
     agent = server
     eventTask = Task { [weak self] in
       do {
@@ -739,6 +741,12 @@ final class AppModel {
 final class LocalRoute: @unchecked Sendable {
   private let lock = NSLock()
   private var current: (alias: String, baseURL: URL, key: String)?
+  /// Catalog profiles by model id, set once at start.
+  var profiles: [String: CapabilityProfile] {
+    get { lock.withLock { storedProfiles } }
+    set { lock.withLock { storedProfiles = newValue } }
+  }
+  private var storedProfiles: [String: CapabilityProfile] = [:]
 
   func set(_ runtime: LlamaRuntime?) {
     lock.withLock { current = runtime.map { ($0.alias, $0.baseURL, $0.apiKey) } }
@@ -747,7 +755,7 @@ final class LocalRoute: @unchecked Sendable {
   func route(for id: String) -> ModelRoute? {
     lock.withLock {
       guard let current, current.alias == id else { return nil }
-      return .local(baseURL: current.baseURL, key: current.key, model: current.alias)
+      return .local(baseURL: current.baseURL, key: current.key, model: current.alias, profile: storedProfiles[current.alias])
     }
   }
 }

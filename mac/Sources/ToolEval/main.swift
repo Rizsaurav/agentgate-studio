@@ -12,6 +12,7 @@ let usage = """
       --cpu          run on the CPU only (CI runners without a usable GPU); requests may take up to 15 minutes
       --loads N      fresh engine loads per model (default 3; see CaseOutcome)
       --timeout S    seconds per request (default 120, or 900 with --cpu)
+      --temperature T [--top-p P]   a sampler sweep (#79): results go to evals/tools/sampler/, not the scores
     agentgate-tooleval run --cloud <provider>/<model>                Score a cloud model with the key saved in the app.
   Every request goes through the app's model endpoint (Gateway), as in a session.
     agentgate-tooleval report                                        Regenerate docs/MODEL_SCORES.md.
@@ -28,6 +29,7 @@ let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
 let suiteFolder = root.appendingPathComponent("evals/tools")
 let resultsFolder = suiteFolder.appendingPathComponent("results")
 let scoresDoc = root.appendingPathComponent("docs/MODEL_SCORES.md")
+let sweepFolder = suiteFolder.appendingPathComponent("sampler")
 
 func option(_ name: String, in args: [String]) -> String? {
   guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
@@ -68,6 +70,9 @@ struct RunOptions {
   var cpuOnly = false
   var loads = 3
   var timeout: TimeInterval = 120
+  var temperature: Double?
+  var topP: Double?
+  var isSweep: Bool { temperature != nil || topP != nil }
 
   init(_ args: [String]) throws {
     cpuOnly = args.contains("--cpu")
@@ -75,6 +80,14 @@ struct RunOptions {
     if let text = option("--loads", in: args) {
       guard let n = Int(text), (1...10).contains(n) else { throw Failure(description: "--loads takes 1 to 10.") }
       loads = n
+    }
+    if let text = option("--temperature", in: args) {
+      guard let t = Double(text), (0...2).contains(t) else { throw Failure(description: "--temperature takes 0 to 2.") }
+      temperature = t
+    }
+    if let text = option("--top-p", in: args) {
+      guard let p = Double(text), p > 0, p <= 1 else { throw Failure(description: "--top-p takes a number above 0, up to 1.") }
+      topP = p
     }
     if let text = option("--timeout", in: args) {
       guard let n = TimeInterval(text), n > 0 else { throw Failure(description: "--timeout takes a number of seconds.") }
@@ -97,11 +110,13 @@ func score(model: CatalogModel, quant: String, file: URL, suite: ToolSuite, opti
     defer { runtime.stop() }
     // Through the same endpoint the harness uses, so the suite measures what a session gets.
     let gateway = try Gateway(resolve: { id in
-      id == model.id ? .local(baseURL: runtime.baseURL, key: runtime.apiKey, model: model.id) : nil
+      id == model.id ? .local(baseURL: runtime.baseURL, key: runtime.apiKey, model: model.id, profile: model.profile) : nil
     })
     defer { gateway.stop() }
     var runner = ToolSuiteRunner(baseURL: gateway.baseURL, apiKey: gateway.key, model: model.id)
     runner.timeout = options.timeout
+    if let t = options.temperature { runner.temperature = t }
+    runner.topP = options.topP
     runs.append(try await runner.run(suite))
   }
   let outcomes = ToolSuiteRunner.merge(runs)
@@ -117,14 +132,19 @@ func score(model: CatalogModel, quant: String, file: URL, suite: ToolSuite, opti
   }
   // The last committed results carry the flake history. One that exists but cannot be read stops
   // the run rather than silently losing that history.
-  let previousURL = resultsFolder.appendingPathComponent("\(model.id)-\(quant).json")
+  // A sweep is kept apart from the published scores, one file per setting.
+  let folder = options.isSweep ? sweepFolder : resultsFolder
+  let suffix = options.isSweep ? "-t\(options.temperature ?? ToolSuiteRunner.temperature)" + (options.topP.map { "-p\($0)" } ?? "") : ""
+  let previousURL = folder.appendingPathComponent("\(model.id)-\(quant)\(suffix).json")
   let previous = FileManager.default.fileExists(atPath: previousURL.path)
     ? try JSONDecoder().decode(ToolScoreReport.self, from: Data(contentsOf: previousURL)) : nil
   let report = ToolScoreReport(
     model: model.id, quant: quant, engine: engineName(engine), commit: commit(), hardware: hardware(),
     date: String(ISO8601DateFormatter().string(from: Date()).prefix(10)),
-    temperature: ToolSuiteRunner.temperature, seed: ToolSuiteRunner.seed, cases: outcomes).carryingFlakes(from: previous)
-  let url = try report.write(to: resultsFolder)
+    temperature: options.temperature ?? ToolSuiteRunner.temperature, seed: ToolSuiteRunner.seed, cases: outcomes).carryingFlakes(from: previous)
+  var stored = report
+  stored.topP = options.topP
+  let url = try stored.write(to: folder, suffix: suffix)
   print("\(model.id) \(quant): \(report.passed)/\(report.total) (\(Int((report.passRate * 100).rounded()))%) → \(url.path)")
   return report
 }

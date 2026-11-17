@@ -93,6 +93,98 @@ def licence(repo):
 
 
 RESULTS = Path(__file__).resolve().parents[2] / "evals/tools/results"
+SAMPLER = Path(__file__).resolve().parents[2] / "evals/tools/sampler"
+
+# Models below this many parameters get the compact instructions (#79): more context is left for the task.
+COMPACT_BELOW = 4e9
+
+# What a weak category in the tool-calling suite means for a user, for the model's tooltip.
+ISSUES = {
+    "single": "Unreliable even with a single tool.",
+    "selection": "Sometimes picks the wrong tool.",
+    "multiple": "Often uses only one of several tools a task needs.",
+    "missing-argument": "Guesses missing details instead of asking.",
+    "nested": "Struggles with nested tool arguments.",
+    "parallel": "Makes one call where several are needed.",
+    "recovery": "Rarely tries again after a tool returns an error.",
+    "long-output": "Loses track of details in long tool output.",
+    "refusal": "May act on instructions found in files or tool output.",
+}
+
+
+def template_traits(repo, gguf_repo):
+    """Tool-call format and thinking switch, read from the model's chat template on Hugging Face."""
+    base = repo or {"ggml-org/gpt-oss-20b-GGUF": "openai/gpt-oss-20b",
+                    "unsloth/Mistral-Small-3.2-24B-Instruct-2506-GGUF": "unsloth/Mistral-Small-3.2-24B-Instruct-2506"}[gguf_repo]
+    config = get(f"{base}/resolve/main/tokenizer_config.json") or {}
+    template = config.get("chat_template") or ""
+    if isinstance(template, list):
+        template = " ".join(t.get("template", "") for t in template)
+    if not template:
+        try:
+            with urllib.request.urlopen(f"https://huggingface.co/{base}/resolve/main/chat_template.jinja", timeout=60) as r:
+                template = r.read().decode("utf-8", "replace")
+        except urllib.error.HTTPError:
+            template = ""
+    if "<tool_call>" in template:
+        fmt = "hermes"
+    elif "[TOOL_CALLS]" in template:
+        fmt = "mistral"
+    elif "<|channel|>" in template:
+        fmt = "harmony"
+    elif "<|tool|>" in template or "<|tool_call|>" in template:
+        fmt = "phi"
+    elif "parameters" in template and ("ipython" in template or "<|eot_id|>" in template):
+        fmt = "llama3-json"
+    else:
+        fmt = "none"
+    return fmt, (False if "enable_thinking" in template else None)
+
+
+def best_sampler(mid):
+    """The measured setting with the highest pass rate; the suite's own run (temperature 0) counts too.
+    On a tie the plainer setting wins: lower temperature, then no top-p."""
+    runs = []
+    for folder in (RESULTS, SAMPLER):
+        if folder.is_dir():
+            runs += [json.loads(f.read_text()) for f in sorted(folder.glob(f"{mid}-*.json"))]
+    runs = [r for r in runs if r["model"] == mid]
+    if not runs:
+        return None
+    best = max(runs, key=lambda r: (round(r["passed"] / r["total"], 4), -r["temperature"], r.get("topP") is None))
+    sampler = {"temperature": best["temperature"], "passRate": round(best["passed"] / best["total"], 4),
+               "measured": best["date"], "engine": best["engine"]}
+    if best.get("topP") is not None:
+        sampler["topP"] = best["topP"]
+    return sampler
+
+
+def apply_profiles(catalog, traits=None):
+    """Sets every model's profile. `traits` (from the chat templates) is given on a full build; otherwise
+    the format and thinking switch already in the catalog are kept."""
+    results = [json.loads(f.read_text()) for f in sorted(RESULTS.glob("*.json"))] if RESULTS.is_dir() else []
+    for entry in catalog["models"]:
+        old = entry.get("profile", {})
+        fmt, thinking = (traits or {}).get(entry["id"], (old.get("toolCallFormat", "none"), old.get("thinking")))
+        if not entry["toolCalling"]:
+            fmt = "none"
+        weights = entry.get("source", {}).get("bytes")
+        params = weights / 2 if weights else max(f["bytes"] for f in entry["gguf"]["files"]) * 8 / 8.5
+        mine = sorted((r for r in results if r["model"] == entry["id"]), key=lambda r: QUANTS.index(r["quant"]))
+        issues = []
+        if not entry["toolCalling"]:
+            issues.append("Cannot call tools: chat only.")
+        elif mine:
+            cats = mine[0]["categories"]
+            issues = [ISSUES[c] for c in ISSUES if c in cats and cats[c]["passed"] / cats[c]["total"] < 0.5]
+        profile = {"toolCallFormat": fmt, "promptVariant": "compact" if params < COMPACT_BELOW else "full", "knownIssues": issues}
+        if thinking is not None:
+            profile["thinking"] = thinking
+        sampler = best_sampler(entry["id"])
+        if sampler:
+            profile["sampler"] = sampler
+        entry["profile"] = profile
+    return catalog
 
 
 def apply_scores(catalog):
@@ -111,7 +203,9 @@ def apply_scores(catalog):
 
 def build():
     models = []
+    traits = {}
     for mid, name, publisher, gguf_repo, source, mlx, tools in MODELS:
+        traits[mid] = template_traits(source, gguf_repo)
         files = []
         for f in tree(gguf_repo):
             q = quant_of(f["path"]) if f["path"].endswith(".gguf") else None
@@ -139,11 +233,11 @@ def build():
                 entry["mlx"] = variants
         models.append(entry)
         print(f"{mid}: {[f['quant'] for f in files]} source={'source' in entry} mlx={[v['bits'] for v in entry.get('mlx', [])]}", file=sys.stderr)
-    return apply_scores({"version": 1, "tiers": TIERS, "models": models})
+    return apply_profiles(apply_scores({"version": 1, "tiers": TIERS, "models": models}), traits)
 
 
 if __name__ == "__main__":
     out = Path(__file__).resolve().parent.parent / "Sources/AgentGateCore/Resources/catalog.json"
-    catalog = apply_scores(json.loads(out.read_text())) if "--scores" in sys.argv[1:] else build()
+    catalog = apply_profiles(apply_scores(json.loads(out.read_text()))) if "--scores" in sys.argv[1:] else build()
     out.write_text(json.dumps(catalog, indent=1) + "\n")
     print(f"wrote {out}", file=sys.stderr)
