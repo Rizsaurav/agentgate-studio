@@ -36,6 +36,13 @@ public struct AuditLog: Sendable {
     }
   }
 
+  /// Empties the log (Settings).
+  public func clear() throws {
+    try Self.lock.withLock {
+      if FileManager.default.fileExists(atPath: file.path) { try FileManager.default.removeItem(at: file) }
+    }
+  }
+
   private func read() -> [AuditEntry] {
     guard let data = try? Data(contentsOf: file) else { return [] }
     let decoder = JSONDecoder()
