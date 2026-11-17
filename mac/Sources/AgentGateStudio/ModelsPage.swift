@@ -22,7 +22,7 @@ struct ModelsPage: View {
               CheckRow(title: "This Mac", detail: app.profile?.summary ?? "Reading hardware…",
                        state: app.profile == nil ? nil : "Ready")
               Divider().overlay(Theme.line)
-              CheckRow(title: "Model engine", detail: "llama.cpp, built into the app",
+              CheckRow(title: "Model engine", detail: "llama.cpp \(app.engineTag(.llama))",
                        state: LlamaRuntime.binaryDirectory().map { FileManager.default.fileExists(atPath: $0.appendingPathComponent("llama-server").path) } == true ? "Ready" : "Missing")
               Divider().overlay(Theme.line)
               CheckRow(title: "Memory for a model", detail: app.profile.map { ModelPlanner.gb($0.modelBudgetBytes) } ?? "…",
@@ -30,6 +30,7 @@ struct ModelsPage: View {
             }
           }
         }
+        EnginesCard()
         VStack(alignment: .leading, spacing: 12) {
           Text("RECOMMENDED FOR THIS MAC").font(.system(size: 12, weight: .semibold)).tracking(0.6).foregroundStyle(Theme.muted)
           HStack(alignment: .top, spacing: 14) {
@@ -269,5 +270,55 @@ private struct CatalogRow: View {
       lines.append("Tool-calling suite: \(Int((score.passRate * 100).rounded()))% at \(score.quant), \(score.engine), \(score.measured).")
     }
     return lines.filter { !$0.isEmpty }.joined(separator: "\n")
+  }
+}
+
+/// The model engine and the agent harness: their versions, and updates the user approves (#91).
+private struct EnginesCard: View {
+  @Environment(AppModel.self) private var app
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      HStack {
+        Text("Engines").font(.system(size: 16, weight: .semibold))
+        Spacer()
+        Button(app.checkingEngines ? "Checking…" : "Check for updates") { Task { await app.checkEngineUpdates() } }
+          .buttonStyle(SubtleButtonStyle()).disabled(app.checkingEngines || app.engineBusy != nil)
+      }
+      Card(padding: 6) {
+        VStack(spacing: 0) {
+          ForEach(EngineKind.allCases, id: \.self) { kind in
+            row(kind)
+            if kind != EngineKind.allCases.last { Divider().overlay(Theme.line) }
+          }
+        }
+      }
+      Text("An update is checked before it is used: the new version must load a model and pass the install check, or it is removed and the current one stays. Models and projects are never changed.")
+        .font(.system(size: 12)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
+      if let message = app.engineMessage {
+        Text(message).font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
+      }
+    }
+  }
+
+  private func row(_ kind: EngineKind) -> some View {
+    HStack(spacing: 12) {
+      VStack(alignment: .leading, spacing: 3) {
+        Text(kind == .llama ? "Model engine" : "Agent harness").font(.system(size: 13, weight: .medium))
+        Text("\(kind.label) \(app.engineTag(kind))").font(.system(size: 12)).foregroundStyle(Theme.muted)
+      }
+      Spacer()
+      if app.engineBusy == kind {
+        ProgressView().controlSize(.small)
+      } else if let pin = app.engineUpdates[kind] {
+        Button("Update to \(pin.tag)") { Task { await app.updateEngine(kind) } }
+          .buttonStyle(PrimaryButtonStyle()).disabled(app.engineBusy != nil)
+      }
+      if app.canRollBackEngine(kind) {
+        Button("Use previous version") { app.rollBackEngine(kind) }
+          .buttonStyle(SubtleButtonStyle()).disabled(app.engineBusy != nil)
+      }
+    }
+    .padding(.horizontal, 14).padding(.vertical, 10)
   }
 }

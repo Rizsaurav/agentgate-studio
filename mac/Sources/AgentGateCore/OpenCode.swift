@@ -164,8 +164,11 @@ public final class AgentServer: @unchecked Sendable {
 
   public static func binaryDirectory() -> URL? {
     if let dir = ProcessInfo.processInfo.environment["AGENTGATE_OPENCODE_DIR"] { return URL(fileURLWithPath: dir) }
-    return Bundle.main.resourceURL?.appendingPathComponent("runtime/opencode")
+    return EngineStore().activeDirectory(.opencode) ?? bundledDirectory
   }
+
+  /// The copy shipped inside the app.
+  public static var bundledDirectory: URL? { Bundle.main.resourceURL?.appendingPathComponent("runtime/opencode") }
 
   /// The harness configuration: one local provider, and permissions that fail closed.
   static func config(engineURL: URL, engineKey: String, model: String, context: Int) throws -> String {

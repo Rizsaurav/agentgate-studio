@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "engines": {
+    "llama": {
+      "tag": "b11765",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11765/llama-b11765-bin-macos-arm64.tar.gz",
+      "sha256": "411350ac7aa943907db7867b3b3a112166f60d7dc9748c7f7528f3e5f223a4f2"
+    },
+    "opencode": {
+      "tag": "v1.19.5",
+      "url": "https://github.com/anomalyco/opencode/releases/download/v1.19.5/opencode-darwin-arm64.zip",
+      "sha256": "c1c9e62521192192ef4c3ed1355ada2144055bddb61682217e997b03c55203c1"
+    }
+  }
+}

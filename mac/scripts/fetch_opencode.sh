@@ -2,10 +2,12 @@
 # Downloads the pinned OpenCode macOS build into dist/runtime/opencode and verifies its checksum.
 # OpenCode (MIT) is the agent harness: tools, terminal, permissions. The app bundles it.
 set -eu
-TAG=v1.19.5
-SHA256=c1c9e62521192192ef4c3ed1355ada2144055bddb61682217e997b03c55203c1
-URL="https://github.com/anomalyco/opencode/releases/download/$TAG/opencode-darwin-arm64.zip"
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+# The pin lives in one place, shared with the app: Sources/AgentGateCore/Resources/engines.json.
+PINS="$ROOT/Sources/AgentGateCore/Resources/engines.json"
+TAG=$(plutil -extract engines.opencode.tag raw -o - "$PINS")
+SHA256=$(plutil -extract engines.opencode.sha256 raw -o - "$PINS")
+URL=$(plutil -extract engines.opencode.url raw -o - "$PINS")
 OUT="$ROOT/dist/runtime/opencode"
 if [ -f "$OUT/.tag" ] && [ "$(cat "$OUT/.tag")" = "$TAG" ]; then echo "OpenCode $TAG already present"; exit 0; fi
 WORK=$(mktemp -d)

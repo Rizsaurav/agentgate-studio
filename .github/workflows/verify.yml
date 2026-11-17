@@ -53,6 +53,46 @@ jobs:
           fi
           swift run --package-path mac agentgate-tooleval check --base "$base/evals/tools/results"
 
+  # A pull request that moves an engine pin (#91) must keep the tool-calling score. The new builds are
+  # fetched with their pinned checksums, the harness must start, and Qwen3 0.6B is scored with the suite
+  # on the new llama.cpp and compared with the committed results. Skipped when the pins did not change.
+  engine-pin:
+    name: engine-pin
+    if: github.event_name == 'pull_request'
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Did the pins change?
+        id: pins
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --depth 1 origin "$BASE_REF"
+          if git diff --quiet FETCH_HEAD -- mac/Sources/AgentGateCore/Resources/engines.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Engine pins unchanged."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Fetch the pinned builds (checksums verified)
+        if: steps.pins.outputs.changed == 'true'
+        run: |
+          sh mac/scripts/fetch_runtime.sh
+          sh mac/scripts/fetch_opencode.sh
+          mac/dist/runtime/opencode/opencode --version
+      - name: Score Qwen3 0.6B on the new engine
+        if: steps.pins.outputs.changed == 'true'
+        run: |
+          cp -R evals/tools/results "$RUNNER_TEMP/base-results"
+          read -r repo file sha <<EOF
+          $(python3 -c 'import json; m = next(m for m in json.load(open("mac/Sources/AgentGateCore/Resources/catalog.json"))["models"] if m["id"] == "qwen3-0.6b"); f = next(f for f in m["gguf"]["files"] if f["quant"] == "Q8_0"); print(m["gguf"]["repo"], f["file"], f["sha256"])')
+          EOF
+          curl -fsSL --retry 3 --max-time 1800 -o "$RUNNER_TEMP/$file" "https://huggingface.co/$repo/resolve/main/$file"
+          echo "$sha  $RUNNER_TEMP/$file" | shasum -a 256 -c -
+          swift run --package-path mac agentgate-tooleval run --cpu --loads 1 --model qwen3-0.6b --gguf "$RUNNER_TEMP/$file"
+          swift run --package-path mac agentgate-tooleval check --base "$RUNNER_TEMP/base-results"
+
   # Required: Promptfoo security and functional suite against the real application pipeline and
   # the real LLM Guard scanner. The model is a scripted fixture: no paid API key is used anywhere.
   security-evals:
