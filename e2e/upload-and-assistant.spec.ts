@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { chooseModel } from './models';
 import { closePanel, openPanel } from './panels';
 
 const model = process.env.AGENTGATE_E2E_MODEL;
@@ -47,9 +48,7 @@ test('documents uploaded from the app are screened: ordinary ones are used, one 
 
   // Retrieval needs a model; the screening above is checked either way.
   if (!model) return;
-  await page
-    .getByLabel('Model', { exact: true })
-    .selectOption(`ollama/${model}`);
+  await chooseModel(page, `ollama/${model}`);
   await page.getByRole('button', { name: 'Start session' }).click();
   await page.getByLabel('Task').fill('When does the lighthouse museum open?');
   await page.getByRole('button', { name: 'Run task' }).click();

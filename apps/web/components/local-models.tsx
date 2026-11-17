@@ -5,10 +5,9 @@ import { removeModel } from '@/app/actions';
 import { modelLabel } from '@/lib/model-label';
 import { useModelPull } from './use-model-pull';
 import { Button } from '@/components/ui/button';
+import { ShowMore } from './show-more';
 
 import type { CatalogModel } from '@agentgate/controller';
-
-const SHOWN = 10;
 
 export function LocalModels({
   recommended,
@@ -35,13 +34,8 @@ export function LocalModels({
   const [custom, setCustom] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
   const [removeError, setRemoveError] = useState<string | null>(null);
-  // Largest models that fit first, then a few that do not, so the reason is visible.
-  const shown = [...recommended]
-    .sort(
-      (a, b) =>
-        Number(b.fits) - Number(a.fits) || b.parametersB - a.parametersB,
-    )
-    .slice(0, SHOWN);
+  // Already ordered by the server: installed, best fit, then what fits (largest first).
+  const shown = recommended;
   const installedNames = new Set(installed.map((model) => model.name));
   const pending = (id: string) =>
     (downloading && pull?.model === id) || queued.includes(id);
@@ -68,11 +62,13 @@ export function LocalModels({
             Each one is offered in the chat under “Ollama (local)” when you
             start a conversation.
           </p>
-          <ul
+          <ShowMore
+            as="ul"
+            id="more-installed"
+            more="More installed models"
             className="mt-3 space-y-2 text-sm"
-            aria-label="Installed local models"
-          >
-            {installed.map((model) => (
+            label="Installed local models"
+            items={installed.map((model) => (
               <li
                 key={model.name}
                 className="flex flex-wrap items-center justify-between gap-3"
@@ -93,7 +89,7 @@ export function LocalModels({
                 </Button>
               </li>
             ))}
-          </ul>
+          />
           {removeError && (
             <p role="alert" className="mt-2 text-sm text-red-800">
               {removeError}
@@ -161,8 +157,13 @@ export function LocalModels({
             {recommendedError}
           </p>
         )}
-        <ul className="mt-3 space-y-3" aria-label="Recommended models">
-          {shown.map((model) => {
+        <ShowMore
+          as="ul"
+          id="more-models"
+          more="More models"
+          className="mt-3 space-y-3"
+          label="Recommended models"
+          items={shown.map((model) => {
             const isInstalled = installedNames.has(model.id);
             const canPick = model.fits && !isInstalled && !pending(model.id);
             return (
@@ -232,7 +233,7 @@ export function LocalModels({
               </li>
             );
           })}
-        </ul>
+        />
       </div>
       <form
         className="flex flex-wrap items-end gap-3"
