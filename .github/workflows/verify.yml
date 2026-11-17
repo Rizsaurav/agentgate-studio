@@ -24,6 +24,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      # Retrieval metrics and their change from the committed baseline, in the run summary (#14).
+      - run: npm run eval:retrieval
 
   # Required: Promptfoo security and functional suite against the real application pipeline and
   # the real LLM Guard scanner. The model is a scripted fixture: no paid API key is used anywhere.
