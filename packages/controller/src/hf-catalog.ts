@@ -1,3 +1,4 @@
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { z } from 'zod';
 import type { SystemProfile } from './system';
 
@@ -21,19 +22,78 @@ const QUANTIZATIONS = ['Q8_0', 'Q6_K', 'Q5_K_M', 'Q4_K_M'] as const;
  * Publishers whose GGUF conversions of public models are widely used. This is a trust policy,
  * not a model list: only repositories from these accounts are ever suggested.
  */
-export const TRUSTED_PUBLISHERS = [
+export const TRUSTED_PUBLISHERS: readonly string[] = [
   'bartowski',
   'unsloth',
   'lmstudio-community',
   'ggml-org',
-] as const;
+];
+
+const publisherSchema = z
+  .string()
+  .regex(
+    /^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/,
+    'Not a Hugging Face account name.',
+  );
+
+/**
+ * The publishers to search: AGENTGATE_HF_PUBLISHERS (comma-separated) when set, else the trusted
+ * defaults. Models from any other account are marked untrusted, and the UI says so.
+ */
+export function catalogPublishers(value: string | undefined): string[] {
+  const listed = (value ?? '')
+    .split(',')
+    .map((name) => name.trim())
+    .filter(Boolean);
+  return listed.length === 0
+    ? [...TRUSTED_PUBLISHERS]
+    : [...new Set(listed.map((name) => publisherSchema.parse(name)))];
+}
 
 const searchSchema = z.array(
-  z.object({ id: z.string(), downloads: z.number().default(0) }).loose(),
+  z
+    .object({
+      id: z.string(),
+      downloads: z.number().default(0),
+      // false, or 'auto' / 'manual' when access must be requested on Hugging Face first.
+      gated: z.union([z.boolean(), z.string()]).optional(),
+      tags: z.array(z.string()).default([]),
+    })
+    .loose(),
 );
 const treeSchema = z.array(
-  z.object({ path: z.string(), size: z.number().optional() }).loose(),
+  z
+    .object({
+      path: z.string(),
+      size: z.number().optional(),
+      lfs: z.object({ oid: z.string() }).loose().optional(),
+    })
+    .loose(),
 );
+const SHA256 = /^[a-f0-9]{64}$/;
+
+const candidateSchema = z
+  .object({
+    repo: z.string(),
+    label: z.string(),
+    parametersB: z.number(),
+    downloads: z.number(),
+    license: z.string().nullable(),
+    files: z.array(
+      z.tuple([
+        z.string(),
+        z.object({ bytes: z.number(), sha256: z.string().nullable() }),
+      ]),
+    ),
+  })
+  .strict();
+/** The last good catalog on disk, so the Models page works without a connection. */
+const savedCatalogSchema = z
+  .object({
+    savedAt: z.iso.datetime(),
+    candidates: z.array(candidateSchema).min(1),
+  })
+  .strict();
 
 export type CatalogModel = {
   /** What Ollama is asked to pull. */
@@ -46,15 +106,22 @@ export type CatalogModel = {
   fits: boolean;
   blocker: 'memory' | 'disk' | null;
   best: boolean;
+  /** SPDX-style id from the repository's tags, such as apache-2.0; null when none is given. */
+  license: string | null;
+  /** False for a publisher added through AGENTGATE_HF_PUBLISHERS that is not a trusted default. */
+  trusted: boolean;
+  /** The SHA-256 Hugging Face publishes for the file, checked after the download. */
+  sha256: string | null;
 };
 
-type Candidate = {
-  repo: string;
-  label: string;
-  parametersB: number;
-  downloads: number;
-  files: Map<string, number>;
+/** Models, and when the live catalog could not be reached, the time of the saved copy used. */
+export type CatalogResult = {
+  models: CatalogModel[];
+  offlineSince: string | null;
 };
+
+type Candidate = z.infer<typeof candidateSchema>;
+type Loaded = { candidates: Candidate[]; offlineSince: string | null };
 
 const INSTRUCTION_TUNED = /instruct|chat|[-_]it(?:[-_]|$)/i;
 const NOT_A_CHAT_MODEL = /embed|rerank|reward|vision|[-_]vl[-_]|guard|whisper/i;
@@ -97,11 +164,31 @@ function quantizationOf(path: string): string | null {
  * quantization that fit this computer, so nobody has to know what a quantization is.
  */
 export class HuggingFaceCatalog {
-  private cache: { at: number; candidates: Candidate[] } | null = null;
+  private cache: ({ at: number } & Loaded) | null = null;
   private readonly baseUrl: string;
+  private readonly publishers: string[];
+  private readonly cacheFile: string | null;
 
-  constructor(baseUrl: string = DEFAULT_HF_URL) {
+  constructor(
+    baseUrl: string = DEFAULT_HF_URL,
+    options: { publishers?: string[]; cacheFile?: string } = {},
+  ) {
     this.baseUrl = new URL(baseUrl).origin;
+    this.publishers = options.publishers ?? [...TRUSTED_PUBLISHERS];
+    this.cacheFile = options.cacheFile ?? null;
+  }
+
+  /** The published SHA-256 of a catalog model's file, from the live or saved catalog. */
+  async expectedDigest(modelId: string): Promise<string | null> {
+    const match = /^hf\.co\/([^:]+):(.+)$/.exec(modelId);
+    if (!match) return null;
+    const { candidates } = await this.candidates().catch(() => ({
+      candidates: [] as Candidate[],
+    }));
+    const file = candidates
+      .find((candidate) => candidate.repo === match[1])
+      ?.files.find(([quantization]) => quantization === match[2]);
+    return file?.[1].sha256 ?? null;
   }
 
   async recommend(
@@ -109,8 +196,8 @@ export class HuggingFaceCatalog {
       SystemProfile,
       'memoryBytes' | 'freeDiskBytes' | 'appleSilicon' | 'gpu'
     >,
-  ): Promise<CatalogModel[]> {
-    const candidates = await this.candidates();
+  ): Promise<CatalogResult> {
+    const { candidates, offlineSince } = await this.candidates();
     // A graphics card is fast only while the model fits in its own memory; otherwise use system memory.
     const memoryBudgetGb = system.gpu
       ? (system.gpu.memoryBytes / GIB) * GPU_MEMORY_SHARE - RUNTIME_OVERHEAD_GB
@@ -121,9 +208,12 @@ export class HuggingFaceCatalog {
         RUNTIME_OVERHEAD_GB;
     const diskGb = system.freeDiskBytes / GIB;
     const models = candidates.flatMap((candidate): CatalogModel[] => {
+      const files = new Map(candidate.files);
       const sized = QUANTIZATIONS.flatMap((quantization) => {
-        const bytes = candidate.files.get(quantization);
-        return bytes === undefined ? [] : [{ quantization, gb: bytes / GIB }];
+        const file = files.get(quantization);
+        return file === undefined
+          ? []
+          : [{ quantization, gb: file.bytes / GIB, sha256: file.sha256 }];
       });
       // Smallest option, to explain a rejection; best quality that fits memory and disk otherwise.
       const smallest = sized[sized.length - 1];
@@ -150,6 +240,11 @@ export class HuggingFaceCatalog {
           fits: blocker === null,
           blocker,
           best: false,
+          license: candidate.license,
+          trusted: TRUSTED_PUBLISHERS.includes(
+            candidate.repo.split('/')[0] ?? '',
+          ),
+          sha256: choice.sha256,
         },
       ];
     });
@@ -158,27 +253,86 @@ export class HuggingFaceCatalog {
       (a, b) => a.parametersB - b.parametersB || a.downloads - b.downloads,
     );
     const best = [...ranked].reverse().find((model) => model.fits);
-    return ranked.map((model) => ({ ...model, best: model === best }));
+    return {
+      models: ranked.map((model) => ({ ...model, best: model === best })),
+      offlineSince,
+    };
   }
 
-  private async candidates(): Promise<Candidate[]> {
-    if (this.cache && Date.now() - this.cache.at < CACHE_MS)
-      return this.cache.candidates;
+  /**
+   * The live catalog, cached in memory for an hour and saved to disk. When Hugging Face cannot be
+   * reached, the last saved copy is used instead, and the result says from when it is.
+   */
+  private async candidates(): Promise<Loaded> {
+    if (this.cache && Date.now() - this.cache.at < CACHE_MS) return this.cache;
+    let candidates: Candidate[];
+    try {
+      candidates = await this.fetchCandidates();
+    } catch (error) {
+      const saved = this.readSaved();
+      if (!saved) throw error;
+      // Not cached in memory, so the next request tries the live catalog again.
+      return { candidates: saved.candidates, offlineSince: saved.savedAt };
+    }
+    this.cache = { at: Date.now(), candidates, offlineSince: null };
+    this.save(candidates);
+    return this.cache;
+  }
+
+  private readSaved(): z.infer<typeof savedCatalogSchema> | null {
+    if (!this.cacheFile || !existsSync(this.cacheFile)) return null;
+    let raw: unknown;
+    try {
+      raw = JSON.parse(readFileSync(this.cacheFile, 'utf8'));
+    } catch (error) {
+      if (error instanceof SyntaxError) return null;
+      throw error;
+    }
+    // A damaged or outdated file is ignored; the next live answer replaces it.
+    const parsed = savedCatalogSchema.safeParse(raw);
+    return parsed.success ? parsed.data : null;
+  }
+
+  private save(candidates: Candidate[]): void {
+    if (!this.cacheFile) return;
+    const temporary = `${this.cacheFile}.tmp`;
+    writeFileSync(
+      temporary,
+      JSON.stringify({ savedAt: new Date().toISOString(), candidates }),
+      { mode: 0o600 },
+    );
+    renameSync(temporary, this.cacheFile);
+  }
+
+  private async fetchCandidates(): Promise<Candidate[]> {
     const listings = await Promise.all(
-      TRUSTED_PUBLISHERS.map(async (author) =>
+      this.publishers.map(async (author) =>
         searchSchema.parse(
           await this.get(
-            `/api/models?author=${author}&filter=gguf&pipeline_tag=text-generation&sort=downloads&limit=${CANDIDATES_PER_PUBLISHER}`,
+            `/api/models?author=${encodeURIComponent(author)}&filter=gguf&pipeline_tag=text-generation&sort=downloads&limit=${CANDIDATES_PER_PUBLISHER}&expand%5B%5D=downloads&expand%5B%5D=gated&expand%5B%5D=tags`,
           ),
         ),
       ),
     );
     const chosen = listings
       .flat()
+      // Gated models need an accepted license and a token to download, so they cannot install.
+      .filter((entry) => entry.gated === undefined || entry.gated === false)
       .flatMap((entry) => {
         const described = describeRepo(entry.id);
+        const license =
+          entry.tags
+            .find((tag) => tag.startsWith('license:'))
+            ?.slice('license:'.length) ?? null;
         return described
-          ? [{ repo: entry.id, downloads: entry.downloads, ...described }]
+          ? [
+              {
+                repo: entry.id,
+                downloads: entry.downloads,
+                license,
+                ...described,
+              },
+            ]
           : [];
       })
       .sort((a, b) => b.downloads - a.downloads)
@@ -195,18 +349,25 @@ export class HuggingFaceCatalog {
         const tree = treeSchema.parse(
           await this.get(`/api/models/${entry.repo}/tree/main`),
         );
-        const files = new Map<string, number>();
+        const files: Candidate['files'] = [];
         for (const file of tree) {
           const quantization = quantizationOf(file.path);
-          if (quantization && file.size) files.set(quantization, file.size);
+          const sha256 = file.lfs?.oid ?? null;
+          if (quantization && file.size)
+            files.push([
+              quantization,
+              {
+                bytes: file.size,
+                sha256: sha256 && SHA256.test(sha256) ? sha256 : null,
+              },
+            ]);
         }
         return { ...entry, files };
       }),
     );
-    const usable = candidates.filter((candidate) => candidate.files.size > 0);
+    const usable = candidates.filter((candidate) => candidate.files.length > 0);
     if (usable.length === 0)
       throw new Error('Hugging Face returned no installable models.');
-    this.cache = { at: Date.now(), candidates: usable };
     return usable;
   }
 

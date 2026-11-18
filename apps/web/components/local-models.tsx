@@ -14,11 +14,13 @@ export function LocalModels({
   installed,
   summary,
   recommendedError,
+  offlineSince,
 }: {
   recommended: CatalogModel[];
   installed: { name: string; sizeBytes: number }[];
   summary: string;
   recommendedError: string | null;
+  offlineSince: string | null;
 }) {
   const router = useRouter();
   const {
@@ -157,6 +159,13 @@ export function LocalModels({
             {recommendedError}
           </p>
         )}
+        {offlineSince && (
+          <p role="status" className="metadata mt-3">
+            Hugging Face is unreachable, so this is the list saved on{' '}
+            {offlineSince.slice(0, 16).replace('T', ' ')} UTC. Downloads need a
+            connection.
+          </p>
+        )}
         <ShowMore
           as="ul"
           id="more-models"
@@ -199,11 +208,18 @@ export function LocalModels({
                     <span className="block text-xs text-stone-600">
                       {model.parametersB}B parameters · {model.downloadGb} GB
                       download
+                      {model.license ? ` · ${model.license} license` : ''}
                       {model.blocker === 'memory' &&
                         ' · too large for this computer’s memory'}
                       {model.blocker === 'disk' &&
                         ' · not enough free disk space'}
                     </span>
+                    {!model.trusted && (
+                      <span className="warning-text block text-xs">
+                        From {model.id.split('/')[1]}, which is not one of the
+                        default trusted publishers. Check it before installing.
+                      </span>
+                    )}
                   </span>
                 </label>
                 {isInstalled ? (

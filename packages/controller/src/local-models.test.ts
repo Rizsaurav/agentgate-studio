@@ -197,7 +197,7 @@ describe('model downloads', () => {
     );
     const bad = await fakeOllama((_q, r) => r.end('{not json\n'));
     for (const [url, expected] of [
-      [error, 'file does not exist'],
+      [error, 'That model or size does not exist'],
       [bad, 'unexpected response'],
       ['http://127.0.0.1:1', 'not reachable'],
     ] as const) {
