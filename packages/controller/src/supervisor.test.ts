@@ -204,6 +204,113 @@ describe('token guardrails', () => {
   });
 });
 
+describe('daily cap under concurrency', () => {
+  it('lets only one run start when many arrive at once, so the cap cannot be spent twice', async () => {
+    const { faux, supervisor, store, opens } = harness({
+      limits: { dailyTokens: 5000, minRunTokens: 100 },
+    });
+    faux.setResponses(
+      Array.from({ length: 8 }, () => fauxAssistantMessage('An answer.')),
+    );
+    const results = await Promise.allSettled(
+      Array.from({ length: 8 }, (_, index) => supervisor.ask(`q${index}`)),
+    );
+    expect(opens()).toBe(1);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    for (const result of results.filter((r) => r.status === 'rejected'))
+      expect(String(result.reason)).toContain('already working');
+    expect(store.tokensToday()).toBeLessThanOrEqual(5000);
+  });
+
+  it('never starts a model call with less than the reserve left, so concurrent findings cannot breach the cap', async () => {
+    // One call here costs well under the 2000-token reserve; each step asks for another tool call.
+    const dailyTokens = 8000;
+    const h = harness({
+      limits: {
+        dailyTokens,
+        minRunTokens: 2000,
+        maxToolCalls: 50,
+        maxInvestigationsPerHour: 50,
+      },
+    });
+    const step = () =>
+      fauxAssistantMessage([fauxToolCall('get_status', {})], {
+        stopReason: 'toolUse',
+      });
+    h.faux.setResponses(Array.from({ length: 40 }, step));
+    await Promise.all(
+      Array.from({ length: 10 }, (_, index) =>
+        h.supervisor.investigate({ ...finding, id: `f${index}` }),
+      ),
+    );
+    for (let index = 10; index < 20; index++)
+      await h.supervisor.investigate({ ...finding, id: `f${index}` });
+    expect(h.store.tokensToday()).toBeLessThanOrEqual(dailyTokens);
+  });
+});
+
+describe('spending records', () => {
+  it('records tokens per run and per finding, never the question or answer text', async () => {
+    const h = harness();
+    h.faux.setResponses([
+      fauxAssistantMessage('Secret-free answer.'),
+      fauxAssistantMessage('Cause found.'),
+    ]);
+    await h.supervisor.ask('A private question');
+    await h.supervisor.investigate(finding);
+    const { recent, today } = h.store.spending();
+    expect(
+      recent.map((run) => [run.trigger, run.findingId, run.outcome]),
+    ).toEqual([
+      ['finding', finding.id, 'answered'],
+      ['question', null, 'answered'],
+    ]);
+    expect(
+      recent.every((run) => run.inputTokens > 0 && run.outputTokens > 0),
+    ).toBe(true);
+    expect(today.tokens).toBe(h.store.tokensToday());
+    expect(today.calls).toBe(2);
+    expect(JSON.stringify(recent)).not.toContain('private question');
+  });
+
+  it('adds up cost per day and fills a seven-day series ending today', () => {
+    const h = harness();
+    h.store.charge(1000, 0.002);
+    h.advance(24 * 60 * 60_000);
+    h.store.charge(500, 0.001);
+    h.store.charge(500, 0.003);
+    const spending = h.store.spending();
+    expect(spending.days).toHaveLength(7);
+    expect(spending.days.at(-1)).toMatchObject({
+      day: '2026-11-03',
+      tokens: 1000,
+      calls: 2,
+    });
+    expect(spending.today.costUsd).toBeCloseTo(0.004);
+    expect(spending.days.at(-2)).toMatchObject({
+      day: '2026-11-02',
+      tokens: 1000,
+    });
+    expect(spending.days.at(0)).toMatchObject({ tokens: 0, costUsd: 0 });
+    expect(spending.week.tokens).toBe(2000);
+    expect(spending.week.costUsd).toBeCloseTo(0.006);
+  });
+
+  it('records a run stopped by its limits as stopped', async () => {
+    const { faux, supervisor, store } = harness({
+      limits: { maxToolCalls: 0 },
+    });
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall('get_status', {})], {
+        stopReason: 'toolUse',
+      }),
+    ]);
+    await expect(supervisor.ask('status?')).rejects.toThrow('limits');
+    expect(store.spending().recent[0]?.outcome).toBe('stopped');
+    expect(supervisor.working()).toBe(false);
+  });
+});
+
 describe('investigations', () => {
   it('looks into a finding once per cooldown and again after it', async () => {
     const h = harness();

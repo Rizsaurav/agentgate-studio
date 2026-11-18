@@ -1,6 +1,6 @@
 import { headers } from 'next/headers';
 import {
-  DEFAULT_LIMITS,
+  SPEND_WARNING,
   fixForProposal,
   isLocalHost,
 } from '@agentgate/controller';
@@ -16,6 +16,7 @@ export async function GET() {
   const { supervisor, watchdog } = assistant();
   const store = agentStore();
   const configured = await agentModel().configured();
+  const used = supervisor.dailyTokens - supervisor.tokensLeft();
   return Response.json(
     {
       enabled: store.enabled(),
@@ -23,9 +24,11 @@ export async function GET() {
       working: supervisor.working(),
       unavailable: await supervisor.unavailable(),
       tokensLeft: supervisor.tokensLeft(),
-      dailyTokens:
-        Number(process.env.AGENTGATE_AGENT_DAILY_TOKENS) ||
-        DEFAULT_LIMITS.dailyTokens,
+      // The supervisor's own limit, so the panel shows the cap that is enforced.
+      dailyTokens: supervisor.dailyTokens,
+      spending: store.spending(),
+      // True from 80 percent of the daily cap, so the panel can warn before it stops.
+      nearCap: used >= SPEND_WARNING * supervisor.dailyTokens,
       model: agentModel().modelId,
       findings: watchdog.current(),
       // The panel needs to know what approving a proposal does: run an action or install a model.

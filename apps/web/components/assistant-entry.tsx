@@ -9,6 +9,7 @@ import {
 } from '@/app/actions';
 import { Button } from '@/components/ui/button';
 import { Panel } from './panel';
+import type { Spending } from '@agentgate/controller';
 
 type Finding = {
   id: string;
@@ -26,6 +27,8 @@ type Note = {
   request: 'action' | 'install' | null;
 };
 type Status = {
+  spending: Spending;
+  nearCap: boolean;
   enabled: boolean;
   configured: boolean;
   working: boolean;
@@ -283,12 +286,16 @@ function AssistantBody({
           </section>
 
           <section className="panel-section">
-            <h3>Limits</h3>
+            <h3>Limits and spending</h3>
             <p className="muted">
               {used.toLocaleString()} of {status.dailyTokens.toLocaleString()}{' '}
               tokens used today. It stops at the limit, looks into each problem
               once every 30 minutes, and uses no model for routine fixes.
             </p>
+            <SpendingSummary
+              spending={status.spending}
+              nearCap={status.nearCap}
+            />
             <div className="mt-3 flex flex-wrap gap-2">
               <Button
                 type="button"
@@ -308,6 +315,64 @@ function AssistantBody({
           </section>
         </>
       )}
+    </div>
+  );
+}
+
+const usd = (value: number) =>
+  value === 0 ? '$0' : value < 0.01 ? '<$0.01' : `$${value.toFixed(2)}`;
+
+/** Tokens and estimated cost: today, the last seven days, and a bar per day (#20). */
+function SpendingSummary({
+  spending,
+  nearCap,
+}: {
+  spending: Spending;
+  nearCap: boolean;
+}) {
+  const peak = Math.max(1, ...spending.days.map((entry) => entry.tokens));
+  return (
+    <div className="mt-3 space-y-3">
+      {nearCap && (
+        <p role="alert" className="warning-text">
+          Over 80 percent of today&apos;s token limit is used. The assistant
+          stops at the limit until tomorrow.
+        </p>
+      )}
+      <dl className="grid grid-cols-2 gap-2 text-sm">
+        <div>
+          <dt className="metadata">Today</dt>
+          <dd>
+            {spending.today.tokens.toLocaleString()} tokens ·{' '}
+            {usd(spending.today.costUsd)}
+          </dd>
+        </div>
+        <div>
+          <dt className="metadata">Last 7 days</dt>
+          <dd>
+            {spending.week.tokens.toLocaleString()} tokens ·{' '}
+            {usd(spending.week.costUsd)}
+          </dd>
+        </div>
+      </dl>
+      <ol className="flex h-16 items-end gap-1" aria-label="Tokens per day">
+        {spending.days.map((entry) => (
+          <li
+            key={entry.day}
+            className="flex-1 rounded-sm bg-teal-700"
+            style={{ height: `${Math.max(2, (entry.tokens / peak) * 100)}%` }}
+            title={`${entry.day}: ${entry.tokens.toLocaleString()} tokens, ${usd(entry.costUsd)}`}
+          >
+            <span className="sr-only">
+              {entry.day}: {entry.tokens.toLocaleString()} tokens,{' '}
+              {usd(entry.costUsd)}
+            </span>
+          </li>
+        ))}
+      </ol>
+      <p className="metadata">
+        Costs are estimates from the provider&apos;s published prices.
+      </p>
     </div>
   );
 }
