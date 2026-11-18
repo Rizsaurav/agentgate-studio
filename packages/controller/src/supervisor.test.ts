@@ -41,6 +41,7 @@ function harness(
     status: async () => ({ findings: ['scanner-down'] }),
     evalRuns: () => [],
     ciFailure: async () => null,
+    draftIssue: () => 'Draft saved.',
     securitySummary: () => ({ blocked: 2 }),
     recommendedModel: async () => ({ id: 'x' }),
     startOllama: async () => (calls.push('ollama'), 'Ollama started.'),

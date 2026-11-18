@@ -5,7 +5,7 @@ import {
   isLocalHost,
 } from '@agentgate/controller';
 import { assistant } from '@/lib/assistant';
-import { agentModel, agentStore } from '@/lib/controller';
+import { agentModel, agentStore, issueDrafts } from '@/lib/controller';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,6 +31,10 @@ export async function GET() {
       nearCap: used >= SPEND_WARNING * supervisor.dailyTokens,
       model: agentModel().modelId,
       findings: watchdog.current(),
+      // Issue drafts from failed CI runs (#26): open ones wait for review; posted ones link out.
+      drafts: issueDrafts()
+        .list(5)
+        .filter((draft) => draft.status !== 'dismissed'),
       // The panel needs to know what approving a proposal does: run an action or install a model.
       notes: store.notes(30).map((note) => ({
         ...note,

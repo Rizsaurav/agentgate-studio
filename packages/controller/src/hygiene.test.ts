@@ -172,6 +172,7 @@ describe('the assistant never sees, stores or returns a key', () => {
     const actions: SupervisorActions = {
       status: async () => ({ problems: [{ detail: leak('status') }] }),
       evalRuns: () => [{ failing: [{ reason: leak('reason') }] }],
+      draftIssue: () => 'Draft saved.',
       ciFailure: async () => ({
         runId: 1,
         signature: 'sig',

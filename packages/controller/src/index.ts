@@ -108,6 +108,7 @@ export {
   configurationIdentity,
   guardrailRates,
   latestFailedRunLog,
+  redWorkflowRun,
   listGithubRuns,
 } from './evals';
 export type { GuardrailRate, GuardrailRates } from './evals';
@@ -126,6 +127,13 @@ export {
   answerKey,
 } from './answer-cache';
 export type { AnswerKeyInput, SavedAnswer } from './answer-cache';
+export {
+  IssueDrafts,
+  cleanIssueText,
+  ghIssuePoster,
+  issueDraftInputSchema,
+} from './issue-drafts';
+export type { IssueDraft, IssuePoster } from './issue-drafts';
 export { condenseLog, failureSignature } from './ci-log';
 export { ModelPuller, PULL_STEPS, modelNameSchema } from './local-models';
 export type { PullOptions, PullState, PullStep } from './local-models';
@@ -157,6 +165,7 @@ export {
   FIXES,
   Supervisor,
   asksForAction,
+  asksForIssue,
   fixForProposal,
   questionSchema,
 } from './supervisor';

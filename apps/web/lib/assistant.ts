@@ -7,6 +7,7 @@ import {
   condenseLog,
   failureSignature,
   latestFailedRunLog,
+  redWorkflowRun,
   startOllama,
   startScanner,
   type Probe,
@@ -17,6 +18,7 @@ import {
   agentStore,
   endpoints,
   evals,
+  issueDrafts,
   ollama,
   puller,
   repoRoot,
@@ -25,6 +27,17 @@ import {
 import { loadRecommendations } from '@/lib/recommendations';
 
 const DAY_MS = 24 * 60 * 60_000;
+/** GitHub is asked whether a workflow is red at most this often, not on every 30-second check. */
+const CI_CHECK_MS = 10 * 60_000;
+let ciCheck: {
+  at: number;
+  result: Promise<{ runId: number; workflow: string } | null>;
+} | null = null;
+function redWorkflow() {
+  if (!ciCheck || Date.now() - ciCheck.at >= CI_CHECK_MS)
+    ciCheck = { at: Date.now(), result: redWorkflowRun(repoRoot()) };
+  return ciCheck.result;
+}
 const holder = globalThis as typeof globalThis & {
   assistant?: { supervisor: Supervisor; watchdog: Watchdog };
 };
@@ -68,6 +81,7 @@ async function probe(): Promise<Probe> {
       .recent(300)
       .filter((event) => Date.parse(event.createdAt) > since).length,
     pull: puller().state(),
+    ciFailure: await redWorkflow(),
   };
 }
 
@@ -112,6 +126,11 @@ function readActions(
         signature: failureSignature(summary),
         summary,
       };
+    },
+    // Saved for the user to review in the panel; only their approval opens the issue (#26).
+    draftIssue: (draft) => {
+      issueDrafts().draft(draft);
+      return 'Draft saved. The user reviews it in the assistant panel and decides whether to open it on GitHub.';
     },
     securitySummary: () => {
       const since = Date.now() - DAY_MS;

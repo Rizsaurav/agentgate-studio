@@ -272,6 +272,20 @@ CREATE TRIGGER answer_cache_purge_active_prompts_delete AFTER DELETE ON active_p
 CREATE TRIGGER answer_cache_purge_projects_update AFTER UPDATE ON projects BEGIN DELETE FROM answer_cache WHERE project_id IN (OLD.id, NEW.id); END;
 CREATE TRIGGER answer_cache_purge_projects_delete AFTER DELETE ON projects BEGIN DELETE FROM answer_cache WHERE project_id = OLD.id; END;`;
 
+// Issues the assistant drafts from a failed CI run (#26); posted only after the user approves.
+const ISSUE_DRAFTS = `
+CREATE TABLE issue_drafts (
+  id TEXT PRIMARY KEY NOT NULL,
+  created_at TEXT NOT NULL,
+  signature TEXT NOT NULL,
+  run_id INTEGER NOT NULL,
+  title TEXT NOT NULL CHECK(length(title) BETWEEN 1 AND 200),
+  body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 8000),
+  status TEXT NOT NULL CHECK(status IN ('open','posting','posted','dismissed')),
+  issue_url TEXT
+) STRICT;
+CREATE UNIQUE INDEX issue_drafts_open ON issue_drafts(signature) WHERE status = 'open';`;
+
 /** Ordered migrations; PRAGMA user_version is the number applied. Never edit an applied entry. */
 const MIGRATIONS = [
   PROJECTS,
@@ -289,6 +303,7 @@ const MIGRATIONS = [
   PROMPT_VERSIONS,
   AGENT_SPEND,
   ANSWER_CACHE,
+  ISSUE_DRAFTS,
 ];
 
 /** Single owner of the application database file, schema, and migrations. */
