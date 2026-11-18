@@ -21,6 +21,7 @@
     "check": "npm run typecheck && npm run lint && npm run format:check && npm test && npm run build",
     "test:e2e": "playwright test",
     "eval": "cd evals && NODE_OPTIONS=--import=tsx PROMPTFOO_DISABLE_TELEMETRY=1 PROMPTFOO_DISABLE_UPDATE=1 promptfoo eval --no-cache --no-write --no-progress-bar -c promptfooconfig.yaml",
+    "eval:assistant": "tsx evals/assistant/run.ts",
     "eval:weak": "cd evals && NODE_OPTIONS=--import=tsx PROMPTFOO_DISABLE_TELEMETRY=1 PROMPTFOO_DISABLE_UPDATE=1 promptfoo eval --no-cache --no-write --no-progress-bar -c weak.promptfooconfig.yaml",
     "setup": "node scripts/setup.mjs",
     "start:web": "npm run start --workspace @agentgate/web"
