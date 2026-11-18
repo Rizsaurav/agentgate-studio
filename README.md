@@ -1,5 +1,7 @@
 # AGENTGATE Studio
 
+[![Scheduled checks](https://img.shields.io/endpoint?url=https%3A%2F%2Frizsaurav.github.io%2Fagentgate-studio%2Fbadge.json)](https://rizsaurav.github.io/agentgate-studio/)
+
 A local web app for running Pi agent sessions on Ollama or cloud models, with shared project context, reference RAG, and enforced security checks. Phase 1 is in progress; see the [implementation plan](docs/IMPLEMENTATION_PLAN.md) for status and limits, the [architecture](docs/ARCHITECTURE.md), and the [Phase 1 specification](docs/phase1.md).
 
 ## Run it

@@ -1,0 +1,61 @@
+name: Scheduled checks
+# Weekly checks against things that change outside this repository. Nightly checks live in their
+# own workflows (E2E, Assistant evals). Results, the badge and failure issues come from
+# scheduled-report.yml. Schedules only run from the default branch.
+on:
+  schedule:
+    - cron: '23 5 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: scheduled-checks
+  cancel-in-progress: false
+env:
+  NEXT_TELEMETRY_DISABLED: '1'
+
+jobs:
+  # The live Hugging Face API still answers in the shape the model catalog expects: models from
+  # the trusted publishers, with sizes, licences and published checksums. No token is used.
+  hf-contract:
+    name: hugging-face-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Contract test against huggingface.co
+        env:
+          AGENTGATE_HF_CONTRACT: '1'
+        run: npx vitest run packages/controller/src/hf-catalog.contract.test.ts
+
+  # The newest releases of the packages the app is built on, installed without saving, so a
+  # breaking upstream release shows up here before a Dependabot pull request or a fresh install.
+  upstream-smoke:
+    name: upstream-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Install the newest upstream releases (not saved)
+        run: |
+          npm install --no-save -w @agentgate/controller \
+            @earendil-works/pi-agent-core@latest @earendil-works/pi-ai@latest \
+            better-sqlite3@latest zod@latest
+          npm install --no-save -w @agentgate/web next@latest
+          {
+            echo '### Upstream versions tested'
+            npm ls --depth=0 --all @earendil-works/pi-agent-core @earendil-works/pi-ai better-sqlite3 zod next | sed 's/^/    /'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
