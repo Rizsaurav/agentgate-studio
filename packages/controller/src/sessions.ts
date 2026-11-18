@@ -83,6 +83,7 @@ export const runEventSchema = z
     seq: z.number().int().positive(),
     type: z.enum([
       'started',
+      'prompt',
       'screened',
       'sources',
       'text_delta',
@@ -155,7 +156,7 @@ export interface SessionRepository {
   claimNextQueued(): Run | null;
   appendEvent(runId: string, type: RunEvent['type'], text: string): void;
   eventsAfter(runId: string, seq: number): RunEvent[];
-  /** Only 'started', 'screened', 'sources', and 'completed' events, for traces and source lists. */
+  /** Only 'started', 'prompt', 'screened', 'sources', and 'completed' events, for traces and source lists. */
   traceEvents(runId: string): RunEvent[];
   /** Atomically appends the turn's messages and marks the run completed. */
   completeRun(run: Run, messages: StoredMessage[]): void;
@@ -214,7 +215,15 @@ export class SessionService {
     return sourcesFromEvents(this.traceEvents(runId));
   }
 
-  /** Only 'started', 'screened', 'sources', and 'completed' events, without streamed text deltas. */
+  /** The system prompt version a run used (#27); null for runs that never reached the model. */
+  promptVersion(runId: unknown): number | null {
+    const event = this.traceEvents(runId).find((e) => e.type === 'prompt');
+    return event
+      ? z.coerce.number().int().nonnegative().parse(event.text)
+      : null;
+  }
+
+  /** Only 'started', 'prompt', 'screened', 'sources', and 'completed' events, without streamed text deltas. */
   traceEvents(runId: unknown): RunEvent[] {
     return z
       .array(runEventSchema)

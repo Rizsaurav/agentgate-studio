@@ -2,6 +2,7 @@ import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core';
 import type { Passage } from './documents';
 import { groundedQuestion } from './grounding';
 import type { AgentModels } from './ollama';
+import { DEFAULT_SYSTEM_PROMPT, type ActivePrompt } from './prompts';
 import type { Blocked, RunGuard } from './security';
 import {
   type RunTelemetry,
@@ -16,8 +17,6 @@ import {
 } from './sessions';
 
 export const DEFAULT_RUN_TIMEOUT_MS = 120_000;
-const SYSTEM_PROMPT =
-  'You are a helpful assistant inside AGENTGATE Studio. Answer concisely.';
 const MAX_ERROR_LENGTH = 300;
 
 /** Project knowledge supplied to every run; the same for whichever model runs. */
@@ -32,6 +31,8 @@ export type RunOptions = {
   knowledge?: RunKnowledge;
   /** Where run traces go (#10). Optional: without it nothing is recorded. */
   telemetry?: RunTelemetry;
+  /** The project's active system prompt (#27). Without it runs use the built-in version 0. */
+  prompts?: { active(projectId: string): ActivePrompt };
 };
 const DELIVERY_CHUNK_CHARS = 40;
 
@@ -49,6 +50,7 @@ export class RunService {
   private readonly knowledge: RunKnowledge | undefined;
   private readonly guard: RunGuard;
   private readonly telemetry: RunTelemetry | undefined;
+  private readonly prompts: RunOptions['prompts'];
 
   constructor(
     private readonly repository: SessionRepository,
@@ -59,6 +61,7 @@ export class RunService {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_RUN_TIMEOUT_MS;
     this.knowledge = options.knowledge;
     this.telemetry = options.telemetry;
+    this.prompts = options.prompts;
   }
 
   /** Recover from a previous process, then continue any queued work. */
@@ -172,10 +175,15 @@ export class RunService {
       );
       const context = this.knowledge?.context(session.projectId) ?? '';
       const endChat = trace.span('gen_ai.chat');
+      const prompt = this.prompts?.active(session.projectId) ?? {
+        version: 0,
+        text: DEFAULT_SYSTEM_PROMPT,
+      };
       const chat = {
         'gen_ai.operation.name': 'chat',
         'gen_ai.provider.name': session.model.provider,
         'gen_ai.request.model': session.model.modelId,
+        'agentgate.prompt_version': prompt.version,
       } as const;
       let opened: Awaited<ReturnType<AgentModels['open']>>;
       try {
@@ -187,9 +195,7 @@ export class RunService {
       const agent = new Agent({
         initialState: {
           model: opened.model,
-          systemPrompt: context
-            ? `${SYSTEM_PROMPT}\n\n${context}`
-            : SYSTEM_PROMPT,
+          systemPrompt: context ? `${prompt.text}\n\n${context}` : prompt.text,
           tools: [],
           messages: history as AgentMessage[],
         },
@@ -200,6 +206,8 @@ export class RunService {
           passages.length === 0 ? messages : withExcerpts(messages, passages),
       });
       this.repository.appendEvent(run.id, 'started', session.model.modelId);
+      // The version number only, so every answer can show which prompt produced it.
+      this.repository.appendEvent(run.id, 'prompt', String(prompt.version));
       if (passages.length > 0)
         this.repository.appendEvent(
           run.id,

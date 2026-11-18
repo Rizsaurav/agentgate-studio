@@ -22,6 +22,7 @@ import {
   documents,
   endpoints,
   evals,
+  prompts,
   projects,
   projectImportService,
   puller,
@@ -367,6 +368,52 @@ export async function addContext(
   }
   revalidatePath(`/projects/${form.get('projectId')}`);
   return { error: null, notice: 'Added to the shared context.' };
+}
+
+/**
+ * Saves, evaluates or activates a project system prompt version (#27). Saving never changes
+ * what runs use; activation is refused unless the required suite passed with that version.
+ */
+export async function managePrompt(
+  _previous: FormState,
+  form: FormData,
+): Promise<FormState> {
+  if (!(await isLocalRequest()))
+    return {
+      error: 'Requests must come from this local workspace.',
+      notice: null,
+    };
+  const projectId = form.get('projectId');
+  const intent = form.get('intent');
+  const version = Number(form.get('version'));
+  try {
+    let notice: string;
+    if (intent === 'save') {
+      const saved = prompts().save(projectId, form.get('text'));
+      notice = `Saved as version ${saved.version}. Run the evaluation before activating it.`;
+    } else if (intent === 'evaluate') {
+      const entry = prompts().find(projectId, version);
+      if (!entry || entry.version === 0)
+        throw new Error('Unknown prompt version.');
+      if (!evals().available)
+        throw new Error(
+          'The evaluation suite is not available in this installation.',
+        );
+      const run = await evals().enqueue('enforced', entry.text);
+      prompts().recordEvaluation(projectId, entry.version, run.id);
+      notice = `Evaluating version ${entry.version}. Activation unlocks when the suite passes.`;
+    } else if (intent === 'activate') {
+      prompts().activate(projectId, version);
+      notice = `Version ${version} is now used for new runs.`;
+    } else throw new Error('Unknown prompt action.');
+    revalidatePath(`/projects/${String(projectId)}`);
+    return { error: null, notice };
+  } catch (error) {
+    return {
+      error: userMessage(error, 'The prompt change could not be made.'),
+      notice: null,
+    };
+  }
 }
 
 export async function removeContext(form: FormData): Promise<void> {

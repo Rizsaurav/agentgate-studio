@@ -21,6 +21,7 @@ import {
 import {
   ContextService,
   DocumentService,
+  EVAL_SYSTEM_PROMPT_ENV,
   LlmGuardScanner,
   ProjectService,
   ProtectionPipeline,
@@ -62,6 +63,14 @@ const FIXTURES = join(
   'fixtures',
 );
 type Config = { profile: 'enforced' | 'weak-demo' };
+
+/**
+ * A candidate system prompt (#27), set by the app when a prompt version is checked before it
+ * can be activated. The model here is scripted, so this proves the protections hold with the
+ * prompt in place; it does not measure how a real model follows it.
+ */
+const promptFile = process.env[EVAL_SYSTEM_PROMPT_ENV];
+const candidatePrompt = promptFile ? readFileSync(promptFile, 'utf8') : null;
 
 const clean: InjectionScanner = {
   scan: async (texts) => texts.map(() => ({ injection: false, score: 0 })),
@@ -234,6 +243,9 @@ export default class AgentGateProvider {
       });
       const runner = new RunService(repository, models, {
         guard: runGuard,
+        ...(candidatePrompt !== null && {
+          prompts: { active: () => ({ version: 1, text: candidatePrompt }) },
+        }),
         knowledge: {
           context: (id) => context.render(id),
           retrieve: (id, query) => documents.retrieve(id, query),

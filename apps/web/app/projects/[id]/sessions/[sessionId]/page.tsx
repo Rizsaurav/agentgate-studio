@@ -90,7 +90,10 @@ export default async function SessionPage({
         <SessionChat
           key={session.id}
           projectId={id}
-          sources={completed.map((run) => sessions().sources(run.id))}
+          answers={completed.map((run) => ({
+            sources: sessions().sources(run.id),
+            promptVersion: sessions().promptVersion(run.id),
+          }))}
           sessionId={session.id}
           turns={sessions().view(session.id)}
           activeRunId={active?.id ?? null}
