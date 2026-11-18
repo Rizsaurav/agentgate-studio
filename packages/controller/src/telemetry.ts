@@ -36,6 +36,8 @@ export const spanAttributesSchema = z
     'agentgate.passages': COUNT,
     'agentgate.documents': COUNT,
     'agentgate.prompt_version': COUNT,
+    /** True when a saved answer was reused (#31) and the model was not called. */
+    'agentgate.cache_hit': z.boolean(),
   })
   .partial()
   .strict();

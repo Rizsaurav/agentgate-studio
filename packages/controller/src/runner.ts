@@ -1,4 +1,5 @@
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core';
+import { type AnswerCache, answerKey } from './answer-cache';
 import type { Passage } from './documents';
 import { groundedQuestion } from './grounding';
 import type { AgentModels } from './ollama';
@@ -14,6 +15,7 @@ import {
   storedMessageSchema,
   type Run,
   type SessionRepository,
+  type StoredMessage,
 } from './sessions';
 
 export const DEFAULT_RUN_TIMEOUT_MS = 120_000;
@@ -33,6 +35,8 @@ export type RunOptions = {
   telemetry?: RunTelemetry;
   /** The project's active system prompt (#27). Without it runs use the built-in version 0. */
   prompts?: { active(projectId: string): ActivePrompt };
+  /** Exact-match answer cache (#31). Without it every question goes to the model. */
+  cache?: Pick<AnswerCache, 'find' | 'save'>;
 };
 const DELIVERY_CHUNK_CHARS = 40;
 
@@ -51,6 +55,7 @@ export class RunService {
   private readonly guard: RunGuard;
   private readonly telemetry: RunTelemetry | undefined;
   private readonly prompts: RunOptions['prompts'];
+  private readonly cache: RunOptions['cache'];
 
   constructor(
     private readonly repository: SessionRepository,
@@ -62,6 +67,7 @@ export class RunService {
     this.knowledge = options.knowledge;
     this.telemetry = options.telemetry;
     this.prompts = options.prompts;
+    this.cache = options.cache;
   }
 
   /** Recover from a previous process, then continue any queued work. */
@@ -185,6 +191,72 @@ export class RunService {
         'gen_ai.request.model': session.model.modelId,
         'agentgate.prompt_version': prompt.version,
       } as const;
+      const recordPromptAndSources = () => {
+        // The version number only, so every answer can show which prompt produced it.
+        this.repository.appendEvent(run.id, 'prompt', String(prompt.version));
+        if (passages.length > 0)
+          this.repository.appendEvent(
+            run.id,
+            'sources',
+            JSON.stringify(
+              passages.map(({ documentId, title, seq }) => ({
+                documentId,
+                title,
+                seq,
+              })),
+            ),
+          );
+      };
+      /** The output check, then delivery: the same for a model answer and a saved one. */
+      const deliver = (text: string, turn: StoredMessage[]) => {
+        const endOutput = trace?.span('agentgate.output_check');
+        const output = this.guard.inspectOutput(guardContext, text);
+        if (!output.allowed) {
+          endOutput?.('blocked', { 'agentgate.rule': output.rule });
+          blocked(output);
+          return false;
+        }
+        endOutput?.('ok');
+        const endDelivery = trace?.span('agentgate.delivery');
+        for (let i = 0; i < text.length; i += DELIVERY_CHUNK_CHARS)
+          this.repository.appendEvent(
+            run.id,
+            'text_delta',
+            text.slice(i, i + DELIVERY_CHUNK_CHARS),
+          );
+        this.repository.appendEvent(run.id, 'completed', '');
+        this.repository.completeRun(run, turn);
+        endDelivery?.('ok');
+        trace?.finish('completed');
+        return true;
+      };
+      const cacheKey = this.cache
+        ? answerKey({
+            projectId: session.projectId,
+            model: session.model,
+            prompt,
+            context,
+            passages,
+            history,
+            question: run.prompt,
+          })
+        : null;
+      const saved = cacheKey && this.cache?.find(session.projectId, cacheKey);
+      if (saved) {
+        // Every check before this point ran for this question; the output check runs again below.
+        endChat('ok', { ...chat, 'agentgate.cache_hit': true });
+        recordPromptAndSources();
+        this.repository.appendEvent(run.id, 'cached', saved.createdAt);
+        deliver(saved.answer, [
+          storedMessageSchema.parse({
+            role: 'user',
+            content: [{ type: 'text', text: run.prompt }],
+            timestamp: Date.now(),
+          }),
+          ...saved.messages,
+        ]);
+        return;
+      }
       let opened: Awaited<ReturnType<AgentModels['open']>>;
       try {
         opened = await this.models.open(session.model);
@@ -206,20 +278,7 @@ export class RunService {
           passages.length === 0 ? messages : withExcerpts(messages, passages),
       });
       this.repository.appendEvent(run.id, 'started', session.model.modelId);
-      // The version number only, so every answer can show which prompt produced it.
-      this.repository.appendEvent(run.id, 'prompt', String(prompt.version));
-      if (passages.length > 0)
-        this.repository.appendEvent(
-          run.id,
-          'sources',
-          JSON.stringify(
-            passages.map(({ documentId, title, seq }) => ({
-              documentId,
-              title,
-              seq,
-            })),
-          ),
-        );
+      recordPromptAndSources();
       // Model text is held back until the output has been inspected.
       let answer = '';
       const unsubscribe = agent.subscribe((event) => {
@@ -288,28 +347,16 @@ export class RunService {
           ),
         );
       }
-      endChat('ok', chatResult);
-      const endOutput = trace.span('agentgate.output_check');
-      const output = this.guard.inspectOutput(guardContext, answer);
-      if (!output.allowed) {
-        endOutput('blocked', { 'agentgate.rule': output.rule });
-        return blocked(output);
-      }
-      endOutput('ok');
-      const endDelivery = trace.span('agentgate.delivery');
-      for (let i = 0; i < answer.length; i += DELIVERY_CHUNK_CHARS)
-        this.repository.appendEvent(
-          run.id,
-          'text_delta',
-          answer.slice(i, i + DELIVERY_CHUNK_CHARS),
-        );
-      this.repository.appendEvent(run.id, 'completed', '');
-      this.repository.completeRun(
-        run,
-        turn.map((message) => storedMessageSchema.parse(message)),
-      );
-      endDelivery('ok');
-      trace.finish('completed');
+      endChat('ok', { ...chatResult, 'agentgate.cache_hit': false });
+      const stored = turn.map((message) => storedMessageSchema.parse(message));
+      // Saved only once delivered: a blocked answer is never reused.
+      if (
+        deliver(answer, stored) &&
+        cacheKey &&
+        answer &&
+        stored[0]?.role === 'user'
+      )
+        this.cache?.save(session.projectId, cacheKey, answer, stored.slice(1));
     } catch (error) {
       // Log only the error class: messages may contain private prompt content.
       console.error(

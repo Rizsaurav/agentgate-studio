@@ -93,6 +93,8 @@ function stage(
 export function buildTraceStages(input: {
   run: Run;
   started: boolean;
+  /** The answer was a saved one (#31): the model was not called. */
+  cached?: boolean;
   screened: boolean;
   screenedDocumentIds: string[];
   hasCompleted: boolean;
@@ -102,6 +104,7 @@ export function buildTraceStages(input: {
   const {
     run,
     started,
+    cached = false,
     screened,
     screenedDocumentIds: screenedIds,
     hasCompleted,
@@ -213,7 +216,9 @@ export function buildTraceStages(input: {
           'generation',
           'Generation',
           'done',
-          'Answer was generated.',
+          cached
+            ? 'Reused a saved answer to the same question, with the same documents, context, prompt and model. The model was not called.'
+            : 'Answer was generated.',
         );
       case 'failed':
         return hasCompleted

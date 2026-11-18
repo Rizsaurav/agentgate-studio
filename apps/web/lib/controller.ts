@@ -10,6 +10,7 @@ import {
   EvalService,
   SqliteEvals,
   PromptService,
+  AnswerCache,
   ContextService,
   DocumentService,
   SqliteContext,
@@ -157,6 +158,10 @@ function controller(): Controller {
         guard,
         telemetry,
         prompts,
+        // Exact-match answer reuse (#31); AGENTGATE_ANSWER_CACHE=off sends every question to the model.
+        ...(process.env.AGENTGATE_ANSWER_CACHE !== 'off' && {
+          cache: new AnswerCache(db),
+        }),
         knowledge: {
           context: (projectId) => context.render(projectId),
           retrieve: (projectId, query) => documents.retrieve(projectId, query),

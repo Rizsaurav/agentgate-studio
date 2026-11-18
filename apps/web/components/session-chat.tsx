@@ -160,6 +160,7 @@ export function SessionChat({
                     answers[Math.floor(index / 2)] ?? {
                       sources: [],
                       promptVersion: null,
+                      cachedAt: null,
                     }
                   }
                 />
@@ -245,7 +246,12 @@ export function SessionChat({
     </div>
   );
 }
-type AnswerMeta = { sources: Source[]; promptVersion: number | null };
+type AnswerMeta = {
+  sources: Source[];
+  promptVersion: number | null;
+  /** Set when the answer was reused from the cache: when it was first given. */
+  cachedAt: string | null;
+};
 function AnswerDetails({
   projectId,
   text,
@@ -266,6 +272,16 @@ function AnswerDetails({
       {meta.promptVersion !== null && (
         <p>
           System prompt: <span>version {meta.promptVersion}</span>
+        </p>
+      )}
+      {meta.cachedAt && (
+        <p>
+          Saved answer:{' '}
+          <span>
+            first given {meta.cachedAt.slice(0, 16).replace('T', ' ')} UTC to
+            the same question, documents and prompt. Reword the question for a
+            new answer.
+          </span>
         </p>
       )}
       <details className="mt-2">

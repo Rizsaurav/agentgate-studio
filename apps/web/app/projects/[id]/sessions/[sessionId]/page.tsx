@@ -93,6 +93,7 @@ export default async function SessionPage({
           answers={completed.map((run) => ({
             sources: sessions().sources(run.id),
             promptVersion: sessions().promptVersion(run.id),
+            cachedAt: sessions().cachedAt(run.id),
           }))}
           sessionId={session.id}
           turns={sessions().view(session.id)}
