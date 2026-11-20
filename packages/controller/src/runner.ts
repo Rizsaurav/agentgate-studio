@@ -213,6 +213,11 @@ export class RunService {
             last.errorMessage ?? 'The model request failed.',
           ),
         );
+      // A reply with no text (only hidden reasoning, or nothing) is not an answer.
+      if (!answer.trim())
+        return fail(
+          'The model returned no answer text. Try again, or pick another model.',
+        );
       const output = this.guard.inspectOutput(guardContext, answer);
       if (!output.allowed) return blocked(output);
       for (let i = 0; i < answer.length; i += DELIVERY_CHUNK_CHARS)

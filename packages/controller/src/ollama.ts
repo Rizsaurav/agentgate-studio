@@ -77,8 +77,18 @@ export class OllamaCatalog implements AgentModels {
     if (!model) throw new Error(`Model ${ref.modelId} could not be loaded.`);
     return {
       model,
+      // Ollama marks some models as "thinking" from their template, and then returns the whole
+      // reply as hidden reasoning with empty content, even for an instruct model that does not
+      // think. Asking for no reasoning makes it answer in the normal content field.
       streamFn: (target, context, options) =>
-        registry.streamSimple(target, context, options),
+        registry.streamSimple(target, context, {
+          ...options,
+          onPayload: async (payload, payloadModel) => {
+            const next =
+              (await options?.onPayload?.(payload, payloadModel)) ?? payload;
+            return { ...(next as object), reasoning_effort: 'none' };
+          },
+        }),
       // Ollama is keyless; Pi requires a non-empty value for the request.
       getApiKey: () => 'ollama',
       describeError: (raw) => raw.slice(0, 300),
