@@ -24,6 +24,14 @@ export {
   traceSchema,
 } from './telemetry';
 export type { RunTelemetry, Span, SpanAttributes, Trace } from './telemetry';
+export {
+  SPAN_LABELS,
+  formatDuration,
+  slowestSpan,
+  summarizeTraces,
+  usage,
+} from './trace-summary';
+export type { ProjectTraceSummary } from './trace-summary';
 export { SqliteProjects } from './sqlite-projects';
 export { SqliteSessions } from './sqlite-sessions';
 export {

@@ -211,3 +211,6 @@ export const catalog = () => controller().catalog;
 export const puller = () => controller().puller;
 export const endpoints = () => controller().endpoints;
 export const telemetry = () => controller().telemetry;
+/** The prompt-injection threshold the scanner uses; the scanner reads the same variable. */
+export const scannerThreshold = () =>
+  Number(process.env.AGENTGATE_SCANNER_THRESHOLD ?? '0.9');
