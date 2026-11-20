@@ -95,10 +95,28 @@ public enum ToolPolicy {
     if allowedPaths.contains(raw) { return nil }
     let expanded = raw.hasPrefix("~") ? NSString(string: raw).expandingTildeInPath : raw
     let target = expanded.hasPrefix("/") ? URL(fileURLWithPath: expanded) : folder.appendingPathComponent(expanded)
-    let resolved = target.standardizedFileURL.resolvingSymlinksInPath().path
-    let root = folder.standardizedFileURL.resolvingSymlinksInPath().path
+    let resolved = canonical(target)
+    let root = canonical(folder)
     if resolved == root || resolved.hasPrefix(root + "/") { return nil }
     return .block(rule: "outside-project", reason: "The agent may only touch files inside the project folder.")
+  }
+
+  /// The real path of `url`, with every symlink resolved, also for a file that does not exist yet: the
+  /// nearest existing folder is resolved with realpath(3) and the rest appended. Both the project and the
+  /// target go through this, so a new file reached through a symlink (/var is /private/var) is compared
+  /// like an existing one. Foundation's resolvingSymlinksInPath does not do that: it resolves only paths
+  /// that exist, so a new file inside the project could look like it was outside.
+  static func canonical(_ url: URL) -> String {
+    var existing = url.standardizedFileURL
+    var rest: [String] = []
+    while existing.path != "/", !FileManager.default.fileExists(atPath: existing.path) {
+      rest.insert(existing.lastPathComponent, at: 0)
+      existing = existing.deletingLastPathComponent()
+    }
+    var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
+    let base = realpath(existing.path, &buffer) != nil
+      ? String(decoding: buffer.prefix { $0 != 0 }.map(UInt8.init), as: UTF8.self) : existing.path
+    return rest.reduce(base == "/" ? "" : base) { $0 + "/" + $1 }
   }
 
   static func uploads(_ args: [String]) -> Bool {

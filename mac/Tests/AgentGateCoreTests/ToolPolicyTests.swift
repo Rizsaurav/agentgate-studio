@@ -39,3 +39,41 @@ import Testing
     #expect((try FileManager.default.attributesOfItem(atPath: log.file.path)[.posixPermissions] as? Int) == 0o600)
   }
 }
+
+/// A project reached through a symlink (here the temporary folder: /var is /private/var). The harness
+/// reports real paths, so a new file there must count as inside the project, and the outside still as outside.
+@Suite struct ToolPolicySymlinkTests {
+  private func project() throws -> URL {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("policy-sym-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: folder.appendingPathComponent("src"), withIntermediateDirectories: true)
+    try "x".write(to: folder.appendingPathComponent("src/existing.py"), atomically: true, encoding: .utf8)
+    return folder
+  }
+
+  @Test func aNewFileThroughTheSymlinkIsInsideTheProject() throws {
+    let folder = try project()
+    defer { try? FileManager.default.removeItem(at: folder) }
+    #expect(folder.path.hasPrefix("/var/"), "the test needs a symlinked folder")
+    let real = "/private" + folder.path
+    for detail in [real + "/src/new.py", real + "/src/existing.py", real + "/newdir/deeper/new.py", "src/new.py", folder.path + "/new.py"] {
+      #expect(!ToolPolicy.evaluate(tool: "edit", detail: detail, folder: folder).isBlocked, "\(detail)")
+    }
+  }
+
+  @Test func outsideStaysOutsideThroughTheSymlink() throws {
+    let folder = try project()
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let real = "/private" + folder.path
+    for detail in [real + "/../escape.py", real + "-sibling/new.py", "/private/etc/hosts", "../new.py", real + "/src/../../new.py"] {
+      #expect(ToolPolicy.evaluate(tool: "edit", detail: detail, folder: folder).isBlocked, "\(detail)")
+    }
+  }
+
+  @Test func aSymlinkInsideThatPointsOutsideIsStillOutside() throws {
+    let folder = try project()
+    defer { try? FileManager.default.removeItem(at: folder) }
+    try FileManager.default.createSymbolicLink(at: folder.appendingPathComponent("link"), withDestinationURL: URL(fileURLWithPath: "/etc"))
+    #expect(ToolPolicy.evaluate(tool: "edit", detail: "link/hosts", folder: folder).isBlocked)
+    #expect(ToolPolicy.evaluate(tool: "edit", detail: "link/new-file", folder: folder).isBlocked)
+  }
+}
