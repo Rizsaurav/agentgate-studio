@@ -92,6 +92,16 @@ final class AppModel {
   /// Token counters, refreshed whenever one changes.
   private(set) var tokenCounts: [TokenCount] = []
   private var countedParts: Set<String> = []
+  /// Tokens in the context on each session's last model call, for the indicator.
+  private(set) var contextUsed: [UUID: Int] = [:]
+  /// Sessions whose older turns were summarised: the next message carries the task and decisions again.
+  private var needsPin: Set<UUID> = []
+
+  /// How full a session's context is, once the engine has reported a model call.
+  func contextMeter(for sessionId: UUID) -> ContextMeter? {
+    guard let used = contextUsed[sessionId] else { return nil }
+    return ContextMeter(used: used, context: active?.config.context ?? ModelPlanner.preferredContext)
+  }
   private var turnReportedUsage = false
   /// What the last check of each installed model found, and the progress of checks still running.
   private(set) var integrity: [String: Integrity] = [:]
@@ -624,7 +634,12 @@ final class AppModel {
         }
         // Wait for the event stream, so no question from the agent is missed.
         for _ in 0..<100 where !agentConnected { try await Task.sleep(nanoseconds: 50_000_000) }
-        try await server.client.prompt(session: agentId!, text: text, model: session.modelId)
+        var outgoing = text
+        if needsPin.remove(sessionId) != nil,
+           let pinned = PinnedContext.from(userMessages: session.messages.filter { $0.role == .user }.map(\.content) + [text]) {
+          outgoing = pinned.preamble() + "\n\n" + text
+        }
+        try await server.client.prompt(session: agentId!, text: outgoing, model: session.modelId)
         try await watchForQuestions(server)
       } catch {
         append("\(error)", to: sessionId)
@@ -800,6 +815,12 @@ final class AppModel {
             let session = workspace.sessions.first(where: { $0.id == id }) else { break }
       turnReportedUsage = true
       countTokens(usage, model: session.modelId, name: session.modelName, location: .local)
+      if let usage { contextUsed[id] = usage.prompt + usage.generated }
+    case .compacted(let partID):
+      guard countedParts.insert(partID).inserted, let id = streamingSession else { break }
+      // Visible to the user, and the task and decisions go again with the next message.
+      needsPin.insert(id)
+      append("\n\n_Older turns were summarised to fit the context. The task and decisions are kept and sent again._\n\n", to: id)
     case .connected: agentConnected = true
     case .busy: thinking = true
     case .idle: finishTurn()

@@ -14,6 +14,8 @@ public enum AgentEvent: Sendable, Equatable {
   case permission(Permission)
   /// One model call finished, with the engine's token counts; nil when the engine reported none.
   case usage(partID: String, TokenUsage?)
+  /// The harness summarised older turns to fit the context.
+  case compacted(partID: String)
   case busy
   case idle
   /// The event stream is open; nothing before this point can be missed.
@@ -124,6 +126,7 @@ enum AgentEventDecoder {
           id: id, name: name, status: part.state?.status ?? "pending",
           detail: input?.command ?? input?.filePath ?? input?.pattern ?? "", output: part.state?.output ?? ""))
       }
+      if part.type == "compaction" { return .compacted(partID: id) }
       if part.type == "step-finish" {
         let t = part.tokens
         let prompt = (t?.input ?? 0) + (t?.cache?.read ?? 0) + (t?.cache?.write ?? 0)
@@ -187,13 +190,16 @@ public final class AgentServer: @unchecked Sendable {
 
   /// The harness configuration: one local provider, and permissions that fail closed.
   static func config(engineURL: URL, engineKey: String, model: String, context: Int) throws -> String {
-    let config: [String: Any] = [
+    let budget = ContextBudget(context: context)
+    var config: [String: Any] = [
       "$schema": "https://opencode.ai/config.json",
       "autoupdate": false, "share": "disabled",
       "provider": ["local": [
         "npm": "@ai-sdk/openai-compatible", "name": "Local model",
         "options": ["baseURL": engineURL.appendingPathComponent("v1").absoluteString, "apiKey": engineKey],
-        "models": [model: ["name": model, "tool_call": true, "limit": ["context": context, "output": 4096]]],
+        "models": [model: [
+          "name": model, "tool_call": true, "limit": ["context": budget.context, "output": budget.reply],
+        ]],
       ]],
       // Reads, globs, greps and lists ask too, so ToolCallCheck sees every call; the app answers
       // valid ones itself without bothering the user.
@@ -202,6 +208,8 @@ public final class AgentServer: @unchecked Sendable {
         "webfetch": "deny", "external_directory": "deny",
       ],
     ]
+    // The harness's own compaction and tool-output cut-off, sized to this context (checked against OpenCode 1.19.5).
+    config.merge(budget.harnessSettings) { _, new in new }
     return String(decoding: try JSONSerialization.data(withJSONObject: config), as: UTF8.self)
   }
 

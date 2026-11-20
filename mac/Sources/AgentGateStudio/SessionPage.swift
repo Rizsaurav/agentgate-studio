@@ -15,6 +15,18 @@ struct SessionPage: View {
           Button { app.route = .project(project.id) } label: { Text("← \(project.name)").font(.system(size: 13)) }
             .buttonStyle(.plain).foregroundStyle(Theme.muted)
           Spacer()
+          if let meter = app.contextMeter(for: session.id) {
+            HStack(spacing: 6) {
+              ProgressView(value: meter.fraction).frame(width: 60)
+                .tint(meter.isNearlyFull ? Theme.danger : Theme.accent)
+              Text(meter.label).font(.system(size: 11)).foregroundStyle(Theme.muted).monospacedDigit()
+            }
+            .help(meter.isNearlyFull
+              ? "Nearly full: older turns will be summarised soon. The task and decisions are kept."
+              : "How much of the model's context the last step used.")
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(meter.label)
+          }
           if let folder = project.folder {
             Label((folder as NSString).abbreviatingWithTildeInPath, systemImage: "folder")
               .font(.system(size: 12)).foregroundStyle(Theme.muted).lineLimit(1)
