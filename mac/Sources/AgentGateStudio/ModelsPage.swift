@@ -35,7 +35,7 @@ struct ModelsPage: View {
           HStack(alignment: .top, spacing: 14) {
             ForEach(Tier.allCases, id: \.self) { tier in
               if let plan = app.tiers[tier], let model = app.catalog?.model(plan.modelId) {
-                TierCard(tier: tier, plan: plan, option: app.option(model)) { app.select(model) }
+                TierCard(tier: tier, plan: plan, option: app.option(model)) { app.requestInstall(model) }
               }
             }
           }
@@ -79,7 +79,7 @@ struct ModelsPage: View {
             Card(padding: 6) {
               VStack(spacing: 0) {
                 ForEach(app.allOptions) { option in
-                  CatalogRow(option: option) { app.select(option.model) }
+                  CatalogRow(option: option) { app.requestInstall(option.model) }
                   if option.id != app.allOptions.last?.id { Divider().overlay(Theme.line) }
                 }
               }
@@ -110,7 +110,7 @@ struct ModelsPage: View {
                 if index == 0 { StatusPill(text: "Best match", tone: .ok) }
                 Text(pick.model.name).font(.system(size: 14, weight: .semibold))
                 ForEach(pick.reasons, id: \.self) { Text($0).font(.system(size: 12)).foregroundStyle(Theme.muted) }
-                Button(pick.installed ? (app.active?.id == pick.model.id ? "Loaded" : "Use") : "Install") { app.select(pick.model) }
+                Button(pick.installed ? (app.active?.id == pick.model.id ? "Loaded" : "Use") : "Install") { app.requestInstall(pick.model) }
                   .buttonStyle(PrimaryButtonStyle()).padding(.top, 4)
                   .disabled(app.active?.id == pick.model.id || app.installing != nil)
               }
@@ -216,8 +216,25 @@ private struct InstalledRow: View {
           .font(.system(size: 12)).foregroundStyle(Theme.muted)
       }
       Spacer()
+      if let fraction = app.verifying[model.id] {
+        ProgressView(value: fraction).frame(width: 80)
+          .accessibilityLabel("Checking \(model.name), \(Int(fraction * 100)) percent")
+      } else if let result = app.integrity[model.id] {
+        if result.isDamaged {
+          StatusPill(text: "Damaged", tone: .bad).help(result.message(for: model))
+          Button("Reinstall") { app.reinstall(model) }.buttonStyle(SubtleButtonStyle())
+            .accessibilityLabel("Reinstall \(model.name)")
+        } else {
+          StatusPill(text: "Verified", tone: .ok).help(result.message(for: model))
+        }
+      }
       if active { StatusPill(text: "Loaded", tone: .ok) }
       else if model.readiness == .chatOnly { StatusPill(text: "Chat only", tone: .pending) }
+      if app.verifying[model.id] == nil, app.integrity[model.id]?.isDamaged != true {
+        Button("Verify") { app.verify(model) }.buttonStyle(SubtleButtonStyle())
+          .help("Re-check the file against the checksum recorded at install.")
+          .accessibilityLabel("Verify \(model.name)")
+      }
       Button("Remove") { confirm = true }.buttonStyle(SubtleButtonStyle())
         .accessibilityLabel("Remove \(model.name)")
         .confirmationDialog("Remove \(model.name)?", isPresented: $confirm) {

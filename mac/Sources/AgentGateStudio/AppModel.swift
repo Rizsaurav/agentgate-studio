@@ -47,13 +47,31 @@ final class AppModel {
   var stepLog: [InstallStep: [String]] { run?.log ?? [:] }
   var stepDetail: InstallStep?
   var agentPanelOpen = false
-  var autonomy = Autonomy(rawValue: UserDefaults.standard.string(forKey: "autonomy") ?? "") ?? .careful {
+  /// A plan waiting for the user's go-ahead, with its review. Set before anything downloads.
+  var planReview: PendingReview?
+
+  struct PendingReview: Identifiable {
+    var id: String { model.id }
+    var model: CatalogModel
+    var plan: ModelPlan
+    var verdicts: [PlanVerdict]
+    var checking: Bool
+  }
+  var autonomy = Autonomy(rawValue: UserDefaults.standard.string(forKey: "autonomy") ?? "") ?? .balanced {
     didSet { UserDefaults.standard.set(autonomy.rawValue, forKey: "autonomy") }
   }
   private(set) var failure: InstallFailure?
   private(set) var installing: CatalogModel?
   /// A repair waiting for the user's yes or no.
-  private(set) var pendingRepair: (operation: RepairOperation, report: FailureReport)?
+  private(set) var pendingRepair: (operations: [RepairOperation], report: FailureReport)?
+  /// How long a repair question waits before it counts as no.
+  var approvalMinutes = max(1, UserDefaults.standard.integer(forKey: "approvalMinutes") == 0 ? 10 : UserDefaults.standard.integer(forKey: "approvalMinutes")) {
+    didSet { UserDefaults.standard.set(approvalMinutes, forKey: "approvalMinutes") }
+  }
+  /// Re-downloads over this many GB ask first (except in Hands-off).
+  var askAboveGB = UserDefaults.standard.integer(forKey: "askAboveGB") == 0 ? 10 : UserDefaults.standard.integer(forKey: "askAboveGB") {
+    didSet { UserDefaults.standard.set(askAboveGB, forKey: "askAboveGB") }
+  }
   private var repairAnswer: CheckedContinuation<Bool, Never>?
   /// Whether the repair agent (OpenRouter) is connected. The key itself never leaves the Keychain.
   let agentStore = AgentStore()
@@ -85,6 +103,9 @@ final class AppModel {
     return ContextMeter(used: used, context: active?.config.context ?? ModelPlanner.preferredContext)
   }
   private var turnReportedUsage = false
+  /// What the last check of each installed model found, and the progress of checks still running.
+  private(set) var integrity: [String: Integrity] = [:]
+  private(set) var verifying: [String: Double] = [:]
   private let workspaceStore = WorkspaceStore()
   private var runtime: LlamaRuntime?
   private var installTask: Task<Bool, Never>?
@@ -242,6 +263,44 @@ final class AppModel {
 
   var allOptions: [ModelOption] { catalog?.models.map(option) ?? [] }
 
+  func catalogModel(_ id: String) -> CatalogModel? { catalog?.model(id) }
+
+  /// Install entry point for the UI: an installed model loads at once; a new one shows its plan and review first.
+  func requestInstall(_ model: CatalogModel) {
+    guard !installed.contains(where: { $0.id == model.id }), let profile,
+          case .compatible(let plan) = ModelPlanner.plan(model, for: profile, limits: InstallPipeline.supported) else {
+      select(model)
+      return
+    }
+    let onBattery = PowerState.onBattery()
+    let rules = PlanReview.rules(plan, profile: profile, onBattery: onBattery)
+    planReview = PendingReview(model: model, plan: plan, verdicts: [rules], checking: agentOn)
+    guard agentOn else { return }
+    let input = PlanReviewInput(model: model.name, plan: plan, profile: profile, onBattery: onBattery, task: nil)
+    let ids = (catalog?.models ?? []).filter { option($0).plan != nil }.map(\.id)
+    let assistant = AgentAssistant(profile: activeAgent)
+    Task {
+      let raw = try? await assistant.reviewPlan(input, allowedModelIds: ids)
+      guard planReview?.id == model.id else { return }
+      let agent = raw.flatMap { PlanReview.parseAgent($0, allowedModelIds: Set(ids)) }
+      planReview?.verdicts = PlanReview.combine(rules: rules, agent: agent)
+      planReview?.checking = false
+    }
+  }
+
+  func confirmReview() {
+    guard let review = planReview else { return }
+    planReview = nil
+    select(review.model)
+  }
+
+  func cancelReview() { planReview = nil }
+
+  func reviewInstead(_ model: CatalogModel) {
+    planReview = nil
+    requestInstall(model)
+  }
+
   /// Installs the model if needed, then loads it. One install or load at a time.
   @discardableResult
   func select(_ model: CatalogModel) -> Task<Bool, Never>? {
@@ -265,9 +324,14 @@ final class AppModel {
           runtime = try await pipeline.load(done, update: report)
           active = done
         } else {
-          let runner = RepairRunner(assistant: agentOn ? supervisor() : nil, autonomy: autonomy) { operation, failure in
-            await self.askToRepair(operation, failure)
+          var runner = RepairRunner(
+            assistant: agentOn ? supervisor() : nil, autonomy: autonomy,
+            approvalTimeout: .seconds(approvalMinutes * 60)
+          ) { operation, failure in
+            await self.askToRepair([operation], failure)
           }
+          runner.approveBatch = { operations, failure in await self.askToRepair(operations, failure) }
+          runner.askAboveBytes = UInt64(askAboveGB) * MemoryBudget.gib
           let (done, runtime) = try await runner.install(model, update: report)
           self.runtime = runtime
           installed = try store.list()
@@ -286,6 +350,14 @@ final class AppModel {
       } catch {
         failure = InstallFailure(step: update?.step ?? .load, message: String(describing: error), cause: error, logTail: nil)
         update = nil
+      }
+      // An installed model that fails to load may have a damaged file: check it, so the message can say so.
+      if !fresh, var shown = failure, let done = installed.first(where: { $0.id == model.id }),
+         let result = try? await FileIntegrityCheck(store: store).verify(done) {
+        integrity[done.id] = result
+        shown.message += result == .intact
+          ? " The model file was checked and is intact." : " " + result.message(for: done)
+        failure = shown
       }
       if fresh, var record = run {
         record.failure = failure?.message
@@ -405,10 +477,10 @@ final class AppModel {
   }
 
   /// Shows the question in the bar. If the runner stops waiting (timeout), the question is taken down as a no.
-  private func askToRepair(_ operation: RepairOperation, _ report: FailureReport) async -> Bool {
+  private func askToRepair(_ operations: [RepairOperation], _ report: FailureReport) async -> Bool {
     await withTaskCancellationHandler {
       await withCheckedContinuation { continuation in
-        pendingRepair = (operation, report)
+        pendingRepair = (operations, report)
         repairAnswer = continuation
       }
     } onCancel: {
@@ -425,6 +497,36 @@ final class AppModel {
   func dismissFailure() { failure = nil }
 
   func dismissUpdate() { update = nil }
+
+  /// Re-hashes an installed model's file and records whether it is intact.
+  func verify(_ model: InstalledModel) {
+    guard verifying[model.id] == nil else { return }
+    verifying[model.id] = 0
+    integrity[model.id] = nil
+    let id = model.id
+    Task {
+      do {
+        let result = try await FileIntegrityCheck(store: store).verify(model) { fraction in
+          Task { @MainActor in if self.verifying[id] != nil { self.verifying[id] = fraction } }
+        }
+        integrity[id] = result
+      } catch {
+        errorMessage = "\(model.name) could not be checked: \(error)"
+      }
+      verifying[id] = nil
+    }
+  }
+
+  /// Removes a damaged model and installs it again from the catalog.
+  func reinstall(_ model: InstalledModel) {
+    guard let entry = catalog?.model(model.id) else {
+      errorMessage = "\(model.name) is no longer in the catalog, so it cannot be reinstalled. Remove it instead."
+      return
+    }
+    remove(model)
+    integrity[model.id] = nil
+    select(entry)
+  }
 
   func remove(_ model: InstalledModel) {
     if active?.id == model.id {

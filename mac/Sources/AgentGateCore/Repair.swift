@@ -69,19 +69,32 @@ public enum RepairOperation: Sendable, Equatable, Hashable {
     public static func < (a: Tier, b: Tier) -> Bool { a.rawValue < b.rawValue }
   }
 
-  public func tier(downloadBytes: UInt64) -> Tier {
+  /// Re-downloads larger than this ask first, unless the user chose Hands-off. The user can change it.
+  public static let defaultAskAboveBytes: UInt64 = 10 * MemoryBudget.gib
+
+  /// Tier 3 (never) is not here: commands ToolPolicy blocks are refused before anyone is asked.
+  public func tier(downloadBytes: UInt64, askAboveBytes: UInt64 = RepairOperation.defaultAskAboveBytes) -> Tier {
     switch self {
     case .freeDisk, .lowerQuantization, .setQuantization, .runCommand: .ask
     case .useMirror: .notify
-    case .retryDownload: downloadBytes > MemoryBudget.gib ? .notify : .act
+    case .retryDownload: downloadBytes > askAboveBytes ? .ask : downloadBytes > MemoryBudget.gib ? .notify : .act
     case .reduceContext, .restartRuntime, .cancelAndCleanUp, .setContext: .act
     }
   }
 
-  /// Whether the user must say yes first, given how much autonomy they chose.
-  public func needsApproval(downloadBytes: UInt64, autonomy: Autonomy = .careful) -> Bool {
-    let tier = tier(downloadBytes: downloadBytes)
-    return tier == .ask || (tier == .notify && autonomy == .careful)
+  /// Whether the user must say yes first, given how much autonomy they chose. Deleting, lowering quality and
+  /// commands always ask, whatever the setting.
+  public func needsApproval(
+    downloadBytes: UInt64, autonomy: Autonomy = .careful,
+    askAboveBytes: UInt64 = RepairOperation.defaultAskAboveBytes
+  ) -> Bool {
+    let tier = tier(downloadBytes: downloadBytes, askAboveBytes: askAboveBytes)
+    switch autonomy {
+    case .careful: return tier >= .notify
+    case .balanced: return tier == .ask
+    // Hands-off re-downloads over the size limit with a note; everything else in tier 2 still asks.
+    case .handsOff: return tier == .ask && self != .retryDownload
+    }
   }
 
   public var summary: String {
@@ -106,11 +119,22 @@ public enum Autonomy: String, Codable, Sendable, CaseIterable {
   case careful
   /// Also switches to a listed mirror or retries a big download on its own, and says so in the bar.
   case balanced
+  /// Also re-downloads past the size limit on its own. Deleting, lowering quality and commands still ask.
+  case handsOff
+
+  public var title: String {
+    switch self {
+    case .careful: "Careful"
+    case .balanced: "Balanced"
+    case .handsOff: "Hands-off"
+    }
+  }
 
   public var summary: String {
     switch self {
     case .careful: "Asks before switching download source or re-downloading over 1 GB."
-    case .balanced: "Switches to a listed mirror or retries a big download on its own and tells you. Still asks before deleting, lowering quality or running commands."
+    case .balanced: "Switches to a listed mirror or retries a big download on its own and tells you. Still asks before deleting, lowering quality, re-downloading past your size limit or running commands."
+    case .handsOff: "Also re-downloads past your size limit on its own and tells you. Still asks before deleting, lowering quality or running commands."
     }
   }
 }

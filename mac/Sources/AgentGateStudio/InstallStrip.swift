@@ -7,7 +7,11 @@ struct InstallStrip: View {
 
   var body: some View {
     if let repair = app.pendingRepair {
-      bar(step: app.update?.step ?? .download, failed: true, message: "\(repair.report.message) Proposed repair: \(repair.operation.summary)",
+      let proposed = repair.operations.count == 1
+        ? "Proposed repair: \(repair.operations[0].summary)"
+        : "Proposed repairs, all or none: " + repair.operations.map(\.summary).joined(separator: " ")
+      bar(step: app.update?.step ?? .download, failed: true,
+          message: "\(repair.report.message) \(proposed) If nobody answers in \(app.approvalMinutes) min, nothing is done and the install pauses.",
           progress: nil, trailing: AnyView(HStack {
             Button("Decline") { app.answerRepair(false) }.controlSize(.small)
             Button("Approve") { app.answerRepair(true) }.controlSize(.small).buttonStyle(.borderedProminent)
