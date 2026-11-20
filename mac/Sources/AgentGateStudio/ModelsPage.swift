@@ -216,8 +216,25 @@ private struct InstalledRow: View {
           .font(.system(size: 12)).foregroundStyle(Theme.muted)
       }
       Spacer()
+      if let fraction = app.verifying[model.id] {
+        ProgressView(value: fraction).frame(width: 80)
+          .accessibilityLabel("Checking \(model.name), \(Int(fraction * 100)) percent")
+      } else if let result = app.integrity[model.id] {
+        if result.isDamaged {
+          StatusPill(text: "Damaged", tone: .bad).help(result.message(for: model))
+          Button("Reinstall") { app.reinstall(model) }.buttonStyle(SubtleButtonStyle())
+            .accessibilityLabel("Reinstall \(model.name)")
+        } else {
+          StatusPill(text: "Verified", tone: .ok).help(result.message(for: model))
+        }
+      }
       if active { StatusPill(text: "Loaded", tone: .ok) }
       else if model.readiness == .chatOnly { StatusPill(text: "Chat only", tone: .pending) }
+      if app.verifying[model.id] == nil, app.integrity[model.id]?.isDamaged != true {
+        Button("Verify") { app.verify(model) }.buttonStyle(SubtleButtonStyle())
+          .help("Re-check the file against the checksum recorded at install.")
+          .accessibilityLabel("Verify \(model.name)")
+      }
       Button("Remove") { confirm = true }.buttonStyle(SubtleButtonStyle())
         .accessibilityLabel("Remove \(model.name)")
         .confirmationDialog("Remove \(model.name)?", isPresented: $confirm) {
