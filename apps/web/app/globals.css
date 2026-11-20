@@ -530,6 +530,10 @@ dialog::backdrop {
 details.provider-section {
   padding: 14px 0;
 }
+/* The first row behind "More providers" keeps the divider its sibling rule would give it. */
+.show-more-rest > .provider-section:first-child {
+  border-top: 1px solid var(--line);
+}
 details.provider-section > summary {
   list-style: none;
 }

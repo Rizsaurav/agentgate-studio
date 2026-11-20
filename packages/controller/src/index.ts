@@ -136,3 +136,12 @@ export { Watchdog, assess } from './watchdog';
 export type { Finding, Probe, Remedy } from './watchdog';
 export { ensureOllama, startOllama, startScanner } from './service-control';
 export { findOllama, installOllama } from './ollama-install';
+export {
+  PREFERRED_PROVIDERS,
+  VISIBLE,
+  orderLocalModels,
+  orderProviders,
+  searchModels,
+  suggestModels,
+} from './model-lists';
+export type { ModelChoice, ModelGroup } from './model-lists';

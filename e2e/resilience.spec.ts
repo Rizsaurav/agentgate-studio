@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
+import { chooseModel } from './models';
 import { addReference } from './panels';
 
 const model = process.env.AGENTGATE_E2E_MODEL;
@@ -77,9 +78,7 @@ test('a session and its conversation survive an application restart', async ({
   await page.goto(first.url);
   await page.getByLabel('Project name').fill('Restart me');
   await page.getByRole('button', { name: /Create project/ }).click();
-  await page
-    .getByLabel('Model', { exact: true })
-    .selectOption(`ollama/${model}`);
+  await chooseModel(page, `ollama/${model}`);
   await page.getByRole('button', { name: 'Start session' }).click();
   await page
     .getByLabel('Task')
@@ -135,9 +134,7 @@ test('scanner outage fails closed in the browser: ingestion and tasks are refuse
   await expect(references.getByText('Returns Policy')).toHaveCount(0);
   await page.getByRole('button', { name: 'Close Reference documents' }).click();
 
-  await page
-    .getByLabel('Model', { exact: true })
-    .selectOption(`ollama/${model}`);
+  await chooseModel(page, `ollama/${model}`);
   await page.getByRole('button', { name: 'Start session' }).click();
   await page
     .getByLabel('Task')

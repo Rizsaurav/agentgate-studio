@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { chooseModel } from './models';
 import { addReference, closePanel, openPanel } from './panels';
 
 const model = process.env.AGENTGATE_E2E_MODEL;
@@ -43,9 +44,7 @@ test('a session retrieves a source from an imported demo project', async ({
     { timeout: 60_000 },
   );
   await page.getByRole('link', { name: 'Open project' }).click();
-  await page
-    .getByLabel('Model', { exact: true })
-    .selectOption(`ollama/${model}`);
+  await chooseModel(page, `ollama/${model}`);
   await page.getByRole('button', { name: 'Start session' }).click();
   await page
     .getByLabel('Task')
@@ -80,9 +79,7 @@ test('project → real model session → streamed answer persists', async ({
     page.getByRole('heading', { name: 'E2E project' }),
   ).toBeVisible();
 
-  await page
-    .getByLabel('Model', { exact: true })
-    .selectOption(`ollama/${model}`);
+  await chooseModel(page, `ollama/${model}`);
   await page.getByRole('button', { name: 'Start session' }).click();
   await expect(
     page.getByRole('heading', { name: 'Agent session' }),
@@ -178,9 +175,7 @@ test('shared context and retrieved sources follow the project across two models'
   await closePanel(page, 'Reference documents');
 
   for (const id of [model, secondModel] as string[]) {
-    await page
-      .getByLabel('Model', { exact: true })
-      .selectOption(`ollama/${id}`);
+    await chooseModel(page, `ollama/${id}`);
     await page.getByRole('button', { name: 'Start session' }).click();
     await page
       .getByLabel('Task')
@@ -219,9 +214,7 @@ test('a poisoned document is quarantined and a prompt injection is blocked, with
   ).toContainText('quarantined', { timeout: 60_000 });
   await closePanel(page, 'Reference documents');
 
-  await page
-    .getByLabel('Model', { exact: true })
-    .selectOption(`ollama/${model}`);
+  await chooseModel(page, `ollama/${model}`);
   await page.getByRole('button', { name: 'Start session' }).click();
   await page
     .getByLabel('Task')
@@ -317,9 +310,7 @@ test('local models install one after another from the Models page, chat right aw
     await page.goto('/');
     await page.getByLabel('Project name').fill('Fresh local model');
     await page.getByRole('button', { name: /Create project/ }).click();
-    await page
-      .getByLabel('Model', { exact: true })
-      .selectOption(`ollama/${tiny}`);
+    await chooseModel(page, `ollama/${tiny}`);
     await page.getByRole('button', { name: 'Start session' }).click();
     await page.getByLabel('Task').fill('Say hello.');
     await page.getByRole('button', { name: 'Run task' }).click();

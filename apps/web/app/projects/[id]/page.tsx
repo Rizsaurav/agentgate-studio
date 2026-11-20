@@ -313,7 +313,16 @@ export default async function ProjectPage({
             </p>
           )}
           {groups.length > 0 ? (
-            <StartSession projectId={id} groups={groups} />
+            <StartSession
+              projectId={id}
+              groups={groups}
+              recent={sessionList
+                .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt))
+                .map(
+                  (session) =>
+                    `${session.model.provider}/${session.model.modelId}`,
+                )}
+            />
           ) : (
             <div className="space-y-6">
               <p className="muted">
