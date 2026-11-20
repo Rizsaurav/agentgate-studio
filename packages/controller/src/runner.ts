@@ -4,6 +4,11 @@ import { groundedQuestion } from './grounding';
 import type { AgentModels } from './ollama';
 import type { Blocked, RunGuard } from './security';
 import {
+  type RunTelemetry,
+  type SpanAttributes,
+  TraceRecorder,
+} from './telemetry';
+import {
   sendPromptSchema,
   storedMessageSchema,
   type Run,
@@ -25,6 +30,8 @@ export type RunOptions = {
   guard: RunGuard;
   timeoutMs?: number;
   knowledge?: RunKnowledge;
+  /** Where run traces go (#10). Optional: without it nothing is recorded. */
+  telemetry?: RunTelemetry;
 };
 const DELIVERY_CHUNK_CHARS = 40;
 
@@ -41,6 +48,7 @@ export class RunService {
   private readonly timeoutMs: number;
   private readonly knowledge: RunKnowledge | undefined;
   private readonly guard: RunGuard;
+  private readonly telemetry: RunTelemetry | undefined;
 
   constructor(
     private readonly repository: SessionRepository,
@@ -50,6 +58,7 @@ export class RunService {
     this.guard = options.guard;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_RUN_TIMEOUT_MS;
     this.knowledge = options.knowledge;
+    this.telemetry = options.telemetry;
   }
 
   /** Recover from a previous process, then continue any queued work. */
@@ -103,33 +112,55 @@ export class RunService {
   }
 
   private async execute(run: Run): Promise<void> {
+    // Set once the session is known; every way out of the run finishes it exactly once.
+    let trace: TraceRecorder | undefined;
     const fail = (message: string) => {
       this.repository.appendEvent(run.id, 'failed', message);
       this.repository.finishRun(run.id, 'failed', message);
+      trace?.finish('failed');
     };
     const blocked = (decision: Blocked) => {
       const message = `Blocked by security rule ${decision.rule}: ${decision.reason}`;
       this.repository.appendEvent(run.id, 'blocked', message);
       this.repository.finishRun(run.id, 'blocked', message);
+      trace?.finish('blocked', decision.rule);
     };
     const cancelled = () => {
       this.repository.appendEvent(run.id, 'cancelled', 'Cancelled.');
       this.repository.finishRun(run.id, 'cancelled', null);
+      trace?.finish('cancelled');
     };
     try {
       const session = this.repository.findSession(run.sessionId);
       if (!session) return fail('The session no longer exists.');
+      trace = new TraceRecorder(
+        this.telemetry,
+        run.id,
+        session.projectId,
+        `${session.model.provider}/${session.model.modelId}`,
+      );
       const history = this.repository.messages(session.id);
       const guardContext = { projectId: session.projectId, runId: run.id };
       // Input check → retrieval → scan retrieved content → generate → inspect output → deliver or block.
+      const endInput = trace.span('agentgate.input_check');
       const input = await this.guard.checkInput(guardContext, run.prompt);
-      if (!input.allowed) return blocked(input);
-      const screened = await this.guard.screenPassages(
-        guardContext,
-        this.knowledge?.retrieve(session.projectId, run.prompt) ?? [],
-      );
-      if (screened.blocked) return blocked(screened.blocked);
+      if (!input.allowed) {
+        endInput('blocked', { 'agentgate.rule': input.rule });
+        return blocked(input);
+      }
+      endInput('ok', scored({}, input));
+      const endRetrieval = trace.span('agentgate.retrieval');
+      const retrieved =
+        this.knowledge?.retrieve(session.projectId, run.prompt) ?? [];
+      endRetrieval('ok', counts(retrieved));
+      const endScreening = trace.span('agentgate.passage_screening');
+      const screened = await this.guard.screenPassages(guardContext, retrieved);
+      if (screened.blocked) {
+        endScreening('blocked', { 'agentgate.rule': screened.blocked.rule });
+        return blocked(screened.blocked);
+      }
       const passages = screened.passages;
+      endScreening('ok', counts(passages));
       // Proof that the input check and retrieval finished, recorded
       // before model opening: if opening then fails, the trace can
       // still show task and retrieval as done, instead of not-run.
@@ -140,7 +171,19 @@ export class RunService {
         JSON.stringify([...new Set(passages.map((p) => p.documentId))]),
       );
       const context = this.knowledge?.context(session.projectId) ?? '';
-      const opened = await this.models.open(session.model);
+      const endChat = trace.span('gen_ai.chat');
+      const chat = {
+        'gen_ai.operation.name': 'chat',
+        'gen_ai.provider.name': session.model.provider,
+        'gen_ai.request.model': session.model.modelId,
+      } as const;
+      let opened: Awaited<ReturnType<AgentModels['open']>>;
+      try {
+        opened = await this.models.open(session.model);
+      } catch (error) {
+        endChat('error', chat);
+        throw error;
+      }
       const agent = new Agent({
         initialState: {
           model: opened.model,
@@ -198,23 +241,54 @@ export class RunService {
         unsubscribe();
         this.active = null;
       }
-      if (stopped === 'timeout') return fail('The run timed out.');
-      if (stopped === 'cancelled') return cancelled();
       const turn = agent.state.messages
         .filter((message) => message.role !== 'system')
         .slice(history.length);
       const last = turn.at(-1);
-      if (last?.role !== 'assistant')
+      const usage = last?.role === 'assistant' ? last.usage : undefined;
+      const chatResult = {
+        ...chat,
+        ...(usage && {
+          'gen_ai.usage.input_tokens': usage.input,
+          'gen_ai.usage.output_tokens': usage.output,
+          ...(usage.cost.total > 0 && {
+            'agentgate.cost_usd': usage.cost.total,
+          }),
+        }),
+      };
+      if (stopped === 'timeout') {
+        endChat('error', chatResult);
+        return fail('The run timed out.');
+      }
+      if (stopped === 'cancelled') {
+        endChat('cancelled', chatResult);
+        return cancelled();
+      }
+      if (last?.role !== 'assistant') {
+        endChat('error', chatResult);
         return fail('The model returned no answer.');
-      if (last.stopReason === 'aborted') return cancelled();
-      if (last.stopReason === 'error')
+      }
+      if (last.stopReason === 'aborted') {
+        endChat('cancelled', chatResult);
+        return cancelled();
+      }
+      if (last.stopReason === 'error') {
+        endChat('error', chatResult);
         return fail(
           opened.describeError(
             last.errorMessage ?? 'The model request failed.',
           ),
         );
+      }
+      endChat('ok', chatResult);
+      const endOutput = trace.span('agentgate.output_check');
       const output = this.guard.inspectOutput(guardContext, answer);
-      if (!output.allowed) return blocked(output);
+      if (!output.allowed) {
+        endOutput('blocked', { 'agentgate.rule': output.rule });
+        return blocked(output);
+      }
+      endOutput('ok');
+      const endDelivery = trace.span('agentgate.delivery');
       for (let i = 0; i < answer.length; i += DELIVERY_CHUNK_CHARS)
         this.repository.appendEvent(
           run.id,
@@ -226,6 +300,8 @@ export class RunService {
         run,
         turn.map((message) => storedMessageSchema.parse(message)),
       );
+      endDelivery('ok');
+      trace.finish('completed');
     } catch (error) {
       // Log only the error class: messages may contain private prompt content.
       console.error(
@@ -239,6 +315,24 @@ export class RunService {
       );
     }
   }
+}
+
+/** Passage and document counts for a span; never the passages themselves. */
+function counts(passages: Passage[]): SpanAttributes {
+  return {
+    'agentgate.passages': passages.length,
+    'agentgate.documents': new Set(passages.map((p) => p.documentId)).size,
+  };
+}
+
+/** Adds the scanner's score when the decision carries one. */
+function scored(
+  attributes: SpanAttributes,
+  decision: { score?: number },
+): SpanAttributes {
+  return decision.score === undefined
+    ? attributes
+    : { ...attributes, 'agentgate.scanner.score': decision.score };
 }
 
 function withExcerpts(

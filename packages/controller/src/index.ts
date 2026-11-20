@@ -14,6 +14,16 @@ export {
 } from './project-import';
 export type { ProjectImportMetadata, ProjectManifest } from './project-import';
 export { openDatabase } from './database';
+export {
+  MAX_TRACES,
+  RETENTION_DAYS,
+  SPAN_NAMES,
+  SqliteTelemetry,
+  TraceRecorder,
+  spanAttributesSchema,
+  traceSchema,
+} from './telemetry';
+export type { RunTelemetry, Span, SpanAttributes, Trace } from './telemetry';
 export { SqliteProjects } from './sqlite-projects';
 export { SqliteSessions } from './sqlite-sessions';
 export {

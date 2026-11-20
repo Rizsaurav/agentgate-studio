@@ -39,6 +39,7 @@ import {
   SqliteSessions,
   openDatabase,
   startOllama,
+  SqliteTelemetry,
 } from '@agentgate/controller';
 
 type Controller = {
@@ -59,6 +60,7 @@ type Controller = {
   agentStore: AgentStore;
   agentModel: AgentModel;
   catalog: HuggingFaceCatalog;
+  telemetry: SqliteTelemetry;
   endpoints: { ollamaUrl: string; scannerUrl: string; docsRoot: string | null };
 };
 const globalController = globalThis as typeof globalThis & {
@@ -133,6 +135,8 @@ function controller(): Controller {
       /* turbopackIgnore: true */
       process.env.AGENTGATE_REPO_ROOT ?? join(process.cwd(), '..', '..'),
     );
+    // Local run traces (#10): numbers only, kept 30 days, switchable off on the Security page.
+    const telemetry = new SqliteTelemetry(db, new SqliteSettings(db));
     const evals = new EvalService(new SqliteEvals(db), repoRoot);
     evals.start();
     const runs = new RunService(
@@ -144,6 +148,7 @@ function controller(): Controller {
       }),
       {
         guard,
+        telemetry,
         knowledge: {
           context: (projectId) => context.render(projectId),
           retrieve: (projectId, query) => documents.retrieve(projectId, query),
@@ -175,6 +180,7 @@ function controller(): Controller {
         process.env.AGENTGATE_AGENT_MODEL || undefined,
       ),
       catalog: new HuggingFaceCatalog(process.env.AGENTGATE_HF_URL),
+      telemetry,
       endpoints: {
         ollamaUrl,
         scannerUrl: new URL(
@@ -204,3 +210,4 @@ export const agentModel = () => controller().agentModel;
 export const catalog = () => controller().catalog;
 export const puller = () => controller().puller;
 export const endpoints = () => controller().endpoints;
+export const telemetry = () => controller().telemetry;
