@@ -47,6 +47,16 @@ final class AppModel {
   var stepLog: [InstallStep: [String]] { run?.log ?? [:] }
   var stepDetail: InstallStep?
   var agentPanelOpen = false
+  /// A plan waiting for the user's go-ahead, with its review. Set before anything downloads.
+  var planReview: PendingReview?
+
+  struct PendingReview: Identifiable {
+    var id: String { model.id }
+    var model: CatalogModel
+    var plan: ModelPlan
+    var verdicts: [PlanVerdict]
+    var checking: Bool
+  }
   var autonomy = Autonomy(rawValue: UserDefaults.standard.string(forKey: "autonomy") ?? "") ?? .balanced {
     didSet { UserDefaults.standard.set(autonomy.rawValue, forKey: "autonomy") }
   }
@@ -78,6 +88,14 @@ final class AppModel {
 
   private let pipeline = InstallPipeline()
   private let store = ModelStore()
+  let tokenCounter = TokenCounter()
+  /// Token counters, refreshed whenever one changes.
+  private(set) var tokenCounts: [TokenCount] = []
+  private var countedParts: Set<String> = []
+  private var turnReportedUsage = false
+  /// What the last check of each installed model found, and the progress of checks still running.
+  private(set) var integrity: [String: Integrity] = [:]
+  private(set) var verifying: [String: Double] = [:]
   private let workspaceStore = WorkspaceStore()
   private var runtime: LlamaRuntime?
   private var installTask: Task<Bool, Never>?
@@ -194,6 +212,32 @@ final class AppModel {
 
   private func persist() throws { try workspaceStore.save(workspace) }
 
+  // MARK: Tokens
+
+  /// The supervising agent, with its replies counted as cloud usage.
+  private func supervisor() -> AgentAssistant {
+    var assistant = AgentAssistant(profile: activeAgent)
+    let model = activeAgent.model, name = "\(activeAgent.name) · \(activeAgent.model)"
+    assistant.onUsage = { usage in
+      Task { @MainActor in self.countTokens(usage, model: model, name: name, location: .cloud) }
+    }
+    return assistant
+  }
+
+  func countTokens(_ usage: TokenUsage?, model: String, name: String, location: ModelLocation) {
+    do { try tokenCounter.record(usage, model: model, name: name, location: location) }
+    catch { errorMessage = "The token counter could not be saved: \(error)" }
+    tokenCounts = tokenCounter.all()
+  }
+
+  func resetTokens(_ count: TokenCount) {
+    do { try tokenCounter.reset(model: count.model, location: count.location) }
+    catch { errorMessage = String(describing: error) }
+    tokenCounts = tokenCounter.all()
+  }
+
+  func loadTokenCounts() { tokenCounts = tokenCounter.all() }
+
   // MARK: Models
 
   func option(_ model: CatalogModel) -> ModelOption {
@@ -208,6 +252,44 @@ final class AppModel {
   }
 
   var allOptions: [ModelOption] { catalog?.models.map(option) ?? [] }
+
+  func catalogModel(_ id: String) -> CatalogModel? { catalog?.model(id) }
+
+  /// Install entry point for the UI: an installed model loads at once; a new one shows its plan and review first.
+  func requestInstall(_ model: CatalogModel) {
+    guard !installed.contains(where: { $0.id == model.id }), let profile,
+          case .compatible(let plan) = ModelPlanner.plan(model, for: profile, limits: InstallPipeline.supported) else {
+      select(model)
+      return
+    }
+    let onBattery = PowerState.onBattery()
+    let rules = PlanReview.rules(plan, profile: profile, onBattery: onBattery)
+    planReview = PendingReview(model: model, plan: plan, verdicts: [rules], checking: agentOn)
+    guard agentOn else { return }
+    let input = PlanReviewInput(model: model.name, plan: plan, profile: profile, onBattery: onBattery, task: nil)
+    let ids = (catalog?.models ?? []).filter { option($0).plan != nil }.map(\.id)
+    let assistant = AgentAssistant(profile: activeAgent)
+    Task {
+      let raw = try? await assistant.reviewPlan(input, allowedModelIds: ids)
+      guard planReview?.id == model.id else { return }
+      let agent = raw.flatMap { PlanReview.parseAgent($0, allowedModelIds: Set(ids)) }
+      planReview?.verdicts = PlanReview.combine(rules: rules, agent: agent)
+      planReview?.checking = false
+    }
+  }
+
+  func confirmReview() {
+    guard let review = planReview else { return }
+    planReview = nil
+    select(review.model)
+  }
+
+  func cancelReview() { planReview = nil }
+
+  func reviewInstead(_ model: CatalogModel) {
+    planReview = nil
+    requestInstall(model)
+  }
 
   /// Installs the model if needed, then loads it. One install or load at a time.
   @discardableResult
@@ -233,7 +315,7 @@ final class AppModel {
           active = done
         } else {
           var runner = RepairRunner(
-            assistant: agentOn ? AgentAssistant(profile: activeAgent) : nil, autonomy: autonomy,
+            assistant: agentOn ? supervisor() : nil, autonomy: autonomy,
             approvalTimeout: .seconds(approvalMinutes * 60)
           ) { operation, failure in
             await self.askToRepair([operation], failure)
@@ -258,6 +340,14 @@ final class AppModel {
       } catch {
         failure = InstallFailure(step: update?.step ?? .load, message: String(describing: error), cause: error, logTail: nil)
         update = nil
+      }
+      // An installed model that fails to load may have a damaged file: check it, so the message can say so.
+      if !fresh, var shown = failure, let done = installed.first(where: { $0.id == model.id }),
+         let result = try? await FileIntegrityCheck(store: store).verify(done) {
+        integrity[done.id] = result
+        shown.message += result == .intact
+          ? " The model file was checked and is intact." : " " + result.message(for: done)
+        failure = shown
       }
       if fresh, var record = run {
         record.failure = failure?.message
@@ -398,6 +488,36 @@ final class AppModel {
 
   func dismissUpdate() { update = nil }
 
+  /// Re-hashes an installed model's file and records whether it is intact.
+  func verify(_ model: InstalledModel) {
+    guard verifying[model.id] == nil else { return }
+    verifying[model.id] = 0
+    integrity[model.id] = nil
+    let id = model.id
+    Task {
+      do {
+        let result = try await FileIntegrityCheck(store: store).verify(model) { fraction in
+          Task { @MainActor in if self.verifying[id] != nil { self.verifying[id] = fraction } }
+        }
+        integrity[id] = result
+      } catch {
+        errorMessage = "\(model.name) could not be checked: \(error)"
+      }
+      verifying[id] = nil
+    }
+  }
+
+  /// Removes a damaged model and installs it again from the catalog.
+  func reinstall(_ model: InstalledModel) {
+    guard let entry = catalog?.model(model.id) else {
+      errorMessage = "\(model.name) is no longer in the catalog, so it cannot be reinstalled. Remove it instead."
+      return
+    }
+    remove(model)
+    integrity[model.id] = nil
+    select(entry)
+  }
+
   func remove(_ model: InstalledModel) {
     if active?.id == model.id {
       stopRuntime()
@@ -433,7 +553,7 @@ final class AppModel {
       var source = "Read by fixed rules."
       if agentOn {
         do {
-          needs = try await AgentAssistant(profile: activeAgent).needs(for: task)
+          needs = try await supervisor().needs(for: task)
           source = "Read by \(activeAgent.name)."
         } catch {
           source = "The agent's answer could not be used, so fixed rules read it."
@@ -675,6 +795,11 @@ final class AppModel {
         record(tool.name, tool.detail, .blocked, rule: "harness-refused")
       }
     case .permission(let permission): review(permission)
+    case .usage(let partID, let usage):
+      guard countedParts.insert(partID).inserted, let id = streamingSession,
+            let session = workspace.sessions.first(where: { $0.id == id }) else { break }
+      turnReportedUsage = true
+      countTokens(usage, model: session.modelId, name: session.modelName, location: .local)
     case .connected: agentConnected = true
     case .busy: thinking = true
     case .idle: finishTurn()
@@ -696,6 +821,11 @@ final class AppModel {
 
   private func finishTurn() {
     guard generating else { return }
+    // A turn whose replies carried no usage at all is noted as unreported, never guessed.
+    if !turnReportedUsage, let id = streamingSession, let session = workspace.sessions.first(where: { $0.id == id }) {
+      countTokens(nil, model: session.modelId, name: session.modelName, location: .local)
+    }
+    turnReportedUsage = false
     generating = false
     thinking = false
     pendingPermission = nil
