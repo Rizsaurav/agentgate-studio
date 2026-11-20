@@ -35,7 +35,7 @@ struct ModelsPage: View {
           HStack(alignment: .top, spacing: 14) {
             ForEach(Tier.allCases, id: \.self) { tier in
               if let plan = app.tiers[tier], let model = app.catalog?.model(plan.modelId) {
-                TierCard(tier: tier, plan: plan, option: app.option(model)) { app.select(model) }
+                TierCard(tier: tier, plan: plan, option: app.option(model)) { app.requestInstall(model) }
               }
             }
           }
@@ -79,7 +79,7 @@ struct ModelsPage: View {
             Card(padding: 6) {
               VStack(spacing: 0) {
                 ForEach(app.allOptions) { option in
-                  CatalogRow(option: option) { app.select(option.model) }
+                  CatalogRow(option: option) { app.requestInstall(option.model) }
                   if option.id != app.allOptions.last?.id { Divider().overlay(Theme.line) }
                 }
               }
@@ -110,7 +110,7 @@ struct ModelsPage: View {
                 if index == 0 { StatusPill(text: "Best match", tone: .ok) }
                 Text(pick.model.name).font(.system(size: 14, weight: .semibold))
                 ForEach(pick.reasons, id: \.self) { Text($0).font(.system(size: 12)).foregroundStyle(Theme.muted) }
-                Button(pick.installed ? (app.active?.id == pick.model.id ? "Loaded" : "Use") : "Install") { app.select(pick.model) }
+                Button(pick.installed ? (app.active?.id == pick.model.id ? "Loaded" : "Use") : "Install") { app.requestInstall(pick.model) }
                   .buttonStyle(PrimaryButtonStyle()).padding(.top, 4)
                   .disabled(app.active?.id == pick.model.id || app.installing != nil)
               }
