@@ -15,6 +15,7 @@ struct ProfilePage: View {
         Text("Profile").font(.system(size: 30, weight: .bold)).tracking(-0.6)
         agent
         keys
+        TokenUsageSection()
         shortcuts
       }
       .frame(maxWidth: 680, alignment: .leading)
@@ -124,5 +125,59 @@ struct ProfilePage: View {
       message = result.message
       if result.saved { pasted = ""; choice = nil }
     }
+  }
+}
+
+/// Tokens each model has processed, as its engine or provider reported them. Local and cloud in separate rows.
+private struct TokenUsageSection: View {
+  @Environment(AppModel.self) private var app
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      Text("Token use").font(.system(size: 16, weight: .semibold))
+      if app.tokenCounts.isEmpty {
+        Text("Nothing counted yet. Counts appear after a chat, from what the engine reports.")
+          .font(.system(size: 12)).foregroundStyle(Theme.muted)
+      } else {
+        Card(padding: 12) {
+          Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 8) {
+            GridRow {
+              ForEach(["Model", "Prompt", "Generated", "Total", "Last used", ""], id: \.self) {
+                Text($0).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.muted)
+              }
+            }
+            ForEach(app.tokenCounts) { count in
+              GridRow {
+                VStack(alignment: .leading, spacing: 2) {
+                  Text(count.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                  Text(count.location == .local ? "Local" : "Cloud").font(.system(size: 11)).foregroundStyle(Theme.muted)
+                }
+                Text(count.prompt.formatted()).monospacedDigit()
+                Text(count.generated.formatted()).monospacedDigit()
+                Text(count.total.formatted()).monospacedDigit().fontWeight(.medium)
+                Text(count.lastUsed, style: .relative).foregroundStyle(Theme.muted)
+                Button("Reset") { app.resetTokens(count) }.controlSize(.small)
+                  .accessibilityLabel("Reset token count for \(count.name)")
+              }
+              .font(.system(size: 12))
+              if count.unreported > 0 {
+                GridRow {
+                  Text("\(count.unreported) \(count.unreported == 1 ? "reply" : "replies") came without a count and were not added.")
+                    .font(.system(size: 11)).foregroundStyle(Theme.muted).gridCellColumns(6)
+                }
+              }
+            }
+          }
+        }
+        HStack(spacing: 18) {
+          ForEach(ModelLocation.allCases, id: \.self) { location in
+            let total = app.tokenCounts.filter { $0.location == location }.reduce(0) { $0 + $1.total }
+            Text("All-time \(location == .local ? "local" : "cloud"): \(total.formatted()) tokens")
+          }
+        }
+        .font(.system(size: 12)).foregroundStyle(Theme.muted)
+      }
+    }
+    .onAppear { app.loadTokenCounts() }
   }
 }

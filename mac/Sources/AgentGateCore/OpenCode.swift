@@ -12,6 +12,8 @@ public enum AgentEvent: Sendable, Equatable {
   case tool(Tool)
   /// The harness wants the user's yes or no before running something.
   case permission(Permission)
+  /// One model call finished, with the engine's token counts; nil when the engine reported none.
+  case usage(partID: String, TokenUsage?)
   case busy
   case idle
   /// The event stream is open; nothing before this point can be missed.
@@ -64,6 +66,14 @@ enum AgentEventDecoder {
         var text: String?
         var tool: String?
         var state: State?
+        var tokens: Tokens?
+      }
+      struct Tokens: Decodable {
+        struct Cache: Decodable { var read: Int?; var write: Int? }
+        var input: Int?
+        var output: Int?
+        var reasoning: Int?
+        var cache: Cache?
       }
       struct Metadata: Decodable {
         var command: String?
@@ -113,6 +123,14 @@ enum AgentEventDecoder {
         return .tool(.init(
           id: id, name: name, status: part.state?.status ?? "pending",
           detail: input?.command ?? input?.filePath ?? input?.pattern ?? "", output: part.state?.output ?? ""))
+      }
+      if part.type == "step-finish" {
+        let t = part.tokens
+        let prompt = (t?.input ?? 0) + (t?.cache?.read ?? 0) + (t?.cache?.write ?? 0)
+        let generated = (t?.output ?? 0) + (t?.reasoning ?? 0)
+        // All zero means the engine sent no usage; count the reply, not invented tokens.
+        let usage = prompt == 0 && generated == 0 ? nil : TokenUsage.reported(prompt: prompt, generated: generated)
+        return .usage(partID: id, usage)
       }
       return nil
     case "message.part.delta":
