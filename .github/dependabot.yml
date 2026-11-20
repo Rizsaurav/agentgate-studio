@@ -16,3 +16,29 @@ updates:
     target-branch: dev
     schedule:
       interval: weekly
+  # Security updates for every dependency the project ships or runs in CI (#23).
+  - package-ecosystem: npm
+    directory: '/'
+    target-branch: dev
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: pip
+    directory: '/scanner'
+    target-branch: dev
+    schedule:
+      interval: weekly
+  - package-ecosystem: swift
+    directory: '/mac'
+    target-branch: dev
+    schedule:
+      interval: weekly
+  # Actions are pinned by commit SHA; this keeps the pins current.
+  - package-ecosystem: github-actions
+    directory: '/'
+    target-branch: dev
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
