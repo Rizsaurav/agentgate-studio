@@ -206,6 +206,13 @@ public struct SecurityLog: Sendable {
     }
   }
 
+  /// Empties the log (Settings). The rules themselves are untouched; only the record of past decisions goes.
+  public func clear() throws {
+    try Self.lock.withLock {
+      if FileManager.default.fileExists(atPath: file.path) { try FileManager.default.removeItem(at: file) }
+    }
+  }
+
   private func read() -> [SecurityEntry] {
     guard let data = try? Data(contentsOf: file) else { return [] }
     let decoder = JSONDecoder()

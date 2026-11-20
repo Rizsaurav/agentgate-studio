@@ -44,6 +44,7 @@ struct Shell: View {
     case .security: SecurityPage()
     case .models: ModelsPage()
     case .profile: ProfilePage()
+    case .settings: SettingsPage()
     }
   }
 }
@@ -221,6 +222,7 @@ private struct TitleBar: View {
     case .security: "Security & Verification"
     case .models: "Providers"
     case .profile: "Profile"
+    case .settings: "Settings"
     default: "Workspace"
     }
   }
