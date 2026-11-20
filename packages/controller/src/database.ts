@@ -244,6 +244,34 @@ CREATE TABLE agent_runs (
 ) STRICT;
 CREATE INDEX agent_runs_created ON agent_runs(created_at);`;
 
+// Exact-match answer cache (#31). The triggers purge a project's saved answers whenever anything an
+// answer may depend on changes: documents, passages (added, withheld, released, removed), shared
+// context, the active system prompt, or the project itself. In SQL, so no code path can forget.
+const ANSWER_CACHE = `
+CREATE TABLE answer_cache (
+  key TEXT PRIMARY KEY NOT NULL CHECK(length(key) = 64),
+  project_id TEXT NOT NULL,
+  answer TEXT NOT NULL,
+  messages TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  hits INTEGER NOT NULL DEFAULT 0
+) STRICT;
+CREATE INDEX answer_cache_by_project ON answer_cache(project_id, created_at);
+CREATE TRIGGER answer_cache_purge_documents_insert AFTER INSERT ON documents BEGIN DELETE FROM answer_cache WHERE project_id = NEW.project_id; END;
+CREATE TRIGGER answer_cache_purge_documents_update AFTER UPDATE ON documents BEGIN DELETE FROM answer_cache WHERE project_id IN (OLD.project_id, NEW.project_id); END;
+CREATE TRIGGER answer_cache_purge_documents_delete AFTER DELETE ON documents BEGIN DELETE FROM answer_cache WHERE project_id = OLD.project_id; END;
+CREATE TRIGGER answer_cache_purge_chunks_insert AFTER INSERT ON chunks BEGIN DELETE FROM answer_cache WHERE project_id = (SELECT project_id FROM documents WHERE id = NEW.document_id); END;
+CREATE TRIGGER answer_cache_purge_chunks_update AFTER UPDATE ON chunks BEGIN DELETE FROM answer_cache WHERE project_id = (SELECT project_id FROM documents WHERE id = NEW.document_id); END;
+CREATE TRIGGER answer_cache_purge_chunks_delete AFTER DELETE ON chunks BEGIN DELETE FROM answer_cache WHERE project_id = (SELECT project_id FROM documents WHERE id = OLD.document_id); END;
+CREATE TRIGGER answer_cache_purge_context_items_insert AFTER INSERT ON context_items BEGIN DELETE FROM answer_cache WHERE project_id = NEW.project_id; END;
+CREATE TRIGGER answer_cache_purge_context_items_update AFTER UPDATE ON context_items BEGIN DELETE FROM answer_cache WHERE project_id IN (OLD.project_id, NEW.project_id); END;
+CREATE TRIGGER answer_cache_purge_context_items_delete AFTER DELETE ON context_items BEGIN DELETE FROM answer_cache WHERE project_id = OLD.project_id; END;
+CREATE TRIGGER answer_cache_purge_active_prompts_insert AFTER INSERT ON active_prompts BEGIN DELETE FROM answer_cache WHERE project_id = NEW.project_id; END;
+CREATE TRIGGER answer_cache_purge_active_prompts_update AFTER UPDATE ON active_prompts BEGIN DELETE FROM answer_cache WHERE project_id IN (OLD.project_id, NEW.project_id); END;
+CREATE TRIGGER answer_cache_purge_active_prompts_delete AFTER DELETE ON active_prompts BEGIN DELETE FROM answer_cache WHERE project_id = OLD.project_id; END;
+CREATE TRIGGER answer_cache_purge_projects_update AFTER UPDATE ON projects BEGIN DELETE FROM answer_cache WHERE project_id IN (OLD.id, NEW.id); END;
+CREATE TRIGGER answer_cache_purge_projects_delete AFTER DELETE ON projects BEGIN DELETE FROM answer_cache WHERE project_id = OLD.id; END;`;
+
 /** Ordered migrations; PRAGMA user_version is the number applied. Never edit an applied entry. */
 const MIGRATIONS = [
   PROJECTS,
@@ -260,6 +288,7 @@ const MIGRATIONS = [
   TELEMETRY,
   PROMPT_VERSIONS,
   AGENT_SPEND,
+  ANSWER_CACHE,
 ];
 
 /** Single owner of the application database file, schema, and migrations. */

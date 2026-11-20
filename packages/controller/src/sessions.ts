@@ -84,6 +84,7 @@ export const runEventSchema = z
     type: z.enum([
       'started',
       'prompt',
+      'cached',
       'screened',
       'sources',
       'text_delta',
@@ -156,7 +157,7 @@ export interface SessionRepository {
   claimNextQueued(): Run | null;
   appendEvent(runId: string, type: RunEvent['type'], text: string): void;
   eventsAfter(runId: string, seq: number): RunEvent[];
-  /** Only 'started', 'prompt', 'screened', 'sources', and 'completed' events, for traces and source lists. */
+  /** Only 'started', 'prompt', 'cached', 'screened', 'sources', and 'completed' events, for traces and source lists. */
   traceEvents(runId: string): RunEvent[];
   /** Atomically appends the turn's messages and marks the run completed. */
   completeRun(run: Run, messages: StoredMessage[]): void;
@@ -223,7 +224,14 @@ export class SessionService {
       : null;
   }
 
-  /** Only 'started', 'prompt', 'screened', 'sources', and 'completed' events, without streamed text deltas. */
+  /** When a run reused a saved answer (#31), the time that answer was first given; else null. */
+  cachedAt(runId: unknown): string | null {
+    return (
+      this.traceEvents(runId).find((e) => e.type === 'cached')?.text ?? null
+    );
+  }
+
+  /** Only 'started', 'prompt', 'cached', 'screened', 'sources', and 'completed' events, without streamed text deltas. */
   traceEvents(runId: unknown): RunEvent[] {
     return z
       .array(runEventSchema)
@@ -267,6 +275,7 @@ export class SessionService {
       const stages = buildTraceStages({
         run,
         started,
+        cached: storedEvents.some((event) => event.type === 'cached'),
         screened,
         screenedDocumentIds: screenedDocumentIds(storedEvents),
         hasCompleted,

@@ -119,6 +119,13 @@ export {
   promptTextSchema,
 } from './prompts';
 export type { ActivePrompt, DiffLine, PromptVersion } from './prompts';
+export {
+  ANSWER_CACHE_MAX_ENTRIES,
+  ANSWER_CACHE_TTL_MS,
+  AnswerCache,
+  answerKey,
+} from './answer-cache';
+export type { AnswerKeyInput, SavedAnswer } from './answer-cache';
 export { condenseLog, failureSignature } from './ci-log';
 export { ModelPuller, PULL_STEPS, modelNameSchema } from './local-models';
 export type { PullOptions, PullState, PullStep } from './local-models';

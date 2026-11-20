@@ -176,7 +176,7 @@ export class SqliteSessions implements SessionRepository {
       .parse(
         this.db
           .prepare(
-            "SELECT seq, type, text FROM run_events WHERE run_id = ? AND type IN ('started', 'prompt', 'screened', 'sources', 'completed') ORDER BY seq",
+            "SELECT seq, type, text FROM run_events WHERE run_id = ? AND type IN ('started', 'prompt', 'cached', 'screened', 'sources', 'completed') ORDER BY seq",
           )
           .all(runId),
       );
