@@ -1,0 +1,38 @@
+name: Assistant evals
+on:
+  # The scripted set runs on every pull request inside `npm run check` (vitest). This job runs the
+  # same cases against the real assistant model, nightly, under a token cap.
+  schedule:
+    - cron: '43 6 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: assistant-evals
+  cancel-in-progress: false
+
+jobs:
+  live:
+    name: assistant-evals-live
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      # The whole run stops starting cases once this many tokens are spent.
+      AGENTGATE_ASSISTANT_EVAL_MAX_TOKENS: '200000'
+    steps:
+      - name: Skip without a key
+        if: env.OPENROUTER_API_KEY == ''
+        run: echo "::notice::OPENROUTER_API_KEY is not set; the live assistant evals were skipped."
+      - uses: actions/checkout@v4
+        if: env.OPENROUTER_API_KEY != ''
+      - uses: actions/setup-node@v4
+        if: env.OPENROUTER_API_KEY != ''
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+        if: env.OPENROUTER_API_KEY != ''
+      - name: Live assistant evals (fails on any unasked change, budget breach or revealed key)
+        if: env.OPENROUTER_API_KEY != ''
+        run: npm run eval:assistant -- --live
