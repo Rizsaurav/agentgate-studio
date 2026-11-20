@@ -1,0 +1,182 @@
+[
+  {
+    "id": "parallel-three-cities",
+    "category": "parallel",
+    "description": "The same tool three times in one reply.",
+    "tools": ["get_weather"],
+    "messages": [
+      {
+        "role": "user",
+        "content": "What's the weather in Paris, London and Madrid?"
+      }
+    ],
+    "expect": {
+      "calls": [
+        {
+          "name": "get_weather",
+          "arguments": {
+            "city": {
+              "contains": "paris"
+            }
+          }
+        },
+        {
+          "name": "get_weather",
+          "arguments": {
+            "city": {
+              "contains": "london"
+            }
+          }
+        },
+        {
+          "name": "get_weather",
+          "arguments": {
+            "city": {
+              "contains": "madrid"
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "parallel-two-stocks",
+    "category": "parallel",
+    "description": "Two calls to one tool.",
+    "tools": ["get_stock_price"],
+    "messages": [
+      {
+        "role": "user",
+        "content": "Get the prices of AAPL and GOOG."
+      }
+    ],
+    "expect": {
+      "calls": [
+        {
+          "name": "get_stock_price",
+          "arguments": {
+            "symbol": {
+              "equals": "AAPL"
+            }
+          }
+        },
+        {
+          "name": "get_stock_price",
+          "arguments": {
+            "symbol": {
+              "equals": "GOOG"
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "parallel-two-files",
+    "category": "parallel",
+    "description": "Read two files at once.",
+    "tools": ["read_file"],
+    "messages": [
+      {
+        "role": "user",
+        "content": "Read both README.md and LICENSE."
+      }
+    ],
+    "expect": {
+      "calls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": {
+              "contains": "README.md"
+            }
+          }
+        },
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": {
+              "contains": "LICENSE"
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "parallel-two-users",
+    "category": "parallel",
+    "description": "Two lookups.",
+    "tools": ["lookup_user"],
+    "messages": [
+      {
+        "role": "user",
+        "content": "Look up ada@example.com and alan@example.com."
+      }
+    ],
+    "expect": {
+      "calls": [
+        {
+          "name": "lookup_user",
+          "arguments": {
+            "email": {
+              "equals": "ada@example.com"
+            }
+          }
+        },
+        {
+          "name": "lookup_user",
+          "arguments": {
+            "email": {
+              "equals": "alan@example.com"
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "parallel-two-conversions",
+    "category": "parallel",
+    "description": "Two conversions with different amounts.",
+    "tools": ["convert_currency"],
+    "messages": [
+      {
+        "role": "user",
+        "content": "Convert 10 USD to EUR and 20 USD to GBP."
+      }
+    ],
+    "expect": {
+      "calls": [
+        {
+          "name": "convert_currency",
+          "arguments": {
+            "amount": {
+              "equals": 10
+            },
+            "from": {
+              "equals": "USD"
+            },
+            "to": {
+              "equals": "EUR"
+            }
+          }
+        },
+        {
+          "name": "convert_currency",
+          "arguments": {
+            "amount": {
+              "equals": 20
+            },
+            "from": {
+              "equals": "USD"
+            },
+            "to": {
+              "equals": "GBP"
+            }
+          }
+        }
+      ]
+    }
+  }
+]

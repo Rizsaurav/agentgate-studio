@@ -83,6 +83,18 @@ public struct CatalogModel: Codable, Sendable, Equatable, Identifiable {
     public var bytes: UInt64
   }
 
+  /// The tool-calling suite's measured result (evals/tools, docs/MODEL_SCORES.md), copied in by
+  /// `build_catalog.py --scores`. Nil for a model that has not been measured yet.
+  public struct ToolScore: Codable, Sendable, Equatable {
+    public var passRate: Double
+    /// The quantization that was measured.
+    public var quant: String
+    /// Engine and version it was measured on, e.g. "llama.cpp b11765".
+    public var engine: String
+    /// Day of the measurement, YYYY-MM-DD.
+    public var measured: String
+  }
+
   public var id: String
   public var name: String
   public var publisher: String
@@ -93,6 +105,7 @@ public struct CatalogModel: Codable, Sendable, Equatable, Identifiable {
   public var gguf: GGUF
   public var source: Source?
   public var mlx: [MLXVariant]?
+  public var toolScore: ToolScore?
 
   public func file(_ quant: Quantization) -> GGUFFile? { gguf.files.first { $0.quant == quant } }
   public func mlxVariant(bits: Int) -> MLXVariant? { mlx?.first { $0.bits == bits } }
@@ -166,6 +179,12 @@ public struct Catalog: Codable, Sendable, Equatable {
       if let source = model.source {
         try Self.checkRepo(source.repo, model.id)
         guard source.bytes > 0 else { throw fail("\(model.id) has a bad source size") }
+      }
+      if let score = model.toolScore {
+        guard (0...1).contains(score.passRate), Quantization(rawValue: score.quant) != nil, !score.engine.isEmpty,
+              score.measured.wholeMatch(of: /\d{4}-\d{2}-\d{2}/) != nil else {
+          throw fail("\(model.id) has a bad tool score")
+        }
       }
       for variant in model.mlx ?? [] {
         try Self.checkRepo(variant.repo, model.id)

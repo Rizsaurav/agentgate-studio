@@ -5,7 +5,8 @@ let package = Package(
   name: "AgentGateStudio",
   platforms: [.macOS(.v14)],
   products: [
-    .executable(name: "AgentGateStudio", targets: ["AgentGateStudio"])
+    .executable(name: "AgentGateStudio", targets: ["AgentGateStudio"]),
+    .executable(name: "agentgate-tooleval", targets: ["ToolEval"]),
   ],
   dependencies: [
     // Terminal emulator for the in-app terminal (MIT). Pinned to an exact release.
@@ -17,6 +18,8 @@ let package = Package(
     .executableTarget(
       name: "AgentGateStudio",
       dependencies: ["AgentGateCore", .product(name: "SwiftTerm", package: "SwiftTerm")]),
+    // Tool-calling reliability suite runner (evals/tools, #80).
+    .executableTarget(name: "ToolEval", dependencies: ["AgentGateCore"]),
     .testTarget(name: "AgentGateCoreTests", dependencies: ["AgentGateCore"]),
   ]
 )

@@ -1,0 +1,277 @@
+{
+  "get_weather": {
+    "type": "function",
+    "function": {
+      "name": "get_weather",
+      "description": "Current weather for a city.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string",
+            "description": "City name, e.g. Paris"
+          }
+        },
+        "required": ["city"]
+      }
+    }
+  },
+  "get_stock_price": {
+    "type": "function",
+    "function": {
+      "name": "get_stock_price",
+      "description": "Latest price of a stock by ticker symbol.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker symbol, e.g. AAPL"
+          }
+        },
+        "required": ["symbol"]
+      }
+    }
+  },
+  "convert_currency": {
+    "type": "function",
+    "function": {
+      "name": "convert_currency",
+      "description": "Convert an amount between currencies.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "from": {
+            "type": "string",
+            "description": "Three-letter ISO code, e.g. USD"
+          },
+          "to": {
+            "type": "string",
+            "description": "Three-letter ISO code, e.g. EUR"
+          }
+        },
+        "required": ["amount", "from", "to"]
+      }
+    }
+  },
+  "read_file": {
+    "type": "function",
+    "function": {
+      "name": "read_file",
+      "description": "Read a text file in the project.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path relative to the project root"
+          }
+        },
+        "required": ["path"]
+      }
+    }
+  },
+  "list_directory": {
+    "type": "function",
+    "function": {
+      "name": "list_directory",
+      "description": "List the entries of a folder in the project.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Folder path relative to the project root"
+          }
+        },
+        "required": ["path"]
+      }
+    }
+  },
+  "search_files": {
+    "type": "function",
+    "function": {
+      "name": "search_files",
+      "description": "Search the project's files for text.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Text to search for"
+          },
+          "options": {
+            "type": "object",
+            "properties": {
+              "caseSensitive": {
+                "type": "boolean"
+              },
+              "extensions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "File extensions to include, e.g. .swift"
+              }
+            }
+          }
+        },
+        "required": ["query"]
+      }
+    }
+  },
+  "lookup_user": {
+    "type": "function",
+    "function": {
+      "name": "lookup_user",
+      "description": "Look up a user account by email address.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string"
+          }
+        },
+        "required": ["email"]
+      }
+    }
+  },
+  "send_email": {
+    "type": "function",
+    "function": {
+      "name": "send_email",
+      "description": "Send an email immediately.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "to": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          }
+        },
+        "required": ["to", "subject", "body"]
+      }
+    }
+  },
+  "create_event": {
+    "type": "function",
+    "function": {
+      "name": "create_event",
+      "description": "Create a calendar event.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "start": {
+            "type": "string",
+            "description": "ISO 8601 date and time, e.g. 2026-11-18T14:00"
+          },
+          "attendees": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "email": {
+                  "type": "string"
+                }
+              },
+              "required": ["email"]
+            }
+          },
+          "location": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string"
+              },
+              "room": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "required": ["title", "start"]
+      }
+    }
+  },
+  "create_issue": {
+    "type": "function",
+    "function": {
+      "name": "create_issue",
+      "description": "Open an issue in the project's tracker.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "assignee": {
+            "type": "object",
+            "properties": {
+              "login": {
+                "type": "string"
+              }
+            },
+            "required": ["login"]
+          }
+        },
+        "required": ["title"]
+      }
+    }
+  },
+  "run_tests": {
+    "type": "function",
+    "function": {
+      "name": "run_tests",
+      "description": "Run the tests of one test target.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Test target name, e.g. AgentGateCoreTests"
+          }
+        },
+        "required": ["target"]
+      }
+    }
+  },
+  "delete_file": {
+    "type": "function",
+    "function": {
+      "name": "delete_file",
+      "description": "Delete a file or folder in the project.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": ["path"]
+      }
+    }
+  }
+}
