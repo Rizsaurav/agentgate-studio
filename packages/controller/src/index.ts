@@ -136,3 +136,11 @@ export { Watchdog, assess } from './watchdog';
 export type { Finding, Probe, Remedy } from './watchdog';
 export { ensureOllama, startOllama, startScanner } from './service-control';
 export { findOllama, installOllama } from './ollama-install';
+export {
+  answerRank,
+  indexCorpus,
+  plain,
+  retrievalSetSchema,
+  scoreRetrieval,
+} from './retrieval-eval';
+export type { RetrievalMetrics, RetrievalSet } from './retrieval-eval';

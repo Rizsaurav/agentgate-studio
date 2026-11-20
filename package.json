@@ -23,7 +23,8 @@
     "eval": "cd evals && NODE_OPTIONS=--import=tsx PROMPTFOO_DISABLE_TELEMETRY=1 PROMPTFOO_DISABLE_UPDATE=1 promptfoo eval --no-cache --no-write --no-progress-bar -c promptfooconfig.yaml",
     "eval:weak": "cd evals && NODE_OPTIONS=--import=tsx PROMPTFOO_DISABLE_TELEMETRY=1 PROMPTFOO_DISABLE_UPDATE=1 promptfoo eval --no-cache --no-write --no-progress-bar -c weak.promptfooconfig.yaml",
     "setup": "node scripts/setup.mjs",
-    "start:web": "npm run start --workspace @agentgate/web"
+    "start:web": "npm run start --workspace @agentgate/web",
+    "eval:retrieval": "tsx evals/retrieval/run.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.4",
