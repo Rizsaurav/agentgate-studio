@@ -10,6 +10,7 @@ import {
   EvalService,
   SqliteEvals,
   PromptService,
+  IssueDrafts,
   AnswerCache,
   ContextService,
   DocumentService,
@@ -61,6 +62,7 @@ type Controller = {
   repoRoot: string;
   puller: ModelPuller;
   agentStore: AgentStore;
+  issueDrafts: IssueDrafts;
   agentModel: AgentModel;
   catalog: HuggingFaceCatalog;
   telemetry: SqliteTelemetry;
@@ -189,6 +191,7 @@ function controller(): Controller {
         prepare: (report, signal) => ensureOllama(ollamaUrl, report, signal),
       }),
       agentStore,
+      issueDrafts: new IssueDrafts(db),
       agentModel: new AgentModel(
         new SecretCredentialStore(secrets, [AGENT_PROVIDER]),
         process.env.AGENTGATE_AGENT_MODEL || undefined,
@@ -221,6 +224,7 @@ export const evals = () => controller().evals;
 export const prompts = () => controller().prompts;
 export const repoRoot = () => controller().repoRoot;
 export const agentStore = () => controller().agentStore;
+export const issueDrafts = () => controller().issueDrafts;
 export const agentModel = () => controller().agentModel;
 export const catalog = () => controller().catalog;
 export const puller = () => controller().puller;

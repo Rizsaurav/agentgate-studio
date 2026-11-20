@@ -4,7 +4,9 @@ import {
   askAssistant,
   connectAssistant,
   decideProposal,
+  dismissIssueDraft,
   disconnectAssistant,
+  postIssueDraft,
   setAssistantEnabled,
 } from '@/app/actions';
 import { Button } from '@/components/ui/button';
@@ -26,6 +28,15 @@ type Note = {
   /** What approving a proposal does; null for every other kind of note. */
   request: 'action' | 'install' | null;
 };
+type IssueDraft = {
+  id: string;
+  createdAt: string;
+  runId: number;
+  title: string;
+  body: string;
+  status: 'open' | 'posting' | 'posted' | 'dismissed';
+  issueUrl: string | null;
+};
 type Status = {
   spending: Spending;
   nearCap: boolean;
@@ -38,6 +49,7 @@ type Status = {
   model: string;
   findings: Finding[];
   notes: Note[];
+  drafts: IssueDraft[];
 };
 
 const POLL_MS = 15_000;
@@ -236,6 +248,24 @@ function AssistantBody({
             </form>
           </section>
 
+          {status.drafts.length > 0 && (
+            <section className="panel-section">
+              <h3>Issue drafts</h3>
+              <p className="muted">
+                Drafted from a failed CI run. Nothing is posted until you review
+                the text and open it. The log it was written from is untrusted,
+                so check what it says.
+              </p>
+              <ul className="context-items" aria-label="Issue drafts">
+                {status.drafts.map((draft) => (
+                  <li key={draft.id}>
+                    <DraftReview draft={draft} run={run} />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           <section className="panel-section">
             <h3>Activity</h3>
             {status.notes.length === 0 ? (
@@ -315,6 +345,83 @@ function AssistantBody({
           </section>
         </>
       )}
+    </div>
+  );
+}
+
+/** One draft: editable until opened; once opened, a link to the issue. */
+function DraftReview({
+  draft,
+  run,
+}: {
+  draft: IssueDraft;
+  run: (task: Promise<{ error: string | null } | void>) => Promise<void>;
+}) {
+  const [title, setTitle] = useState(draft.title);
+  const [body, setBody] = useState(draft.body);
+  const [busy, setBusy] = useState(false);
+  if (draft.status === 'posted' && draft.issueUrl)
+    return (
+      <div>
+        <span className="metadata">Opened on GitHub</span>
+        <p>
+          <a href={draft.issueUrl} target="_blank" rel="noreferrer">
+            {draft.title}
+          </a>
+        </p>
+      </div>
+    );
+  const titleId = `draft-title-${draft.id}`;
+  const bodyId = `draft-body-${draft.id}`;
+  return (
+    <div className="min-w-0 flex-1 space-y-2">
+      <span className="metadata">
+        Workflow run {draft.runId} · {draft.createdAt.slice(11, 16)} UTC
+      </span>
+      <label htmlFor={titleId} className="block text-sm font-medium">
+        Title
+      </label>
+      <input
+        id={titleId}
+        value={title}
+        maxLength={120}
+        onChange={(event) => setTitle(event.target.value)}
+        className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-sm outline-teal-700"
+      />
+      <label htmlFor={bodyId} className="block text-sm font-medium">
+        Body
+      </label>
+      <textarea
+        id={bodyId}
+        value={body}
+        maxLength={4000}
+        rows={6}
+        onChange={(event) => setBody(event.target.value)}
+        className="w-full rounded-md border border-stone-300 bg-white px-3 py-2 font-mono text-xs outline-teal-700"
+      />
+      <div className="flex gap-2">
+        <Button
+          type="button"
+          disabled={busy || draft.status !== 'open'}
+          onClick={async () => {
+            setBusy(true);
+            await run(postIssueDraft(draft.id, title, body));
+            setBusy(false);
+          }}
+        >
+          {busy || draft.status === 'posting'
+            ? 'Opening…'
+            : 'Open issue on GitHub'}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={busy || draft.status !== 'open'}
+          onClick={() => void run(dismissIssueDraft(draft.id))}
+        >
+          Discard
+        </Button>
+      </div>
     </div>
   );
 }

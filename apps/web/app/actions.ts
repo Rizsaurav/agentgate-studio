@@ -7,6 +7,7 @@ import {
   createSessionSchema,
   fixForProposal,
   fixTask,
+  ghIssuePoster,
   isLocalMutation,
   ProjectImportFailure,
   questionSchema,
@@ -22,7 +23,9 @@ import {
   documents,
   endpoints,
   evals,
+  issueDrafts,
   prompts,
+  repoRoot,
   projects,
   projectImportService,
   puller,
@@ -664,6 +667,55 @@ export async function decideProposal(
   const started = await installLocalModel(note.text);
   if (started.error) agentStore().setStatus(id, 'open');
   return started;
+}
+
+/**
+ * Opens an issue the assistant drafted (#26), with the title and body the user reviewed and
+ * possibly edited. The only path from a draft to GitHub, and it needs this local request.
+ */
+export async function postIssueDraft(
+  id: string,
+  title: string,
+  body: string,
+): Promise<{ error: string | null; url: string | null }> {
+  if (!(await isLocalRequest()))
+    return {
+      error: 'Requests must come from this local workspace.',
+      url: null,
+    };
+  try {
+    const url = await issueDrafts().post(
+      id,
+      { title, body },
+      ghIssuePoster(repoRoot()),
+    );
+    agentStore().addNote(
+      'action',
+      `Opened GitHub issue ${url} (approved by you).`,
+    );
+    return { error: null, url };
+  } catch (error) {
+    return {
+      error: validationMessage(
+        error,
+        userMessage(error, 'The issue could not be opened.'),
+      ),
+      url: null,
+    };
+  }
+}
+
+export async function dismissIssueDraft(
+  id: string,
+): Promise<{ error: string | null }> {
+  if (!(await isLocalRequest()))
+    return { error: 'Requests must come from this local workspace.' };
+  try {
+    issueDrafts().dismiss(id);
+  } catch (error) {
+    return { error: userMessage(error, 'The draft could not be dismissed.') };
+  }
+  return { error: null };
 }
 
 /** The first validation message of a schema error, for a form. */

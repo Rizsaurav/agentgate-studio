@@ -31,11 +31,24 @@ export type Probe = {
   } | null;
   blockedLast24h: number;
   pull: { model: string; status: string } | null;
+  /** A workflow whose newest GitHub Actions run failed (#26); absent when not checked. */
+  ciFailure?: { runId: number; workflow: string } | null;
 };
 
 /** Plain rules, no model: what is wrong right now, and whether a safe fix is known. */
 export function assess(probe: Probe): Finding[] {
   const findings: Finding[] = [];
+  if (probe.ciFailure)
+    findings.push({
+      // Per run, so a new failure is looked into again and the same one only once per cooldown.
+      id: `ci-failed:${probe.ciFailure.runId}`,
+      severity: 'warning',
+      title: `The ${probe.ciFailure.workflow} workflow is failing`,
+      detail:
+        'Its newest GitHub Actions run failed. The assistant can draft an issue with the cause for you to review.',
+      remedy: null,
+      needsAgent: true,
+    });
   const service = (needle: string) =>
     probe.services.find((check) => check.name.toLowerCase().includes(needle));
   const ollama = service('ollama');

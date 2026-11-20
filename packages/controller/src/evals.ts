@@ -547,6 +547,24 @@ export async function listGithubRuns(
   }
 }
 
+/**
+ * A workflow whose newest run failed (#26): red now, not merely failed at some point. Null when
+ * every workflow's newest run passed, or GitHub cannot be read.
+ */
+export async function redWorkflowRun(
+  repoRoot: string,
+): Promise<{ runId: number; workflow: string } | null> {
+  const { runs } = await listGithubRuns(repoRoot);
+  const newest = new Map<string, GithubRun>();
+  // gh lists newest first, so the first run seen of each workflow is its newest.
+  for (const entry of runs)
+    if (!newest.has(entry.workflowName)) newest.set(entry.workflowName, entry);
+  const red = [...newest.values()].find(
+    (entry) => entry.conclusion === 'failure',
+  );
+  return red ? { runId: red.databaseId, workflow: red.workflowName } : null;
+}
+
 /** The failed-step log of the newest failed GitHub Actions run, or null. Raw text: condense it before use. */
 export async function latestFailedRunLog(
   repoRoot: string,
