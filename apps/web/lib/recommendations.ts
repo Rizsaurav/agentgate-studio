@@ -25,6 +25,8 @@ export type Recommendations = {
   summary: string;
   models: CatalogModel[];
   error: string | null;
+  /** Set when Hugging Face was unreachable and the saved catalog from this time was used. */
+  offlineSince: string | null;
 };
 
 /** Reads this computer, then asks Hugging Face which models suit it. */
@@ -32,17 +34,20 @@ export async function loadRecommendations(): Promise<Recommendations> {
   const system = await inspectSystem(homedir());
   const summary = describeSystem(system);
   try {
-    return {
-      summary,
-      models: await catalog().recommend(system),
-      error: null,
-    };
-  } catch {
+    const { models, offlineSince } = await catalog().recommend(system);
+    return { summary, models, error: null, offlineSince };
+  } catch (error) {
+    // Logged by name only; the page explains what to do.
+    console.error(
+      'Model catalog unavailable:',
+      error instanceof Error ? error.name : 'unknown',
+    );
     return {
       summary,
       models: [],
       error:
         'Could not load the model list from Hugging Face. Check your internet connection, or type a model name below.',
+      offlineSince: null,
     };
   }
 }

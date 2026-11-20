@@ -123,6 +123,7 @@ export async function ProvidersPanel() {
             new Set(local.models.map((model) => model.name)),
           )}
           recommendedError={recommendations.error}
+          offlineSince={recommendations.offlineSince}
           installed={local.models}
           summary={recommendations.summary}
         />

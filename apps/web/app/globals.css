@@ -1451,3 +1451,8 @@ select {
 .error-text {
   color: var(--danger);
 }
+/* A warning that is not yet an error, such as an unfamiliar publisher; also inside muted text. */
+.warning-text,
+.panel-section .warning-text {
+  color: var(--warning, #f2c97d);
+}

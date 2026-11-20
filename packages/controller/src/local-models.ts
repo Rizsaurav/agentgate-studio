@@ -44,13 +44,20 @@ export type PullState = {
   message: string;
   completedBytes: number;
   totalBytes: number;
+  /** True once the file was matched against the SHA-256 Hugging Face publishes for it. */
+  verified: boolean;
 };
+
+/** The published SHA-256 of a model's file, when one is known (Hugging Face catalog models). */
+export type DigestLookup = (model: string) => Promise<string | null>;
 
 export type PullOptions = {
   /** A download with no new data for this long is restarted; Ollama continues where it stopped. */
   stallMs?: number;
   /** Time a freshly installed model gets to load and answer its first prompt. */
   verifyMs?: number;
+  /** The SHA-256 Hugging Face publishes for a model's file, checked after the download (#33). */
+  expectedDigest?: DigestLookup;
   /** Makes Ollama available (installing and starting it if needed) before the download. */
   prepare?: (
     report: (message: string) => void,
@@ -59,6 +66,8 @@ export type PullOptions = {
 };
 
 const STALL_MS = 2 * 60_000;
+/** Ollama answers a checksum lookup or a delete from its own disk; this is generous. */
+const CHECKSUM_TIMEOUT_MS = 10_000;
 const VERIFY_MS = 5 * 60_000;
 const MAX_ATTEMPTS = 3;
 /** Downloads waiting behind the current one. */
@@ -82,12 +91,14 @@ export class ModelPuller {
   private readonly stallMs: number;
   private readonly verifyMs: number;
   private readonly prepare: PullOptions['prepare'];
+  private readonly expectedDigest: DigestLookup;
 
   constructor(baseUrl: string = DEFAULT_OLLAMA_URL, options: PullOptions = {}) {
     this.baseUrl = new URL(baseUrl).origin;
     this.stallMs = options.stallMs ?? STALL_MS;
     this.verifyMs = options.verifyMs ?? VERIFY_MS;
     this.prepare = options.prepare;
+    this.expectedDigest = options.expectedDigest ?? (async () => null);
   }
 
   state(): PullState | null {
@@ -147,6 +158,7 @@ export class ModelPuller {
       message: 'Checking Ollama…',
       completedBytes: 0,
       totalBytes: 0,
+      verified: false,
     };
     this.current = state;
     this.abort = new AbortController();
@@ -185,7 +197,10 @@ export class ModelPuller {
         state.model = model;
         state.completedBytes = 0;
         state.totalBytes = 0;
+        state.verified = false;
         await this.download(state, controller.signal);
+        // A Hugging Face file is matched against its published checksum before it ever runs.
+        await this.verifyChecksum(state, model);
         state.step = 'verify';
         state.message = 'Asking it for a short reply…';
         try {
@@ -206,7 +221,9 @@ export class ModelPuller {
         }
         state.step = 'ready';
         state.status = 'done';
-        state.message = 'Installed and ready to chat.';
+        state.message = state.verified
+          ? 'Installed and ready to chat. The file matches the checksum Hugging Face publishes.'
+          : 'Installed and ready to chat.';
         state.completedBytes = state.totalBytes;
         return;
       }
@@ -310,6 +327,30 @@ export class ModelPuller {
     if (!response.ok) throw new DoesNotRun();
   }
 
+  /**
+   * Checks that Ollama holds the exact file Hugging Face lists, by its published SHA-256: an
+   * independent check of what the registry served. On a mismatch the model is removed again.
+   */
+  private async verifyChecksum(state: PullState, model: string): Promise<void> {
+    const digest = await this.expectedDigest(model);
+    if (!digest) return;
+    const blob = await fetch(`${this.baseUrl}/api/blobs/sha256:${digest}`, {
+      method: 'HEAD',
+      signal: AbortSignal.timeout(CHECKSUM_TIMEOUT_MS),
+    });
+    if (blob.ok) {
+      state.verified = true;
+      return;
+    }
+    const removed = await fetch(`${this.baseUrl}/api/delete`, {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model }),
+      signal: AbortSignal.timeout(CHECKSUM_TIMEOUT_MS),
+    });
+    throw new ChecksumError(removed.ok);
+  }
+
   /** True when the model is gone afterwards (including when it was never there). */
   private async remove(model: string): Promise<boolean> {
     const response = await fetch(`${this.baseUrl}/api/delete`, {
@@ -339,6 +380,17 @@ function describeProgress(
   return 'Finishing the install…';
 }
 
+class ChecksumError extends Error {
+  constructor(removed: boolean) {
+    super(
+      removed
+        ? 'The downloaded file does not match the checksum Hugging Face publishes, so it was removed.'
+        : 'The downloaded file does not match the checksum Hugging Face publishes. Remove it with `ollama rm`.',
+    );
+    this.name = 'ChecksumError';
+  }
+}
+
 function sum(
   layers: Map<string, { total: number; completed: number }>,
   key: 'total' | 'completed',
@@ -348,12 +400,37 @@ function sum(
   return value;
 }
 
-/** Ollama's own messages are short and safe to show; transport errors get plain wording. */
+/** Ollama's messages, and transport errors, in plain words; anything else is shown cut short. */
+const PULL_ERRORS: [RegExp, string][] = [
+  [
+    /fetch failed|ECONNREFUSED|ECONNRESET/i,
+    'Ollama is not reachable. Start it with the app launcher or `ollama serve`.',
+  ],
+  [
+    /file does not exist|manifest unknown|not found|404/i,
+    'That model or size does not exist. Check the name, or pick one from the list.',
+  ],
+  [
+    /401|403|unauthori[sz]ed|gated|forbidden|access/i,
+    'That model needs access on Hugging Face (it is gated or private), so it cannot be downloaded here.',
+  ],
+  [
+    /no space left|disk full|ENOSPC/i,
+    'There is not enough free disk space for this model.',
+  ],
+  [
+    /ENOTFOUND|EAI_AGAIN|dial tcp|i\/o timeout|TLS handshake|max retries/i,
+    'The download could not reach the internet. Check the connection and try again.',
+  ],
+];
+
 function describePullError(error: unknown): string {
   if (error instanceof z.ZodError || error instanceof SyntaxError)
     return 'Ollama sent an unexpected response.';
+  if (error instanceof ChecksumError) return error.message;
   const message = error instanceof Error ? error.message : '';
-  if (/fetch failed|ECONN|ENOTFOUND/i.test(message))
-    return 'Ollama is not reachable. Start it with the app launcher or `ollama serve`.';
-  return message.slice(0, 200) || 'The download failed.';
+  return (
+    PULL_ERRORS.find(([pattern]) => pattern.test(message))?.[1] ??
+    (message.slice(0, 200) || 'The download failed.')
+  );
 }

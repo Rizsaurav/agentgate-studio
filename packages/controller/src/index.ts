@@ -94,9 +94,18 @@ export {
 export type { GuardrailRate, GuardrailRates } from './evals';
 export { condenseLog, failureSignature } from './ci-log';
 export { ModelPuller, PULL_STEPS, modelNameSchema } from './local-models';
-export type { PullOptions, PullState, PullStep } from './local-models';
-export { HuggingFaceCatalog, TRUSTED_PUBLISHERS } from './hf-catalog';
-export type { CatalogModel } from './hf-catalog';
+export type {
+  DigestLookup,
+  PullOptions,
+  PullState,
+  PullStep,
+} from './local-models';
+export {
+  HuggingFaceCatalog,
+  TRUSTED_PUBLISHERS,
+  catalogPublishers,
+} from './hf-catalog';
+export type { CatalogModel, CatalogResult } from './hf-catalog';
 export { checkServices } from './health';
 export type { ServiceCheck } from './health';
 export { inspectSystem } from './system';

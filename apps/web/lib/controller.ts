@@ -18,6 +18,7 @@ import {
   ModelRouter,
   DEFAULT_OLLAMA_URL,
   HuggingFaceCatalog,
+  catalogPublishers,
   DEFAULT_SCANNER_URL,
   LlmGuardScanner,
   ModelPuller,
@@ -151,6 +152,11 @@ function controller(): Controller {
       },
     );
     runs.start();
+    // The last good catalog is kept in the data directory, so the Models page works offline.
+    const catalog = new HuggingFaceCatalog(process.env.AGENTGATE_HF_URL, {
+      publishers: catalogPublishers(process.env.AGENTGATE_HF_PUBLISHERS),
+      cacheFile: join(directory, 'hf-catalog.json'),
+    });
     globalController.controller = {
       projects: projectService,
       projectImports,
@@ -165,16 +171,18 @@ function controller(): Controller {
       security,
       evals,
       repoRoot,
-      // Installing a model also installs and starts Ollama when this computer has none.
+      // Installing a model also installs and starts Ollama when this computer has none, and a
+      // Hugging Face file is checked against its published checksum (#33).
       puller: new ModelPuller(ollamaUrl, {
         prepare: (report, signal) => ensureOllama(ollamaUrl, report, signal),
+        expectedDigest: (model) => catalog.expectedDigest(model),
       }),
       agentStore,
       agentModel: new AgentModel(
         new SecretCredentialStore(secrets, [AGENT_PROVIDER]),
         process.env.AGENTGATE_AGENT_MODEL || undefined,
       ),
-      catalog: new HuggingFaceCatalog(process.env.AGENTGATE_HF_URL),
+      catalog,
       endpoints: {
         ollamaUrl,
         scannerUrl: new URL(
