@@ -35,6 +35,7 @@ export const spanAttributesSchema = z
     'agentgate.rule': RULE,
     'agentgate.passages': COUNT,
     'agentgate.documents': COUNT,
+    'agentgate.prompt_version': COUNT,
   })
   .partial()
   .strict();

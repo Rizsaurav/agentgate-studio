@@ -211,6 +211,24 @@ CREATE TABLE spans (
 ) STRICT;
 CREATE INDEX spans_run ON spans(run_id);`;
 
+// Versioned system prompts (#27). Versions are immutable; eval_runs.system_prompt is the prompt
+// a required-suite run was asked to check, so the gate can tie a pass to one exact text.
+const PROMPT_VERSIONS = `
+CREATE TABLE prompt_versions (
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  version INTEGER NOT NULL CHECK(version > 0),
+  text TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  eval_run_id TEXT REFERENCES eval_runs(id),
+  PRIMARY KEY (project_id, version)
+) STRICT;
+CREATE TABLE active_prompts (
+  project_id TEXT PRIMARY KEY NOT NULL REFERENCES projects(id),
+  version INTEGER NOT NULL,
+  FOREIGN KEY (project_id, version) REFERENCES prompt_versions(project_id, version)
+) STRICT;
+ALTER TABLE eval_runs ADD COLUMN system_prompt TEXT;`;
+
 /** Ordered migrations; PRAGMA user_version is the number applied. Never edit an applied entry. */
 const MIGRATIONS = [
   PROJECTS,
@@ -225,6 +243,7 @@ const MIGRATIONS = [
   PROJECT_REPOSITORY,
   PROJECT_IMPORT_METADATA,
   TELEMETRY,
+  PROMPT_VERSIONS,
 ];
 
 /** Single owner of the application database file, schema, and migrations. */

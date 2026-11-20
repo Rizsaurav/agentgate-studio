@@ -9,6 +9,7 @@ import {
   CloudCatalog,
   EvalService,
   SqliteEvals,
+  PromptService,
   ContextService,
   DocumentService,
   SqliteContext,
@@ -55,6 +56,7 @@ type Controller = {
   documents: DocumentService;
   security: SqliteSecurityEvents;
   evals: EvalService;
+  prompts: PromptService;
   repoRoot: string;
   puller: ModelPuller;
   agentStore: AgentStore;
@@ -137,8 +139,13 @@ function controller(): Controller {
     );
     // Local run traces (#10): numbers only, kept 30 days, switchable off on the Security page.
     const telemetry = new SqliteTelemetry(db, new SqliteSettings(db));
-    const evals = new EvalService(new SqliteEvals(db), repoRoot);
+    const evalStore = new SqliteEvals(db);
+    const evals = new EvalService(evalStore, repoRoot);
     evals.start();
+    // Versioned system prompts (#27): activation requires a passed required-suite run.
+    const prompts = new PromptService(db, projectRepository, (runId) =>
+      evalStore.status(runId),
+    );
     const runs = new RunService(
       sessionRepository,
       // Ollama is started the first time a local model is used, not when the app opens.
@@ -149,6 +156,7 @@ function controller(): Controller {
       {
         guard,
         telemetry,
+        prompts,
         knowledge: {
           context: (projectId) => context.render(projectId),
           retrieve: (projectId, query) => documents.retrieve(projectId, query),
@@ -169,6 +177,7 @@ function controller(): Controller {
       documents,
       security,
       evals,
+      prompts,
       repoRoot,
       // Installing a model also installs and starts Ollama when this computer has none.
       puller: new ModelPuller(ollamaUrl, {
@@ -204,6 +213,7 @@ export const context = () => controller().context;
 export const documents = () => controller().documents;
 export const security = () => controller().security;
 export const evals = () => controller().evals;
+export const prompts = () => controller().prompts;
 export const repoRoot = () => controller().repoRoot;
 export const agentStore = () => controller().agentStore;
 export const agentModel = () => controller().agentModel;

@@ -30,14 +30,15 @@ function parseEvent(data: string): StreamEvent | null {
 }
 export function SessionChat({
   projectId,
-  sources,
+  answers,
   sessionId,
   turns,
   activeRunId,
   activePrompt,
 }: {
   projectId: string;
-  sources: Source[][];
+  /** One entry per completed run, in order: what each answer was built from. */
+  answers: AnswerMeta[];
   sessionId: string;
   turns: Turn[];
   activeRunId: string | null;
@@ -155,7 +156,12 @@ export function SessionChat({
                 <AnswerDetails
                   projectId={projectId}
                   text={turn.text}
-                  sources={sources[Math.floor(index / 2)] ?? []}
+                  meta={
+                    answers[Math.floor(index / 2)] ?? {
+                      sources: [],
+                      promptVersion: null,
+                    }
+                  }
                 />
               )}
             </div>
@@ -239,21 +245,27 @@ export function SessionChat({
     </div>
   );
 }
+type AnswerMeta = { sources: Source[]; promptVersion: number | null };
 function AnswerDetails({
   projectId,
   text,
-  sources,
+  meta,
 }: {
   projectId: string;
   text: string;
-  sources: Source[];
+  meta: AnswerMeta;
 }) {
-  const titles = [...new Set(sources.map((source) => source.title))];
+  const titles = [...new Set(meta.sources.map((source) => source.title))];
   return (
     <div className="answer-details">
       {titles.length > 0 && (
         <p>
           Retrieved context: <span>{titles.join(', ')}</span>
+        </p>
+      )}
+      {meta.promptVersion !== null && (
+        <p>
+          System prompt: <span>version {meta.promptVersion}</span>
         </p>
       )}
       <details className="mt-2">

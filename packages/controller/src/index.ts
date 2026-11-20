@@ -102,6 +102,7 @@ export type { Blocked, RunGuard, SecurityEvent } from './security';
 export { RunService } from './runner';
 export { isLocalHost, isLocalMutation } from './local-request';
 export {
+  EVAL_SYSTEM_PROMPT_ENV,
   EvalService,
   SqliteEvals,
   configurationIdentity,
@@ -110,6 +111,14 @@ export {
   listGithubRuns,
 } from './evals';
 export type { GuardrailRate, GuardrailRates } from './evals';
+export {
+  DEFAULT_SYSTEM_PROMPT,
+  MAX_PROMPT_CHARS,
+  PromptService,
+  diffLines,
+  promptTextSchema,
+} from './prompts';
+export type { ActivePrompt, DiffLine, PromptVersion } from './prompts';
 export { condenseLog, failureSignature } from './ci-log';
 export { ModelPuller, PULL_STEPS, modelNameSchema } from './local-models';
 export type { PullOptions, PullState, PullStep } from './local-models';

@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import {
   PROVIDER_INFO,
+  diffLines,
   projectIdSchema,
   summarizeTraces,
 } from '@agentgate/controller';
@@ -11,9 +12,11 @@ import {
   context,
   customEndpoint,
   documents,
+  evals,
   ollama,
   projects,
   projectImports,
+  prompts,
   sessions,
   telemetry,
 } from '@/lib/controller';
@@ -22,6 +25,7 @@ import { releasePassage, removeContext, removeReference } from '@/app/actions';
 import { AddContext, AddReference } from '@/components/knowledge-forms';
 import { StartSession } from '@/components/start-session';
 import { Panel } from '@/components/panel';
+import { SystemPrompt } from '@/components/system-prompt';
 import { ModelSetup } from '@/components/model-setup';
 import { Icon } from '@/components/icon';
 import { CiStrip, ConnectRepository } from '@/components/ci-status';
@@ -50,6 +54,15 @@ export default async function ProjectPage({
     preview = context().render(id),
     references = documents().list(id);
   const importMetadata = projectImports().find(id);
+  const promptHistory = prompts().history(id);
+  const promptVersions = promptHistory.map((entry, index) => {
+    const previous = promptHistory[index + 1];
+    return {
+      ...entry,
+      diff: previous ? diffLines(previous.text, entry.text) : [],
+    };
+  });
+  const activePrompt = promptHistory.find((entry) => entry.active);
   const groups = [
     ...(installed.models.length
       ? [
@@ -121,6 +134,17 @@ export default async function ProjectPage({
               ))}
             </ul>
             <AddContext projectId={id} />
+          </Panel>
+          <Panel
+            title="System prompt"
+            trigger={`Prompt v${activePrompt?.version ?? 0}`}
+            icon="message"
+          >
+            <SystemPrompt
+              projectId={id}
+              versions={promptVersions}
+              evalsAvailable={evals().available}
+            />
           </Panel>
           <Panel
             title="Reference documents"

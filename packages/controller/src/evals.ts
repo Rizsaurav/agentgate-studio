@@ -6,6 +6,7 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -42,6 +43,10 @@ export const evalRunSchema = z
   })
   .strict();
 export type EvalRun = z.infer<typeof evalRunSchema>;
+/** A claimed run, with the candidate system prompt it checks (#27); null checks the built-in one. */
+export type ClaimedEval = EvalRun & { systemPrompt: string | null };
+/** File the suite's provider reads the candidate system prompt from. */
+export const EVAL_SYSTEM_PROMPT_ENV = 'AGENTGATE_EVAL_SYSTEM_PROMPT_FILE';
 /**
  * What a case measures for the guardrail rates: `false-positive` cases hold benign content that
  * must not be blocked, `detection` cases hold an injection that must be caught. Set in the
@@ -128,6 +133,7 @@ export class SqliteEvals {
     configHash: string,
     gitSha: string | null,
     gitDirty: boolean,
+    systemPrompt: string | null = null,
   ): EvalRun {
     const created = evalRunSchema.parse({
       id: randomUUID(),
@@ -145,7 +151,7 @@ export class SqliteEvals {
     });
     this.db
       .prepare(
-        'INSERT INTO eval_runs (id, profile, status, config_hash, git_sha, git_dirty, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO eval_runs (id, profile, status, config_hash, git_sha, git_dirty, created_at, system_prompt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       )
       .run(
         created.id,
@@ -155,23 +161,32 @@ export class SqliteEvals {
         gitSha,
         gitDirty ? 1 : 0,
         created.createdAt,
+        systemPrompt,
       );
     return created;
   }
 
-  claimNext(): EvalRun | null {
+  claimNext(): ClaimedEval | null {
     return this.db.transaction(() => {
       const row = this.db
         .prepare(
-          `SELECT ${RUN_COLUMNS} FROM eval_runs WHERE status = 'queued' ORDER BY created_at, id LIMIT 1`,
+          `SELECT ${RUN_COLUMNS}, system_prompt AS systemPrompt FROM eval_runs WHERE status = 'queued' ORDER BY created_at, id LIMIT 1`,
         )
-        .get() as RunRow | undefined;
+        .get() as (RunRow & { systemPrompt: string | null }) | undefined;
       if (!row) return null;
       this.db
         .prepare("UPDATE eval_runs SET status = 'running' WHERE id = ?")
         .run(row.id);
-      return { ...toRun(row), status: 'running' as const };
+      const { systemPrompt, ...run } = row;
+      return { ...toRun(run), status: 'running' as const, systemPrompt };
     })();
+  }
+
+  status(runId: string): EvalRun['status'] | null {
+    const row = this.db
+      .prepare('SELECT status FROM eval_runs WHERE id = ?')
+      .get(runId) as { status: EvalRun['status'] } | undefined;
+    return row?.status ?? null;
   }
 
   finish(
@@ -318,7 +333,11 @@ export class EvalService {
     this.kick();
   }
 
-  async enqueue(profileInput: unknown): Promise<EvalRun> {
+  /** Queues a suite run; `systemPrompt` is a candidate prompt to check in place of the built-in one. */
+  async enqueue(
+    profileInput: unknown,
+    systemPrompt: string | null = null,
+  ): Promise<EvalRun> {
     const profile = evalProfileSchema.parse(profileInput);
     if (!this.available)
       throw new Error(
@@ -330,6 +349,7 @@ export class EvalService {
       identity.configHash,
       identity.gitSha,
       identity.gitDirty,
+      systemPrompt,
     );
     this.kick();
     return created;
@@ -359,7 +379,10 @@ export class EvalService {
       next = this.repository.claimNext()
     ) {
       try {
-        this.repository.finish(next.id, await this.execute(next.profile));
+        this.repository.finish(
+          next.id,
+          await this.execute(next.profile, next.systemPrompt),
+        );
       } catch (error) {
         console.error(
           'Evaluation failed:',
@@ -374,14 +397,20 @@ export class EvalService {
     }
   }
 
-  private async execute(profile: EvalProfile) {
+  private async execute(profile: EvalProfile, systemPrompt: string | null) {
     const directory = mkdtempSync(join(tmpdir(), 'agentgate-eval-run-'));
     const output = join(directory, 'result.json');
     try {
+      let promptFile: string | null = null;
+      if (systemPrompt !== null) {
+        promptFile = join(directory, 'system-prompt.txt');
+        writeFileSync(promptFile, systemPrompt, { mode: 0o600 });
+      }
       const code = await this.spawnSuite(
         CONFIGURATIONS[profile],
         output,
         directory,
+        promptFile,
       );
       // Promptfoo exits 100 when assertions fail; anything else non-zero is an infrastructure error.
       if (code !== 0 && code !== 100)
@@ -421,6 +450,7 @@ export class EvalService {
     configuration: string,
     output: string,
     directory: string,
+    promptFile: string | null,
   ): Promise<number | null> {
     return new Promise((resolve, reject) => {
       const child = spawn(
@@ -450,7 +480,11 @@ export class EvalService {
           detached: true,
           stdio: 'ignore',
           // Only what the suite needs: no cloud keys or other secrets are inherited.
-          env: childEnvironment(this.env, join(directory, 'promptfoo')),
+          env: childEnvironment(
+            this.env,
+            join(directory, 'promptfoo'),
+            promptFile,
+          ),
         },
       );
       const timer = setTimeout(() => {
@@ -535,8 +569,10 @@ export async function latestFailedRunLog(
 function childEnvironment(
   source: Record<string, string | undefined>,
   promptfooConfigDir: string,
+  promptFile: string | null,
 ): NodeJS.ProcessEnv {
   const wanted = {
+    [EVAL_SYSTEM_PROMPT_ENV]: promptFile ?? undefined,
     PATH: source.PATH,
     HOME: source.HOME,
     AGENTGATE_SCANNER_URL: source.AGENTGATE_SCANNER_URL,
