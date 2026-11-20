@@ -14,7 +14,10 @@ export type SupervisorLimits = {
   maxToolCalls: number;
   maxOutputTokens: number;
   runTimeoutMs: number;
-  /** A run is refused unless at least this many tokens of the daily budget remain. */
+  /**
+   * The reserve: a run, and every model call inside it, starts only while at least this many
+   * tokens of the daily budget remain. The cap can be passed only by a single call larger than this.
+   */
   minRunTokens: number;
   /** The same finding is not investigated again within this time. */
   cooldownMs: number;
@@ -70,7 +73,7 @@ export function fixForProposal(text: string): FixName | null {
  * investigation may change state on its own; a question can at most ask the user to approve.
  */
 export type RunTrigger =
-  { kind: 'question' } | { kind: 'finding'; title: string };
+  { kind: 'question' } | { kind: 'finding'; title: string; findingId: string };
 
 const describeTrigger = (trigger: RunTrigger | { kind: 'approval' }) =>
   trigger.kind === 'finding'
@@ -153,15 +156,35 @@ export class Supervisor {
     return Math.max(0, this.limits.dailyTokens - this.store.tokensToday());
   }
 
+  get dailyTokens(): number {
+    return this.limits.dailyTokens;
+  }
+
   /** Why the assistant cannot run right now, or null when it can. */
   async unavailable(): Promise<string | null> {
     if (!this.store.enabled()) return 'The assistant is turned off.';
     if (!(await this.configured()))
       return 'Connect an OpenRouter key to turn the assistant on.';
+    return this.blocked();
+  }
+
+  /** The checks that can change while a run is in flight; synchronous, so a claim can follow them. */
+  private blocked(): string | null {
+    if (!this.store.enabled()) return 'The assistant is turned off.';
     if (this.tokensLeft() < this.limits.minRunTokens)
       return 'The daily assistant budget is used up. It resets tomorrow.';
     if (this.busy) return 'The assistant is already working on something.';
     return null;
+  }
+
+  /**
+   * Takes the single run slot. Re-checked after every await and claimed in the same synchronous
+   * step, so runs that arrive together cannot all pass the check and spend the budget twice.
+   */
+  private claim(): string | null {
+    const reason = this.blocked();
+    if (reason === null) this.busy = true;
+    return reason;
   }
 
   async ask(questionInput: unknown): Promise<string> {
@@ -171,12 +194,16 @@ export class Supervisor {
       throw new Error(
         'That looks like an API key or other secret, so it was not sent. If it is a real key, rotate it now.',
       );
-    const reason = await this.unavailable();
+    const reason = (await this.unavailable()) ?? this.claim();
     if (reason) throw new Error(reason);
-    this.store.addNote('question', question);
-    const answer = await this.run(question, { kind: 'question' }, question);
-    this.store.addNote('answer', answer);
-    return answer;
+    try {
+      this.store.addNote('question', question);
+      const answer = await this.run(question, { kind: 'question' }, question);
+      this.store.addNote('answer', answer);
+      return answer;
+    } finally {
+      this.busy = false;
+    }
   }
 
   /** Looks into a finding once per cooldown. Quietly does nothing when it cannot or should not run. */
@@ -191,12 +218,13 @@ export class Supervisor {
       this.limits.maxInvestigationsPerHour
     )
       return;
-    // Recorded first, so even a failing run waits out the cooldown instead of retrying every check.
-    this.store.addNote('finding', finding.title, finding.id);
+    if (this.claim() !== null) return;
     try {
+      // Recorded first, so even a failing run waits out the cooldown instead of retrying every check.
+      this.store.addNote('finding', finding.title, finding.id);
       const answer = await this.run(
         `Investigate: ${finding.title}. ${finding.detail} Use the tools, then give the likely cause and the next step.`,
-        { kind: 'finding', title: finding.title },
+        { kind: 'finding', title: finding.title, findingId: finding.id },
       );
       this.store.addNote('answer', answer, finding.id);
     } catch (error) {
@@ -205,6 +233,8 @@ export class Supervisor {
         `Could not investigate: ${error instanceof Error ? error.message : 'unknown error'}`,
         finding.id,
       );
+    } finally {
+      this.busy = false;
     }
   }
 
@@ -240,13 +270,15 @@ export class Supervisor {
     );
   }
 
+  /** One bounded model run. The caller holds the run slot (see claim). */
   private async run(
     prompt: string,
     trigger: RunTrigger,
     question?: string,
   ): Promise<string> {
-    this.busy = true;
     let agent: Agent | undefined;
+    const spent = { input: 0, output: 0, costUsd: 0 };
+    let outcome: 'answered' | 'stopped' | 'failed' = 'failed';
     let stoppedBy: 'limits' | 'time' | null = null;
     const stop = (reason: 'limits' | 'time') => {
       stoppedBy ??= reason;
@@ -255,9 +287,7 @@ export class Supervisor {
     const timeout = setTimeout(() => stop('time'), this.limits.runTimeoutMs);
     try {
       const opened = await this.open();
-      const budget = this.tokensLeft();
       let toolCalls = 0;
-      let spent = 0;
       agent = new Agent({
         initialState: {
           model: opened.model,
@@ -276,17 +306,24 @@ export class Supervisor {
       agent.subscribe((event) => {
         if (event.type !== 'message_end' || event.message.role !== 'assistant')
           return;
-        const tokens = event.message.usage?.totalTokens ?? 0;
-        this.store.charge(tokens);
-        spent += tokens;
+        const usage = event.message.usage;
+        const costUsd = usage?.cost?.total ?? 0;
+        this.store.charge(usage?.totalTokens ?? 0, costUsd);
+        spent.input += usage?.input ?? 0;
+        spent.output += usage?.output ?? 0;
+        spent.costUsd += costUsd;
         toolCalls += event.message.content.filter(
           (block) => block.type === 'toolCall',
         ).length;
-        // Stop mid-run once the call budget or the day's token budget is gone.
-        if (toolCalls > this.limits.maxToolCalls || spent >= budget)
+        // Stop before the next call once the tool-call budget or the day's reserve is gone.
+        if (
+          toolCalls > this.limits.maxToolCalls ||
+          this.tokensLeft() < this.limits.minRunTokens
+        )
           stop('limits');
       });
       await agent.prompt(prompt);
+      if (stoppedBy !== null) outcome = 'stopped';
       if (stoppedBy === 'time') throw new Error('The assistant timed out.');
       if (stoppedBy === 'limits')
         throw new Error(
@@ -306,10 +343,18 @@ export class Supervisor {
         .join('')
         .trim();
       if (!text) throw new Error('The assistant gave no answer.');
+      outcome = 'answered';
       return redactSecrets(text);
     } finally {
       clearTimeout(timeout);
-      this.busy = false;
+      this.store.recordRun({
+        trigger: trigger.kind,
+        findingId: trigger.kind === 'finding' ? trigger.findingId : null,
+        inputTokens: spent.input,
+        outputTokens: spent.output,
+        costUsd: spent.costUsd,
+        outcome,
+      });
     }
   }
 

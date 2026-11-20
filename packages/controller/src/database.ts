@@ -229,6 +229,21 @@ CREATE TABLE active_prompts (
 ) STRICT;
 ALTER TABLE eval_runs ADD COLUMN system_prompt TEXT;`;
 
+// Assistant spending (#20): estimated cost per day, and tokens and cost per run, bounded.
+const AGENT_SPEND = `
+ALTER TABLE agent_usage ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0;
+CREATE TABLE agent_runs (
+  id TEXT PRIMARY KEY NOT NULL,
+  created_at TEXT NOT NULL,
+  trigger TEXT NOT NULL CHECK(trigger IN ('question','finding')),
+  finding_id TEXT,
+  input_tokens INTEGER NOT NULL,
+  output_tokens INTEGER NOT NULL,
+  cost_usd REAL NOT NULL,
+  outcome TEXT NOT NULL CHECK(outcome IN ('answered','stopped','failed'))
+) STRICT;
+CREATE INDEX agent_runs_created ON agent_runs(created_at);`;
+
 /** Ordered migrations; PRAGMA user_version is the number applied. Never edit an applied entry. */
 const MIGRATIONS = [
   PROJECTS,
@@ -244,6 +259,7 @@ const MIGRATIONS = [
   PROJECT_IMPORT_METADATA,
   TELEMETRY,
   PROMPT_VERSIONS,
+  AGENT_SPEND,
 ];
 
 /** Single owner of the application database file, schema, and migrations. */

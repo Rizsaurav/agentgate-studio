@@ -142,8 +142,8 @@ export type {
   WorkflowState,
 } from './github-ci';
 export type { SystemProfile } from './system';
-export { AgentStore } from './agent-store';
-export type { AgentNote } from './agent-store';
+export { AgentStore, SPEND_WARNING } from './agent-store';
+export type { AgentNote, AgentRun, SpendDay, Spending } from './agent-store';
 export { AgentModel, AGENT_PROVIDER, DEFAULT_AGENT_MODEL } from './agent-model';
 export {
   DEFAULT_LIMITS,
