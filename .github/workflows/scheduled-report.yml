@@ -1,0 +1,105 @@
+name: Scheduled report
+# After every scheduled run of a watched workflow: one issue per failing check (opened, updated
+# while it keeps failing, closed when it passes), then the results page, badge and JSON.
+# The names below must match WATCHED_WORKFLOWS in scripts/ci/scheduled.ts (a test checks this).
+on:
+  workflow_run:
+    workflows: ['Scheduled checks', 'E2E', 'Assistant evals']
+    types: [completed]
+  # Rebuild the page by hand.
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  # One at a time, so two runs finishing together cannot both open an issue for one check.
+  group: scheduled-report
+  cancel-in-progress: false
+
+jobs:
+  issues:
+    name: failure-issues
+    if: >-
+      github.event_name == 'workflow_run' &&
+      contains(fromJSON('["schedule", "workflow_dispatch"]'), github.event.workflow_run.event)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      issues: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      # Only tsx and zod are needed; skip native builds.
+      - run: npm ci --ignore-scripts
+      - name: Open, update or close one issue per check
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: npx tsx scripts/ci/report.ts issues
+
+  page:
+    name: results-page
+    needs: issues
+    # Also after a failed or skipped issues job: the page should still show the latest results.
+    if: >-
+      always() && (github.event_name == 'workflow_dispatch' ||
+      contains(fromJSON('["schedule", "workflow_dispatch"]'), github.event.workflow_run.event))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      pages: ${{ steps.pages.outputs.enabled }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Is GitHub Pages enabled?
+        id: pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if url=$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq .html_url 2>/dev/null); then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "url=$url" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::GitHub Pages is not enabled (Settings > Pages > Source: GitHub Actions); the results are kept as an artifact only."
+          fi
+      - name: Build the results page, badge and JSON
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PAGES_URL: ${{ steps.pages.outputs.url }}
+        run: npx tsx scripts/ci/report.ts page site
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scheduled-results
+          path: site/
+          retention-days: 90
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.pages.outputs.enabled == 'true'
+        with:
+          path: site/
+
+  deploy:
+    name: deploy-results
+    needs: page
+    if: always() && needs.page.outputs.pages == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

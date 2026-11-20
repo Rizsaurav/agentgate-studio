@@ -39,6 +39,20 @@ Before you push, `npm run check` is the minimum. Run `npm run eval` too when you
 
 Some tests talk to real services and are skipped unless you point them at one: `AGENTGATE_OLLAMA_URL` + `AGENTGATE_OLLAMA_MODEL`, `AGENTGATE_SCANNER_URL`, or `AGENTGATE_LIVE_CLOUD=1`. For e2e, `AGENTGATE_E2E_MODEL_2` adds the two-model test. CI runs every check above on each pull request; the workflows are in `.github/workflows/`.
 
+### Scheduled checks
+
+Some checks run on a timer instead of on pull requests, from the default branch only:
+
+| When    | Workflow           | What                                                                                                                                                                                                                                                                                                          |
+| ------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Nightly | `E2E`              | The browser suite against the real scanner and Ollama.                                                                                                                                                                                                                                                        |
+| Nightly | `Assistant evals`  | The assistant eval set against the real model, capped at `AGENTGATE_ASSISTANT_EVAL_MAX_TOKENS`. Skipped without the `OPENROUTER_API_KEY` secret.                                                                                                                                                              |
+| Weekly  | `Scheduled checks` | `hugging-face-contract`: the live Hugging Face API still answers in the shape the catalog needs (`AGENTGATE_HF_CONTRACT=1 npx vitest run packages/controller/src/hf-catalog.contract.test.ts`). `upstream-smoke`: typecheck, tests and build with the newest releases of Pi, Next.js, better-sqlite3 and zod. |
+
+After each scheduled run, `Scheduled report` opens one issue per failing check (labelled `area: cicd`, with the job link, the commit range since the last passing run and the end of the log), comments on it while the check keeps failing, and closes it when the check passes. It then publishes the results page, the badge and `results.json` / `history.json` to GitHub Pages, and keeps them as a 90-day artifact. Pages must be enabled once (Settings, Pages, Source: GitHub Actions); until then only the artifact is kept.
+
+Any job that calls a paid model must set a `AGENTGATE_*MAX_TOKENS` cap, and every job a `timeout-minutes`; `scripts/ci/scheduled.test.ts` fails otherwise. The nightly performance gate (#19) and the weekly vulnerable-demo regression (#21) join this table when they exist.
+
 ### Flaky tests
 
 Tests are never retried automatically: a test that passes only on a second try is hiding a bug. If a test is flaky and you cannot fix it right away, open an issue, add `@quarantine` and the issue link to the test's title, and fix it from there.
