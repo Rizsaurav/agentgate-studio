@@ -40,6 +40,7 @@ struct WorkspacePage: View {
         }
         Button("Open a folder…") { app.openFolder() }.buttonStyle(.plain).foregroundStyle(Theme.accent)
           .font(.system(size: 13))
+        CloneField()
         VStack(spacing: 8) {
           ForEach(app.projects) { project in
             ProjectListRow(project: project, sessions: app.sessions(in: project.id).count) {
@@ -57,6 +58,82 @@ struct WorkspacePage: View {
 
   private func create() {
     if app.createProject(named: name) { name = "" }
+  }
+}
+
+/// Adds a project from a Git URL: checked first, cloned shallow with progress, cancellable.
+private struct CloneField: View {
+  @Environment(AppModel.self) private var app
+  @State private var url = ""
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 10) {
+        TextField("Git URL", text: $url, prompt: Text(""))
+          .inputHint("Or paste a Git URL, e.g. https://github.com/owner/repo", when: url.isEmpty)
+          .field().onSubmit(clone).accessibilityLabel("Git URL").disabled(app.cloneProgress != nil)
+        if app.cloneProgress != nil {
+          Button("Cancel") { app.cancelClone() }.buttonStyle(SubtleButtonStyle())
+        } else {
+          Button("Clone", action: clone).buttonStyle(SubtleButtonStyle())
+            .disabled(url.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+      }
+      if let progress = app.cloneProgress {
+        ProgressView(value: progress).progressViewStyle(.linear).tint(Theme.accent)
+        Text("Downloading the latest version (shallow clone). Full history can be fetched later.")
+          .font(.system(size: 12)).foregroundStyle(Theme.muted)
+      }
+      if let error = app.cloneError {
+        Text(error).font(.system(size: 12)).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+      }
+    }
+  }
+
+  private func clone() {
+    app.cloneProject(from: url)
+  }
+}
+
+/// What was detected about a project, editable so the user can correct it.
+private struct ProjectSummaryCard: View {
+  @Environment(AppModel.self) private var app
+  let project: Project
+  @State private var draft = ProjectSummary(language: "", packageManager: "", testCommand: "", ci: "")
+  @State private var fetching = false
+
+  var body: some View {
+    Card(padding: 18) {
+      VStack(alignment: .leading, spacing: 10) {
+        Text("About this project").font(.system(size: 13, weight: .semibold))
+        Text("Detected from the project's files when it was added. Correct anything that is wrong.")
+          .font(.system(size: 12)).foregroundStyle(Theme.muted)
+        row("Language", $draft.language)
+        row("Package manager", $draft.packageManager)
+        row("Test command", $draft.testCommand)
+        row("CI", $draft.ci)
+        HStack {
+          Button("Save") { app.updateSummary(of: project.id, to: draft) }
+            .buttonStyle(SubtleButtonStyle()).disabled(draft == project.summary)
+          if let folder = project.folder, GitCloner.isShallow(URL(fileURLWithPath: folder)) {
+            Button(fetching ? "Fetching history…" : "Fetch full history") {
+              fetching = true
+              Task { await app.fetchFullHistory(of: project.id); fetching = false }
+            }
+            .buttonStyle(SubtleButtonStyle()).disabled(fetching)
+            .help("This project was cloned with only its latest version. Download every earlier commit too.")
+          }
+        }
+      }
+    }
+    .onAppear { draft = project.summary ?? draft }
+  }
+
+  private func row(_ label: String, _ value: Binding<String>) -> some View {
+    HStack {
+      Text(label).font(.system(size: 12)).foregroundStyle(Theme.muted).frame(width: 120, alignment: .leading)
+      TextField(label, text: value, prompt: Text("Unknown")).textFieldStyle(.roundedBorder).font(.system(size: 12))
+    }
   }
 }
 
@@ -140,6 +217,7 @@ struct ProjectPage: View {
           Button { app.route = .workspace } label: { Text("← All projects").font(.system(size: 13)) }
             .buttonStyle(.plain).foregroundStyle(Theme.muted)
           Text(project.name).font(.system(size: 28, weight: .semibold)).tracking(-0.6)
+          if project.summary != nil { ProjectSummaryCard(project: project).frame(maxWidth: 640).id(project.id) }
           Picker("View", selection: $tab) {
             Text("Chats").tag("chats")
             Text("CI/CD").tag("ci")

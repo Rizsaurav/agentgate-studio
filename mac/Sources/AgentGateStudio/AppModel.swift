@@ -82,6 +82,11 @@ final class AppModel {
   /// Whether the chosen agent has a key, so it can supervise installs. Checks existence only; never reads the key.
   var agentOn: Bool { agentKeys.contains(activeAgent.id) }
   var errorMessage: String?
+  /// A clone in progress from "Add from a Git URL": 0...1, or nil when none is running.
+  var cloneProgress: Double?
+  /// Why the last clone failed, shown under the URL field.
+  var cloneError: String?
+  private var cloneTask: Task<Void, Never>?
   private(set) var workspace = WorkspaceStore.Snapshot()
   private(set) var thinking = false
   private(set) var generating = false
@@ -172,10 +177,51 @@ final class AppModel {
     }
     do {
       _ = add(Project(id: UUID(), name: try WorkspaceStore.validName(String(url.lastPathComponent.prefix(80))),
-                      createdAt: Date(), folder: url.path))
+                      createdAt: Date(), folder: url.path, summary: ProjectSummary.detect(url)))
     } catch {
       errorMessage = String(describing: error)
     }
+  }
+
+  /// Clones a Git URL into the projects folder (shallow) and adds it as a project. The URL is checked
+  /// before anything downloads; a failed or cancelled clone leaves no folder behind.
+  func cloneProject(from text: String) {
+    guard cloneTask == nil else { return }
+    cloneError = nil
+    let remote: GitRemote
+    do { remote = try GitRemote.parse(text) } catch { cloneError = String(describing: error); return }
+    if let existing = workspace.projects.first(where: { $0.folder == Self.projectsRoot.appendingPathComponent(remote.name).path }) {
+      route = .project(existing.id)
+      return
+    }
+    cloneProgress = 0
+    cloneTask = Task {
+      defer { cloneProgress = nil; cloneTask = nil }
+      do {
+        let folder = try await GitCloner().clone(remote, into: Self.projectsRoot) { fraction in
+          Task { @MainActor in if self.cloneProgress != nil { self.cloneProgress = fraction } }
+        }
+        _ = add(Project(id: UUID(), name: try WorkspaceStore.validName(remote.name), createdAt: Date(),
+                        folder: folder.path, summary: ProjectSummary.detect(folder)))
+      } catch {
+        cloneError = String(describing: error)
+      }
+    }
+  }
+
+  func cancelClone() { cloneTask?.cancel() }
+
+  /// Downloads the rest of a shallow clone's history.
+  func fetchFullHistory(of projectId: UUID) async {
+    guard let folder = project(projectId)?.folder else { return }
+    do { try await GitCloner().fetchFullHistory(URL(fileURLWithPath: folder)) } catch { errorMessage = String(describing: error) }
+  }
+
+  /// Saves the user's correction of what was detected about a project.
+  func updateSummary(of projectId: UUID, to summary: ProjectSummary) {
+    guard let index = workspace.projects.firstIndex(where: { $0.id == projectId }) else { return }
+    workspace.projects[index].summary = summary
+    do { try persist() } catch { errorMessage = String(describing: error) }
   }
 
   private func add(_ project: Project) -> Bool {
