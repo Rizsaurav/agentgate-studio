@@ -75,6 +75,10 @@ public struct RepairRunner: Sendable {
   public var approvalTimeout: Duration
   /// Asked before any repair that needs approval; `false` stops the install.
   public var approve: @Sendable (RepairOperation, FailureReport) async -> Bool
+  /// When set, several repairs from one failure that need approval are asked as one question.
+  public var approveBatch: (@Sendable ([RepairOperation], FailureReport) async -> Bool)?
+  /// Re-downloads larger than this need a yes (except in Hands-off).
+  public var askAboveBytes = RepairOperation.defaultAskAboveBytes
 
   public init(
     pipeline: InstallPipeline = InstallPipeline(), audit: AuditLog = AuditLog(),
@@ -108,11 +112,32 @@ public struct RepairRunner: Sendable {
         let report = FailureReport.make(failure, hardware: hardware, tried: tried, modelsRoot: pipeline.store.root)
         let proposal = try await propose(report, tried: tried, model: model, source: host ?? Self.defaultSource)
         var applied = false
+        let bytes = failure.plan?.downloadBytes ?? .max
+        // Several repairs that need a yes are asked once, together. A no or no answer stops before any runs.
+        var approvedTogether: Set<RepairOperation> = []
+        let needing = Array(proposal.operations.prefix(max(0, Self.maxOperations - tried.count)))
+          .filter { $0.needsApproval(downloadBytes: bytes, autonomy: autonomy, askAboveBytes: askAboveBytes) }
+        if needing.count > 1, approveBatch != nil {
+          for operation in needing { try record(model, operation, proposal.explanation, .proposed) }
+          switch await askAll(needing, report) {
+          case .yes:
+            for operation in needing { try record(model, operation, proposal.explanation, .approved) }
+            approvedTogether = Set(needing)
+          case .no:
+            for operation in needing { try record(model, operation, proposal.explanation, .denied) }
+            throw RepairError.unrepaired(failure, why: "The repairs were not approved.")
+          case .timedOut:
+            for operation in needing { try record(model, operation, "No answer in time; nothing was done.", .denied) }
+            throw RepairError.unrepaired(failure, why: "No answer came, so nothing was changed. Install again to continue.")
+          }
+        }
         for operation in proposal.operations where tried.count < Self.maxOperations {
           let reason = proposal.explanation
-          try record(model, operation, reason, .proposed)
-          let bytes = failure.plan?.downloadBytes ?? .max
-          if operation.needsApproval(downloadBytes: bytes, autonomy: autonomy) {
+          let preApproved = approvedTogether.contains(operation)
+          if !preApproved { try record(model, operation, reason, .proposed) }
+          if preApproved {
+            // Asked above, together with the others.
+          } else if operation.needsApproval(downloadBytes: bytes, autonomy: autonomy, askAboveBytes: askAboveBytes) {
             switch await ask(operation, report) {
             case .yes: try record(model, operation, reason, .approved)
             case .no:
@@ -122,7 +147,7 @@ public struct RepairRunner: Sendable {
               try record(model, operation, "No answer in time; nothing was done.", .denied)
               throw RepairError.unrepaired(failure, why: "No answer came, so nothing was changed. Install again to continue.")
             }
-          } else if operation.tier(downloadBytes: bytes) == .notify {
+          } else if operation.tier(downloadBytes: bytes, askAboveBytes: askAboveBytes) >= .notify {
             update(InstallUpdate(step: failure.step, message: "The agent chose to: \(operation.summary)"))
           }
           tried.append(operation)
@@ -208,6 +233,22 @@ public struct RepairRunner: Sendable {
     let approve = approve, timeout = approvalTimeout
     return await withTaskGroup(of: Answer.self) { group in
       group.addTask { await approve(operation, report) ? .yes : .no }
+      group.addTask {
+        try? await Task.sleep(for: timeout)
+        return .timedOut
+      }
+      let first = await group.next() ?? .timedOut
+      group.cancelAll()
+      return first
+    }
+  }
+
+  /// Asks once about several repairs, with the same timeout. A missing answer is never a yes.
+  func askAll(_ operations: [RepairOperation], _ report: FailureReport) async -> Answer {
+    guard let approveBatch else { return .no }
+    let timeout = approvalTimeout
+    return await withTaskGroup(of: Answer.self) { group in
+      group.addTask { await approveBatch(operations, report) ? .yes : .no }
       group.addTask {
         try? await Task.sleep(for: timeout)
         return .timedOut
