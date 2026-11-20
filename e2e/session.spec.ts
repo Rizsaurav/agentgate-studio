@@ -310,9 +310,7 @@ test('local models install one after another from the Models page, chat right aw
     await page.goto('/');
     await page.getByLabel('Project name').fill('Fresh local model');
     await page.getByRole('button', { name: /Create project/ }).click();
-    await page
-      .getByLabel('Model', { exact: true })
-      .selectOption(`ollama/${tiny}`);
+    await chooseModel(page, `ollama/${tiny}`);
     await page.getByRole('button', { name: 'Start session' }).click();
     await page.getByLabel('Task').fill('Say hello.');
     await page.getByRole('button', { name: 'Run task' }).click();

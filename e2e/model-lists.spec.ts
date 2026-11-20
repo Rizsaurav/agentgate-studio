@@ -12,7 +12,11 @@ test('the Models page shows four providers until "More providers" is opened', as
   await page.goto('/models');
   const rows = page.locator('.provider-list details.provider-section');
   await expect(rows.filter({ visible: true })).toHaveCount(4);
-  const more = page.getByRole('button', { name: /^More providers/ });
+  await expect(
+    page.getByRole('button', { name: /^More providers/ }),
+  ).toBeVisible();
+  // Found by what it controls: its label changes to "Show fewer" once open.
+  const more = page.locator('button[aria-controls="more-providers"]');
   await expect(more).toHaveAttribute('aria-expanded', 'false');
   await more.click();
   await expect(more).toHaveAttribute('aria-expanded', 'true');
@@ -40,9 +44,16 @@ test('the conversation picker suggests at most four models and finds one by sear
       .count(),
   ).toBeLessThanOrEqual(4);
 
+  // Already selected when it is the first suggestion (for example the only model installed):
+  // then nothing changes, and there is no choice to write to the URL.
+  const preselected = await picker
+    .getByRole('list', { name: 'Suggested models' })
+    .locator(`input[value="ollama/${model}"]`)
+    .isChecked()
+    .catch(() => false);
   await chooseModel(page, `ollama/${model}`);
-  // The choice survives a refresh: it is in the URL once the picker has written it there.
-  await expect(page).toHaveURL(/[?&]model=/);
+  // A changed choice survives a refresh: it is in the URL once the picker has written it there.
+  if (!preselected) await expect(page).toHaveURL(/[?&]model=/);
   await page.reload();
   await expect(page.getByText(`Selected: ollama/${model}`)).toBeVisible();
 });
