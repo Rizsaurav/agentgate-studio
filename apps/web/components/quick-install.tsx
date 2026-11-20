@@ -5,10 +5,14 @@ import { useModelPull } from './use-model-pull';
 
 export function QuickInstall({
   best,
+  fallbacks,
+  ollamaInstalled,
   summary,
   error: loadError,
 }: {
   best: { id: string; label: string; downloadGb: number } | null;
+  fallbacks: string[];
+  ollamaInstalled: boolean;
   summary: string;
   error: string | null;
 }) {
@@ -35,7 +39,11 @@ export function QuickInstall({
       <p className="muted">
         Your computer: {summary}. The best local model for it is{' '}
         <strong>{best.label}</strong> (about {best.downloadGb} GB). It runs
-        entirely on this computer and is set up for you.
+        entirely on this computer and is set up for you
+        {ollamaInstalled
+          ? '.'
+          : ', including Ollama, the program that runs it (about 230 MB, from ollama.com).'}{' '}
+        Once installed it is ready in the chat.
       </p>
       {downloading && pull ? (
         <div role="status">
@@ -58,7 +66,7 @@ export function QuickInstall({
           </Button>
         </div>
       ) : (
-        <Button type="button" onClick={() => void install(best.id)}>
+        <Button type="button" onClick={() => void install(best.id, fallbacks)}>
           Install {best.label} for me
         </Button>
       )}

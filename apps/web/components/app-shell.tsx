@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Icon, type IconName } from './icon';
 import { Panel } from './panel';
 import { AssistantEntry } from './assistant-entry';
+import { InstallStrip } from './install-strip';
 
 type ProjectLink = { id: string; name: string };
 export function AppShell({
@@ -194,6 +195,7 @@ export function AppShell({
         <main id="main-content" className="workspace-content">
           {children}
         </main>
+        <InstallStrip />
       </div>
       <dialog
         ref={command}

@@ -268,12 +268,13 @@ test('the dashboard runs the required suite, and a deliberately weak configurati
   await expect(weak).not.toContainText('functional /');
 });
 
-test('a local model can be installed from the Models page with visible progress', async ({
+test('local models install one after another from the Models page, chat right away, and can be removed', async ({
   page,
 }) => {
   const ollamaUrl = process.env.AGENTGATE_OLLAMA_URL;
   test.skip(!ollamaUrl, 'Set AGENTGATE_OLLAMA_URL to a running Ollama.');
   const tiny = 'smollm2:135m';
+  const second = 'smollm2:360m';
   try {
     await page.goto('/models');
     await expect(page.getByText('System check')).toBeVisible();
@@ -288,18 +289,61 @@ test('a local model can be installed from the Models page with visible progress'
       page.getByRole('alert').filter({ hasText: 'Use an Ollama model name' }),
     ).toBeVisible();
 
-    await page.getByLabel('Another Ollama model').fill(tiny);
+    // A second model queues behind the first and installs after it.
+    for (const model of [tiny, second]) {
+      await page.getByLabel('Another Ollama model').fill(model);
+      await page
+        .getByRole('button', { name: 'Install', exact: true })
+        .last()
+        .click();
+    }
+    await expect(page.getByText(`Next: ${second}`)).toBeVisible();
+    // The install strip shows the steps live, on any page.
+    const strip = page.getByRole('status', { name: 'Local model install' });
+    await expect(strip).toContainText('Ollama');
+    await expect(strip).toContainText('Check it runs');
+    const installedList = page.getByRole('list', {
+      name: 'Installed local models',
+    });
+    await expect(installedList).toContainText(tiny, { timeout: 180_000 });
+    await expect(installedList).toContainText(second, { timeout: 180_000 });
+
+    // Removing asks first, then the model is gone from the list.
+    page.once('dialog', (dialog) => void dialog.accept());
+    await page.getByRole('button', { name: `Remove ${second}` }).click();
+    await expect(installedList).not.toContainText(second);
+
+    // Installed means ready: it is offered in the chat and answers, with no other setup.
+    await page.goto('/');
+    await page.getByLabel('Project name').fill('Fresh local model');
+    await page.getByRole('button', { name: /Create project/ }).click();
     await page
-      .getByRole('button', { name: 'Install', exact: true })
-      .last()
-      .click();
-    await expect(
-      page.getByRole('list', { name: 'Installed local models' }),
-    ).toContainText(tiny, { timeout: 180_000 });
+      .getByLabel('Model', { exact: true })
+      .selectOption(`ollama/${tiny}`);
+    await page.getByRole('button', { name: 'Start session' }).click();
+    await page.getByLabel('Task').fill('Say hello.');
+    await page.getByRole('button', { name: 'Run task' }).click();
+    const answer = page
+      .getByRole('list', { name: 'Conversation' })
+      .getByRole('listitem')
+      .nth(1);
+    // Wait for the finished answer, not the in-progress placeholder.
+    await expect(answer).toBeVisible({ timeout: 90_000 });
+    await expect(answer).not.toContainText(/Generating|Delivering/, {
+      timeout: 90_000,
+    });
+    await expect(page.locator('.error-message')).toHaveCount(0);
+    expect(
+      (await answer.innerText()).replace(/^model/i, '').trim().length,
+    ).toBeGreaterThan(0);
   } finally {
     await fetch(`${ollamaUrl}/api/delete`, {
       method: 'DELETE',
       body: JSON.stringify({ model: tiny }),
+    });
+    await fetch(`${ollamaUrl}/api/delete`, {
+      method: 'DELETE',
+      body: JSON.stringify({ model: second }),
     });
   }
 });

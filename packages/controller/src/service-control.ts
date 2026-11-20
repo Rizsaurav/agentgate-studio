@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { reachable } from './health';
+import { findOllama, installOllama } from './ollama-install';
 
 const POLL_MS = 500;
 
@@ -37,10 +38,11 @@ function launch(
 /** Starts Ollama unless it is already answering. Waits a bounded time for it to come up. */
 export async function startOllama(
   ollamaUrl: string,
-  command = 'ollama',
+  command?: string,
 ): Promise<string> {
   if (await reachable(`${ollamaUrl}/api/version`))
     return 'Ollama is already running.';
+  command ??= (await findOllama()) ?? 'ollama';
   try {
     // A loaded model is kept for half an hour (Ollama's default is five minutes) so a pause does not cost a reload.
     await launch(command, ['serve'], {
@@ -48,12 +50,29 @@ export async function startOllama(
     });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT')
-      throw new Error('Ollama is not installed. Run `npm run setup`.');
+      throw new Error(
+        'Ollama is not installed. Install a local model to set it up, or run `npm run setup`.',
+      );
     throw error;
   }
   return (await waitUntil(`${ollamaUrl}/api/version`, 20))
     ? 'Ollama started.'
     : 'Ollama was launched but is not answering yet.';
+}
+
+/** Installs Ollama if this computer has none, then starts it. Used before a model download. */
+export async function ensureOllama(
+  ollamaUrl: string,
+  report: (message: string) => void,
+  signal: AbortSignal,
+  install = installOllama,
+): Promise<void> {
+  if (await reachable(`${ollamaUrl}/api/version`)) return;
+  const command = (await findOllama()) ?? (await install(report, signal));
+  report('Starting Ollama…');
+  const result = await startOllama(ollamaUrl, command);
+  if (result !== 'Ollama started.' && result !== 'Ollama is already running.')
+    throw new Error(result);
 }
 
 /** Starts the security scanner from its virtual environment, if `npm run setup` created one. */
