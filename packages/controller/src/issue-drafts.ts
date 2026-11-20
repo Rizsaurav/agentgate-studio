@@ -19,7 +19,6 @@ import { detectExfiltrationLink, redactSecrets } from './policy';
 
 const KEEP_DRAFTS = 50;
 const ISSUE_URL = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/issues\/\d+$/;
-// biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what it removes.
 const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f‪-‮⁦-⁩]/g;
 /** `@name` outside code, which GitHub turns into a notification. */
 const MENTION =
