@@ -48,6 +48,10 @@ public struct ModelSuggestion: Sendable, Identifiable {
   public var installed: Bool
   public var score: Double
   public var reasons: [String]
+  /// The context this Mac would run it with.
+  public var context: Int = 0
+  /// Estimated parameter count.
+  public var parameters: Double = 0
 }
 
 /// Ranks models for a task on this Mac. Deterministic, like the planner: the same task needs, catalog and Mac
@@ -108,7 +112,8 @@ public enum ModelAdvisor {
       reasons.append("\(c.context / 1024)K context")
       if c.model.toolCalling { reasons.append("Calls tools") }
       reasons.append("Uses \(ModelPlanner.gb(c.memory)) of the \(ModelPlanner.gb(profile.modelBudgetBytes)) this Mac has for a model")
-      return ModelSuggestion(model: c.model, plan: c.plan, installed: c.installed != nil, score: score, reasons: reasons)
+      return ModelSuggestion(model: c.model, plan: c.plan, installed: c.installed != nil, score: score, reasons: reasons,
+                             context: c.context, parameters: c.params)
     }
     ranked.sort { $0.score > $1.score }
     return Array(ranked.prefix(limit))

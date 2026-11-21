@@ -551,6 +551,13 @@ final class AppModel {
   private(set) var suggestions: [ModelSuggestion] = []
   private(set) var advisorNote: String?
   private(set) var advising = false
+  /// Local first; cloud models are offered only when no local model meets the task, and only from a connected key.
+  private(set) var taskRoute: RouteAdvice = .local
+  private var cloudOffers: [CloudOffer]?
+  /// The cloud model the user picked for a task. Picking sends nothing anywhere.
+  private(set) var chosenCloud: CloudOffer?
+
+  func chooseCloud(_ offer: CloudOffer?) { chosenCloud = offer }
 
   /// Suggests models for a task. The agent (if on) reads the task; fixed code ranks the models.
   func suggestModels(for task: String) {
@@ -570,6 +577,15 @@ final class AppModel {
         }
       }
       suggestions = ModelAdvisor.suggest(catalog, for: profile, installed: installed, needs: needs)
+      chosenCloud = nil
+      taskRoute = .local
+      if TaskRouter.shortfall(needs: needs, local: suggestions) != nil, providerKeys.contains(Providers.openRouter.id) {
+        // The price list is public; fetching it sends no key and nothing about the task.
+        if cloudOffers == nil { cloudOffers = try? await CloudCatalog.fetchOpenRouter() }
+        taskRoute = TaskRouter.advise(needs: needs, local: suggestions, connected: cloudOffers ?? [])
+      } else if let reason = TaskRouter.shortfall(needs: needs, local: suggestions) {
+        taskRoute = .cloudSuggested(reason: reason, offers: [])
+      }
       let wants = [needs.tools ? "tools" : nil, needs.longContext ? "long context" : nil, needs.priority == .balanced ? nil : needs.priority.rawValue]
         .compactMap { $0 }.joined(separator: ", ")
       advisorNote = (wants.isEmpty ? "No special needs." : "Needs \(wants).") + " " + source + " Scores are estimates until measured on this Mac."
