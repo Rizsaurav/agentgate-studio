@@ -83,7 +83,6 @@ final class AppModel {
   var agentOn: Bool { agentKeys.contains(activeAgent.id) }
   var errorMessage: String?
   private(set) var workspace = WorkspaceStore.Snapshot()
-  private(set) var thinking = false
   private(set) var generating = false
 
   private let pipeline = InstallPipeline()
@@ -578,28 +577,27 @@ final class AppModel {
 
   // MARK: Agent
 
-  /// One thing the agent did or asked to do, kept for the activity view.
-  struct ActivityItem: Identifiable, Equatable {
-    var id: String
-    var tool: String
-    var detail: String
-    var status: String
-    var output: String
-    var date = Date()
-  }
-
-  private(set) var activity: [ActivityItem] = []
+  /// The turn in progress: every step the agent took, shown as it happens and saved with the answer.
+  private(set) var transcript = Transcript()
+  /// When the turn in progress started, for its clock.
+  private(set) var turnStarted: Date?
+  /// The question shown to the user now. Others asked meanwhile wait in `queuedPermissions`.
   private(set) var pendingPermission: AgentEvent.Permission?
+  private var queuedPermissions: [AgentEvent.Permission] = []
+  /// Questions already reviewed, so one that arrives by the event stream and by the poll is checked once.
+  private var reviewedPermissions: Set<String> = []
   let securityLog = SecurityLog()
   private(set) var securityEntries: [SecurityEntry] = []
-  var activityOpen = false
   private var agent: AgentServer?
   private var eventTask: Task<Void, Never>?
   private var streamingSession: UUID?
   private var agentConnected = false
   private var loggedRefusals: Set<String> = []
-  private var parts: [(id: String, messageID: String, text: String)] = []
-  private var roles: [String: String] = [:]
+  /// Errors and stops the app adds under the answer.
+  private var notes = ""
+  /// The file of the latest edit, exactly as the model wrote it, for the policy check. Never the
+  /// redacted text shown on screen: that would hide a path outside the project.
+  private var lastEditPath: String?
 
   /// Sends a task in a session. The agent harness runs it in the project's folder with the session's model.
   func send(_ text: String, in sessionId: UUID) {
@@ -612,11 +610,13 @@ final class AppModel {
     workspace.sessions[index].messages.append(ChatMessage(role: .user, content: text))
     workspace.sessions[index].messages.append(ChatMessage(role: .assistant, content: ""))
     generating = true
-    thinking = true
     streamingSession = sessionId
-    parts = []
-    roles = [:]
-    activity = []
+    transcript = Transcript()
+    turnStarted = Date()
+    notes = ""
+    lastEditPath = nil
+    queuedPermissions = []
+    reviewedPermissions = []
     Task {
       do {
         // Load the session's model, or reload it if its engine has died since the last message.
@@ -648,14 +648,14 @@ final class AppModel {
     }
   }
 
-  /// A backstop for the event stream: while a turn runs, look for a pending question every two seconds.
-  /// A turn is capped at 30 minutes.
+  /// A backstop for the event stream: while a turn runs, look for questions every two seconds. They go
+  /// through the same review as streamed ones. A turn is capped at 30 minutes.
   private func watchForQuestions(_ server: AgentServer) async throws {
     for _ in 0..<900 where generating {
       try await Task.sleep(nanoseconds: 2_000_000_000)
-      if pendingPermission == nil, let first = try await server.client.pendingPermissions().first {
-        pendingPermission = first
-      }
+      // A failed poll is not fatal: the event stream is the primary path, and a dead harness ends it.
+      guard let pending = try? await server.client.pendingPermissions() else { continue }
+      for permission in pending where generating { review(permission) }
     }
   }
 
@@ -668,13 +668,15 @@ final class AppModel {
   /// Answers the agent's question about a command or edit. Anything but a yes is a no.
   func answerPermission(allow: Bool) {
     guard let permission = pendingPermission, let agent else { return }
-    pendingPermission = nil
+    dismiss(permission.id)
     // Check again at the moment of approval: by now the file the agent means to edit is known.
     if allow, case .block(let rule, _) = verdict(for: permission, final: true) {
       block(permission, rule: rule, agent: agent)
       return
     }
     record(permission.tool, permission.detail, allow ? .allowed : .deniedByUser, rule: "")
+    // The step's clock starts now: the time spent waiting for the user is not the command's.
+    if allow { transcript.approved(callID: permission.callID) }
     Task {
       do { try await agent.client.reply(permission: permission.id, allow: allow) }
       catch { errorMessage = String(describing: error) }
@@ -698,15 +700,24 @@ final class AppModel {
     }
     if permission.tool == "bash" { return ToolPolicy.evaluate(tool: "bash", detail: permission.detail, folder: folder) }
     guard ["edit", "write", "patch", "multiedit"].contains(permission.tool) else { return .allow }
-    let editing = ["edit", "write", "patch", "multiedit"]
-    guard let path = activity.last(where: { editing.contains($0.tool) && !$0.detail.isEmpty })?.detail else {
+    guard let path = lastEditPath else {
       return final ? .block(rule: "unknown-target", reason: "The file to edit could not be determined.") : nil
     }
     return ToolPolicy.evaluate(tool: "edit", detail: path, folder: folder)
   }
 
+  /// A question is answered or gone: show the next one waiting, if any.
+  private func dismiss(_ id: String) {
+    queuedPermissions.removeAll { $0.id == id }
+    if pendingPermission?.id == id {
+      pendingPermission = queuedPermissions.isEmpty ? nil : queuedPermissions.removeFirst()
+    }
+  }
+
   /// A new question from the agent: refuse it at once if a rule forbids it, otherwise ask the user.
+  /// Every question comes through here exactly once, whether it arrived by the stream or the poll.
   private func review(_ permission: AgentEvent.Permission) {
+    guard reviewedPermissions.insert(permission.id).inserted else { return }
     // Our check of every call first (J3): paths, sizes, command rules. A refusal tells the model why.
     if let agent {
       guard let folder = streamingFolder else {
@@ -719,24 +730,29 @@ final class AppModel {
       }
       // Reads that passed the check run without asking the user.
       if ToolCallCheck.readOnly.contains(permission.tool) {
+        transcript.approved(callID: permission.callID)
         Task { try? await agent.client.reply(permission: permission.id, allow: true) }
         return
       }
     }
     if case .block(let rule, _)? = verdict(for: permission, final: false), let agent {
       block(permission, rule: rule, agent: agent)
-    } else {
+    } else if pendingPermission == nil {
       pendingPermission = permission
+    } else {
+      queuedPermissions.append(permission)
     }
   }
 
   private func block(_ permission: AgentEvent.Permission, rule: String, agent: AgentServer, message: String? = nil) {
-    pendingPermission = nil
+    // Only this question is answered; another one shown to the user stays.
+    dismiss(permission.id)
     record(permission.tool, permission.detail, .blocked, rule: rule)
-    activity.append(ActivityItem(
-      id: "blocked-\(permission.id)", tool: permission.tool, detail: permission.detail,
-      status: "blocked: \(rule)", output: ""))
     let feedback = message ?? "Refused by AGENTGATE (\(rule)). Do not retry the same call; choose another way that stays inside the project."
+    transcript.refuse(
+      id: "blocked-\(permission.id)", tool: permission.tool, detail: displayed(permission.detail),
+      reason: "Blocked by the rule \(rule). The agent was told: \(feedback)", callID: permission.callID)
+    showTranscript()
     Task { try? await agent.client.reply(permission: permission.id, allow: false, message: feedback) }
   }
 
@@ -791,21 +807,17 @@ final class AppModel {
   }
 
   private func handle(_ event: AgentEvent) {
+    transcript.apply(event, clean: displayed)
     switch event {
-    case .message(let id, let role): roles[id] = role
-    case .text(let id, let message, let text):
-      if let i = parts.firstIndex(where: { $0.id == id }) { parts[i].text = text } else { parts.append((id, message, text)) }
-      showAnswer()
-    case .textDelta(let id, let message, let delta):
-      if let i = parts.firstIndex(where: { $0.id == id }) { parts[i].text += delta } else { parts.append((id, message, delta)) }
-      showAnswer()
     case .tool(let tool):
-      let item = ActivityItem(id: tool.id, tool: tool.name, detail: tool.detail, status: tool.status, output: tool.output)
-      if let i = activity.firstIndex(where: { $0.id == tool.id }) { activity[i] = item } else { activity.append(item) }
+      if ["edit", "write", "patch", "multiedit"].contains(tool.name), !tool.detail.isEmpty { lastEditPath = tool.detail }
       if tool.status == "completed", ToolPolicy.looksLikeInjection(tool.output) { stopForInjection(tool) }
-      // The harness refuses some requests by itself (outside the project, web fetches). Log those too.
-      let lowered = tool.output.lowercased()
-      if tool.status == "error", ["denied", "rejected", "not allowed", "permission"].contains(where: lowered.contains),
+      // The harness refuses some requests by itself (outside the project, web fetches). Log those too,
+      // but not its echo of an answer already logged here ("rejected permission": our refusal or the user's no).
+      let error = tool.error ?? ""
+      let lowered = (tool.output + " " + error).lowercased()
+      if tool.status == "error", !error.contains("rejected permission"),
+         ["denied", "rejected", "not allowed", "permission"].contains(where: lowered.contains),
          loggedRefusals.insert(tool.id).inserted {
         record(tool.name, tool.detail, .blocked, rule: "harness-refused")
       }
@@ -821,23 +833,32 @@ final class AppModel {
       // Visible to the user, and the task and decisions go again with the next message.
       needsPin.insert(id)
       append("\n\n_Older turns were summarised to fit the context. The task and decisions are kept and sent again._\n\n", to: id)
+    case .permissionReplied(let id): dismiss(id)
     case .connected: agentConnected = true
-    case .busy: thinking = true
     case .idle: finishTurn()
     case .failed(let message):
       if let id = streamingSession { append("\n\nError: \(message)", to: id) }
       finishTurn()
+    default: break
     }
+    showTranscript()
   }
 
-  /// The answer is every assistant text part so far; the user's own text echoes back and is skipped.
-  private func showAnswer() {
+  /// Text from a tool as it is shown and saved: keys hidden, the project folder written as ".". Other
+  /// paths stay: a path outside the project is exactly what the user needs to see.
+  private func displayed(_ text: String) -> String {
+    guard let folder = streamingFolder else { return Redaction.secrets(text) }
+    return Redaction.secrets(text.replacingOccurrences(of: folder.path, with: "."))
+  }
+
+  /// Puts the turn so far into the session's last message: the steps, and the answer text.
+  private func showTranscript(usage: TurnUsage? = nil) {
     guard let id = streamingSession, let index = workspace.sessions.firstIndex(where: { $0.id == id }),
           let last = workspace.sessions[index].messages.indices.last else { return }
-    let text = parts.filter { roles[$0.messageID] == "assistant" }.map(\.text).joined(separator: "\n\n")
-    guard !text.isEmpty else { return }
-    thinking = false
-    workspace.sessions[index].messages[last].content = text
+    let steps = transcript.steps
+    workspace.sessions[index].messages[last].steps = steps
+    workspace.sessions[index].messages[last].content = transcript.answer + notes
+    if let usage { workspace.sessions[index].messages[last].usage = usage }
   }
 
   private func finishTurn() {
@@ -847,16 +868,18 @@ final class AppModel {
       countTokens(nil, model: session.modelId, name: session.modelName, location: .local)
     }
     turnReportedUsage = false
+    transcript.finish(seconds: turnStarted.map { Date().timeIntervalSince($0) } ?? 0)
+    showTranscript(usage: transcript.usage)
     generating = false
-    thinking = false
     pendingPermission = nil
+    queuedPermissions = []
     streamingSession = nil
     do { try persist() } catch { errorMessage = String(describing: error) }
   }
 
   private func append(_ text: String, to sessionId: UUID) {
-    guard let index = workspace.sessions.firstIndex(where: { $0.id == sessionId }),
-          let last = workspace.sessions[index].messages.indices.last else { return }
-    workspace.sessions[index].messages[last].content += text
+    guard sessionId == streamingSession else { return }
+    notes += text
+    showTranscript()
   }
 }

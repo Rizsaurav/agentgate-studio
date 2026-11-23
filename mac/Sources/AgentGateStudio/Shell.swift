@@ -32,7 +32,6 @@ struct Shell: View {
     .sheet(isPresented: $app.paletteOpen) { CommandPalette().environment(app) }
     .sheet(isPresented: $app.agentPanelOpen) { AgentPanel().environment(app) }
     .sheet(item: $app.stepDetail) { StepSheet(step: $0).environment(app) }
-    .sheet(isPresented: $app.activityOpen) { ActivitySheet().environment(app) }
     .sheet(item: $app.planReview) { PlanReviewSheet(review: $0).environment(app) }
   }
 

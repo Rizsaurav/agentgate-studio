@@ -81,12 +81,23 @@ struct SessionPage: View {
           ScrollView {
             LazyVStack(alignment: .leading, spacing: 18) {
               ForEach(session.messages) { message in
-                Turn(message: message, thinking: app.thinking && message.id == session.messages.last?.id).id(message.id)
+                let live = app.generating && message.id == session.messages.last?.id
+                Group {
+                  if message.role == .assistant {
+                    AgentTurnView(message: message, live: live)
+                  } else {
+                    UserTurn(message: message)
+                  }
+                }
+                .id(message.id)
               }
+              Color.clear.frame(height: 1).id("bottom")
             }
             .padding(22)
           }
-          .onChange(of: session.messages.last?.content) { proxy.scrollTo(session.messages.last?.id, anchor: .bottom) }
+          // Follow the turn as it grows: new text, new steps, new output, a question.
+          .onChange(of: session.messages.last) { proxy.scrollTo("bottom", anchor: .bottom) }
+          .onChange(of: app.pendingPermission?.id) { proxy.scrollTo("bottom", anchor: .bottom) }
         }
       }
       composer(session)
@@ -156,21 +167,17 @@ struct SessionPage: View {
   }
 }
 
-private struct Turn: View {
+private struct UserTurn: View {
   let message: ChatMessage
-  let thinking: Bool
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
-      Text(message.role == .user ? "YOU" : "MODEL").font(.system(size: 10, weight: .semibold)).tracking(0.6)
-        .foregroundStyle(message.role == .user ? Theme.muted : Theme.accent)
-      if message.content.isEmpty {
-        Text(thinking ? "Thinking…" : "Generating…").foregroundStyle(Theme.muted)
-      } else {
-        Text(LocalizedStringKey(message.content)).textSelection(.enabled).lineSpacing(3)
-      }
+      Text("YOU").font(.system(size: 10, weight: .semibold)).tracking(0.6).foregroundStyle(Theme.muted)
+      Text(message.content).textSelection(.enabled).lineSpacing(3)
     }
     .font(.system(size: 14))
+    .padding(12)
     .frame(maxWidth: .infinity, alignment: .leading)
+    .background(RoundedRectangle(cornerRadius: 12).fill(Theme.text.opacity(0.04)))
   }
 }
