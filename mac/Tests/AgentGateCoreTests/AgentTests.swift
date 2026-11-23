@@ -45,5 +45,14 @@ private func decode(_ json: String) -> AgentEvent? { AgentEventDecoder.decode(Da
     #expect((provider["options"] as? [String: String])?["baseURL"] == "http://127.0.0.1:1234/v1")
     let limit = ((provider["models"] as? [String: Any])?["qwen"] as? [String: Any])?["limit"] as? [String: Int]
     #expect(limit?["context"] == 32768)
+    // The lean agent: its own short prompt, unused tools off, no background work.
+    #expect(json["default_agent"] as? String == "agentgate")
+    let agent = try #require((json["agent"] as? [String: Any])?["agentgate"] as? [String: Any])
+    let prompt = try #require(agent["prompt"] as? String)
+    #expect(prompt.count < 1500 && prompt.contains("Stay inside the project folder"))
+    let tools = try #require(json["tools"] as? [String: Bool])
+    for tool in ["task", "todowrite", "question", "skill", "webfetch"] { #expect(tools[tool] == false, "\(tool)") }
+    for tool in ["bash", "read", "edit", "write", "glob", "grep"] { #expect(tools[tool] == nil, "\(tool) must stay on") }
+    #expect(json["lsp"] as? Bool == false && json["formatter"] as? Bool == false && json["snapshot"] as? Bool == false)
   }
 }

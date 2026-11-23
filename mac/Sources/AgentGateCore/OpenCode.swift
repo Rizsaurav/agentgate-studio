@@ -293,11 +293,36 @@ public final class AgentServer: @unchecked Sendable {
         "bash": "ask", "edit": "ask", "read": "ask", "glob": "ask", "grep": "ask", "list": "ask",
         "webfetch": "deny", "external_directory": "deny",
       ],
+      // A lean agent: the harness's general prompt and unused tools are about 11K tokens the model
+      // would read before every first answer (27 s to the first word on a 4B model, 4.5 s without).
+      "agent": [agentName: ["description": "Coding agent for the user's project", "mode": "primary", "prompt": agentPrompt]],
+      "default_agent": agentName,
+      "tools": Dictionary(uniqueKeysWithValues: unusedTools.map { ($0, false) }),
+      // No language servers, formatters or per-step git snapshots: background work the app does not use.
+      "lsp": false, "formatter": false, "snapshot": false,
     ]
     // The harness's own compaction and tool-output cut-off, sized to this context (checked against OpenCode 1.19.5).
     config.merge(budget.harnessSettings) { _, new in new }
     return String(decoding: try JSONSerialization.data(withJSONObject: config), as: UTF8.self)
   }
+
+  static let agentName = "agentgate"
+
+  /// Tools the agent never needs here: sub-agents, to-do lists, questions, skills, and web fetches (denied anyway).
+  static let unusedTools = ["task", "todowrite", "question", "skill", "webfetch"]
+
+  /// The agent's whole system prompt, in place of the harness's general one: short, because a local
+  /// model reads it before every first answer.
+  static let agentPrompt = """
+    You are a coding agent working in the user's project folder on their Mac.
+    Do the task with the tools you have: read, glob and grep to look, edit and write to change files, bash to run commands.
+    - Look before you change: read the files you will edit.
+    - Keep changes small and focused on the task. Match the project's existing style.
+    - After a change, run the project's own build or tests when they exist, and fix what fails.
+    - Stay inside the project folder. Never touch keys, credentials or files outside it.
+    - If a tool call is refused, read the reason, correct the call and continue.
+    - Be brief. When done, say in one or two sentences what you changed and how you checked it.
+    """
 
   public static func start(
     folder: URL, engineURL: URL, engineKey: String, model: String, context: Int,
