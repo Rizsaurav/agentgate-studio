@@ -50,23 +50,21 @@ public struct GitHubRepo: Sendable, Equatable, Hashable, CustomStringConvertible
     process.standardOutput = out
     process.standardError = FileHandle.nullDevice
     process.standardInput = FileHandle.nullDevice
+    let exited = DispatchSemaphore(value: 0)
+    process.terminationHandler = { _ in exited.signal() }
     do { try process.run() } catch { return (nil, false) }
-    let killed = Flag()
-    DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
-      if process.isRunning { killed.set(); process.terminate() }
+    // The deadline is kept on this thread: a timer on a shared queue can fire late when the machine is
+    // busy, and a hung git would then be reported as finished. Output is read after exit; these
+    // commands print a line or two, far below a pipe's buffer.
+    if exited.wait(timeout: .now() + timeout) == .timedOut, process.isRunning {
+      process.terminate()
+      process.waitUntilExit()
+      return (nil, true)
     }
-    let data = out.fileHandleForReading.readDataToEndOfFile()
     process.waitUntilExit()
-    if killed.value { return (nil, true) }
+    let data = out.fileHandleForReading.readDataToEndOfFile()
     return (process.terminationStatus == 0 ? String(decoding: data, as: UTF8.self) : nil, false)
   }
-}
-
-final class Flag: @unchecked Sendable {
-  private let lock = NSLock()
-  private var raised = false
-  func set() { lock.withLock { raised = true } }
-  var value: Bool { lock.withLock { raised } }
 }
 
 public struct WorkflowRun: Decodable, Sendable, Identifiable, Equatable {
