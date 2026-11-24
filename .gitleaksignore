@@ -1,0 +1,10 @@
+# Deliberate fake keys in the secret-detection and redaction tests (see each file and line below).
+# Listed by fingerprint, so a real key added anywhere, tests included, is still found.
+156049d8b12cd0d8504172e99e9ceaaed2acee42:packages/controller/src/project-import.test.ts:generic-api-key:92
+27af9a08cea4ac449763d3dbf8aac2a14c253993:mac/Tests/AgentGateCoreTests/TraceTests.swift:curl-auth-header:102
+e062b440ac3da702f1e26a259d37c324703071b2:packages/controller/src/custom-endpoint.test.ts:generic-api-key:76
+60186a8a48c787685a09b09ec35bd7130aad0ba9:packages/controller/src/cloud.test.ts:generic-api-key:85
+60186a8a48c787685a09b09ec35bd7130aad0ba9:packages/controller/src/cloud.test.ts:generic-api-key:89
+5b731068fdc31db1d85c9ea09c6828c00622a8f8:packages/controller/src/knowledge.test.ts:aws-access-token:75
+5b731068fdc31db1d85c9ea09c6828c00622a8f8:packages/controller/src/knowledge.test.ts:generic-api-key:235
+4031af6e20d664b6936db080cbe5ac952b848a59:packages/controller/src/security.test.ts:generic-api-key:115
