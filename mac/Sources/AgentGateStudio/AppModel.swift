@@ -785,7 +785,7 @@ final class AppModel {
     agentConnected = false
     let server = try await AgentServer.start(
       folder: folder, engineURL: runtime.baseURL, engineKey: runtime.apiKey, model: runtime.alias,
-      // The harness's own instructions and tools take about 12K tokens; it must know the model's real context.
+      // The harness must know the model's real context to size its own compaction.
       context: active?.config.context ?? ModelPlanner.preferredContext)
     agent = server
     eventTask = Task { [weak self] in
