@@ -12,7 +12,11 @@ struct ProfilePage: View {
   var body: some View {
     PageScroll {
       VStack(alignment: .leading, spacing: 30) {
-        Text("Profile").font(.system(size: 30, weight: .bold)).tracking(-0.6)
+        HStack {
+          Text("Profile").font(.system(size: 30, weight: .bold)).tracking(-0.6)
+          Spacer()
+          Button { app.route = .settings } label: { Label("Settings", systemImage: "gearshape") }
+        }
         agent
         keys
         TokenUsageSection()

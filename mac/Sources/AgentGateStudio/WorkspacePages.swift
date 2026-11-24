@@ -181,7 +181,12 @@ struct ProjectPage: View {
                   }
                   .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
                   .accessibilityLabel("Model")
-                  .onAppear { if modelId.isEmpty { modelId = app.active?.id ?? app.installed.first?.id ?? "" } }
+                  .onAppear {
+                    if modelId.isEmpty {
+                      let preferred = app.defaultModelId.flatMap { id in app.installed.first { $0.id == id }?.id }
+                      modelId = preferred ?? app.active?.id ?? app.installed.first?.id ?? ""
+                    }
+                  }
                   Button("New chat") {
                     if let model = app.installed.first(where: { $0.id == modelId }) {
                       app.startSession(in: projectId, with: model)

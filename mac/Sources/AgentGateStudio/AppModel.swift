@@ -25,6 +25,7 @@ enum Route: Hashable {
   case security
   case models
   case profile
+  case settings
 }
 
 @MainActor @Observable
@@ -137,17 +138,71 @@ final class AppModel {
     workspace.sessions.filter { $0.projectId == project }.sorted { $0.createdAt > $1.createdAt }
   }
 
-  /// Where new projects are created: a visible folder in Documents.
-  static var projectsRoot: URL {
+  /// Where new projects are created: the folder chosen in Settings, or a visible folder in Documents.
+  var projectsRoot: URL { projectsFolder.map { URL(fileURLWithPath: $0, isDirectory: true) } ?? Self.defaultProjectsRoot }
+
+  static var defaultProjectsRoot: URL {
     FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
       .appendingPathComponent("AGENTGATE Projects", isDirectory: true)
+  }
+
+  // MARK: Settings (#113). Kept in this Mac's preferences for the app, never in a project folder.
+  // Nothing here reaches the command and file rules (ToolPolicy) or the questions they ask.
+
+  /// The installed model new chats start with; nil means the loaded one.
+  var defaultModelId: String? = UserDefaults.standard.string(forKey: "defaultModel") {
+    didSet { UserDefaults.standard.set(defaultModelId, forKey: "defaultModel") }
+  }
+
+  /// Where new projects are created; nil means the default in Documents.
+  var projectsFolder: String? = UserDefaults.standard.string(forKey: "projectsFolder") {
+    didSet { UserDefaults.standard.set(projectsFolder, forKey: "projectsFolder") }
+  }
+
+  /// When on, task descriptions typed into the model advisor never leave this Mac: fixed rules read them.
+  var advisorLocalOnly = UserDefaults.standard.bool(forKey: "advisorLocalOnly") {
+    didSet { UserDefaults.standard.set(advisorLocalOnly, forKey: "advisorLocalOnly") }
+  }
+
+  /// Asks which folder new projects go in.
+  func chooseProjectsFolder() {
+    let panel = NSOpenPanel()
+    panel.canChooseDirectories = true
+    panel.canChooseFiles = false
+    panel.canCreateDirectories = true
+    panel.prompt = "Use This Folder"
+    panel.message = "New projects are created in this folder."
+    guard panel.runModal() == .OK, let url = panel.url else { return }
+    projectsFolder = url.path
+  }
+
+  /// Deletes partial downloads. Not while an install runs, since its partial file is in use.
+  func removePartialDownloads() -> String {
+    guard installing == nil else { return "An install is running; try again when it is done." }
+    do {
+      let freed = try Storage.removePartialDownloads(in: store.root)
+      return freed == 0 ? "There were no partial downloads." : "Freed \(ModelPlanner.gb(freed))."
+    } catch {
+      return "Could not delete them: \(error)"
+    }
+  }
+
+  func clearLogs() -> String {
+    do {
+      try AuditLog().clear()
+      try securityLog.clear()
+      securityEntries = []
+      return "The repair audit and the security log are empty. The rules still apply."
+    } catch {
+      return "Could not clear the logs: \(error)"
+    }
   }
 
   /// Creates a project with a new folder of the same name.
   func createProject(named name: String) -> Bool {
     do {
       let valid = try WorkspaceStore.validName(name)
-      let folder = Self.projectsRoot.appendingPathComponent(valid.replacingOccurrences(of: "/", with: "-"), isDirectory: true)
+      let folder = projectsRoot.appendingPathComponent(valid.replacingOccurrences(of: "/", with: "-"), isDirectory: true)
       try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
       return add(Project(id: UUID(), name: valid, createdAt: Date(), folder: folder.path))
     } catch {
@@ -560,7 +615,9 @@ final class AppModel {
       defer { advising = false }
       var needs = TaskNeeds.fromKeywords(task)
       var source = "Read by fixed rules."
-      if agentOn {
+      if advisorLocalOnly {
+        source = "Read by fixed rules on this Mac (Settings)."
+      } else if agentOn {
         do {
           needs = try await supervisor().needs(for: task)
           source = "Read by \(activeAgent.name)."
