@@ -80,7 +80,13 @@
      "repo": "mlx-community/Qwen3-0.6B-4bit",
      "bytes": 335450584
     }
-   ]
+   ],
+   "toolScore": {
+    "passRate": 0.7111,
+    "quant": "Q8_0",
+    "engine": "llama.cpp b11765",
+    "measured": "2026-11-17"
+   }
   },
   {
    "id": "qwen3-1.7b",
@@ -125,7 +131,13 @@
      "repo": "mlx-community/Qwen3-1.7B-4bit",
      "bytes": 968080210
     }
-   ]
+   ],
+   "toolScore": {
+    "passRate": 0.7556,
+    "quant": "Q8_0",
+    "engine": "llama.cpp b11765",
+    "measured": "2026-11-17"
+   }
   },
   {
    "id": "llama-3.2-3b",
