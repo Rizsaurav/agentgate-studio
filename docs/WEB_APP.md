@@ -148,7 +148,7 @@ Live-service tests are skipped unless `AGENTGATE_OLLAMA_URL` + `AGENTGATE_OLLAMA
 - Reference documents: `.md`/`.txt` files up to 200 KB from one folder (`AGENTGATE_DOCS_ROOT`), non-recursive.
 - Answers appear after generation finishes, because model text is held until it has been inspected.
 - Prompt-injection detection is LLM Guard's classifier (threshold 0.9). It can miss attacks and flag benign text, for example it flags credential-seeking questions such as "What is the admin key?". Deterministic rules cover only well-known credential formats, a few destructive operations, and data-carrying links.
-- The tiny local models used in verification (0.4–0.5B parameters) often answer poorly even with correct context; automated tests assert retrieval, context, and enforcement, not answer quality.
+- The tiny local models used in verification (0.4B to 0.5B parameters) often answer poorly even with correct context; automated tests assert retrieval, context, and enforcement, not answer quality.
 - The required evaluation suite uses a scripted model fixture. It proves the application stops unsafe content whatever a model says, not that any real model behaves safely. No live-model evaluation suite exists.
 - Browser E2E runs in CI (`.github/workflows/e2e.yml`) on every pull request and nightly, with two tiny Ollama models, so it shows the app works, not that answers are good. Tests are never retried; a flaky test is tagged `@quarantine` and runs only nightly until fixed.
 - `npm run setup` installs Ollama automatically only on macOS with Homebrew; on other systems it links to the download. Model downloads are tracked in memory (Ollama resumes a partial download after a restart). Local model sizes and memory needs on the Models page are approximate.
