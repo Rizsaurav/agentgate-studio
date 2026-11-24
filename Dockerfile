@@ -4,7 +4,7 @@
 
 # Build stage: has the compiler that better-sqlite3 needs when no prebuilt binary matches.
 # Base images are pinned by digest (same bytes for everyone); Dependabot proposes updates.
-FROM node:24-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c AS build
+FROM node:25-bookworm-slim@sha256:81db02c4b671288a03915da9534dbd54f96d0e7c24d80ccc54f5b36b2e684370 AS build
 RUN apt-get update \
  && apt-get install -y --no-install-recommends python3 make g++ \
  && rm -rf /var/lib/apt/lists/*
@@ -31,7 +31,7 @@ CMD ["npm", "run", "eval"]
 
 # Application: the standalone server and its traced dependencies only. No compiler, no dev tools,
 # no evaluation suite.
-FROM node:24-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c
+FROM node:25-bookworm-slim@sha256:81db02c4b671288a03915da9534dbd54f96d0e7c24d80ccc54f5b36b2e684370
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     AGENTGATE_DATA_DIR=/data \
