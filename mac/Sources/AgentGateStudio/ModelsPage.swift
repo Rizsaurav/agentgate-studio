@@ -102,6 +102,7 @@ struct ModelsPage: View {
           .buttonStyle(PrimaryButtonStyle()).disabled(task.trimmingCharacters(in: .whitespaces).isEmpty || app.advising)
       }
       if let note = app.advisorNote { Text(note).font(.system(size: 12)).foregroundStyle(Theme.muted) }
+      if case .cloudSuggested(let reason, let offers) = app.taskRoute { CloudOffers(reason: reason, offers: offers) }
       if !app.suggestions.isEmpty {
         HStack(alignment: .top, spacing: 14) {
           ForEach(Array(app.suggestions.enumerated()), id: \.element.id) { index, pick in
@@ -279,5 +280,44 @@ private struct CatalogRow: View {
   private var help: String {
     if case .incompatible(let reason) = option.state { return reason }
     return option.plan?.reason ?? ""
+  }
+}
+
+/// Cloud models for a task this Mac cannot do well, with prices. Shown only after local options; choosing sends nothing.
+private struct CloudOffers: View {
+  @Environment(AppModel.self) private var app
+  let reason: String
+  let offers: [CloudOffer]
+
+  var body: some View {
+    Card(padding: 14) {
+      VStack(alignment: .leading, spacing: 8) {
+        HStack(spacing: 8) {
+          Image(systemName: "cloud").foregroundStyle(Theme.muted).accessibilityHidden(true)
+          Text("This Mac may not be enough").font(.system(size: 13, weight: .semibold))
+        }
+        Text(reason).font(.system(size: 12)).foregroundStyle(Theme.muted)
+        if offers.isEmpty {
+          Text("Add an OpenRouter key on Profile to see cloud models with their prices. Local models stay the default.")
+            .font(.system(size: 12)).foregroundStyle(Theme.muted)
+        }
+        ForEach(offers) { offer in
+          HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+              Text(offer.name).font(.system(size: 12, weight: .medium))
+              Text("\(offer.priceLabel) · \(offer.context / 1024)K context").font(.system(size: 11)).foregroundStyle(Theme.muted)
+            }
+            Spacer()
+            if app.chosenCloud == offer {
+              StatusPill(text: "Chosen", tone: .ok)
+            } else {
+              Button("Choose") { app.chooseCloud(offer) }.controlSize(.small)
+                .accessibilityLabel("Choose \(offer.name), \(offer.priceLabel)")
+            }
+          }
+        }
+        Text("Nothing is sent to a cloud model unless you choose one.").font(.system(size: 11)).foregroundStyle(Theme.muted)
+      }
+    }
   }
 }
