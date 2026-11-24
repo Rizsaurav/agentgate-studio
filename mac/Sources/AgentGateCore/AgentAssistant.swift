@@ -23,6 +23,8 @@ public struct AgentAssistant: RepairAssistant {
   public var session: URLSession
   /// Called with each reply's provider-reported usage (nil when the reply had none), for the token counter.
   public var onUsage: (@Sendable (TokenUsage?) -> Void)?
+  /// Checks the spending limits before every request and records each reply's cost. Nil: no limits.
+  public var costGuard: CostGuard?
 
   public init(
     profile: AgentProfile = .builtIn, baseURL: URL? = nil,
@@ -47,7 +49,11 @@ public struct AgentAssistant: RepairAssistant {
       "messages": [["role": "system", "content": system], ["role": "user", "content": user]],
     ]
     if json { body["response_format"] = ["type": "json_object"] }
-    if profile.isOpenRouter { body["reasoning"] = ["enabled": false] }
+    if profile.isOpenRouter {
+      body["reasoning"] = ["enabled": false]
+      // Ask for the reply's cost, so spending limits use what OpenRouter actually charged.
+      body["usage"] = ["include": true]
+    }
     if webSearch { body["plugins"] = [["id": "web", "max_results": 3]] }
     return body
   }
@@ -80,11 +86,13 @@ public struct AgentAssistant: RepairAssistant {
         var message: Message
         var finish_reason: String?
       }
-      struct Usage: Decodable { var prompt_tokens: Int?; var completion_tokens: Int? }
+      struct Usage: Decodable { var prompt_tokens: Int?; var completion_tokens: Int?; var cost: Double? }
       var choices: [Choice]
       var usage: Usage?
     }
     for attempt in 1...2 {
+      // Nothing is sent once a limit is reached, including the retry.
+      try costGuard?.allowRequest()
       let (data, response) = try await session.data(for: request)
       guard let http = response as? HTTPURLResponse else { throw Failure.malformed }
       guard http.statusCode == 200 else { throw Failure.http(http.statusCode) }
@@ -92,6 +100,7 @@ public struct AgentAssistant: RepairAssistant {
         throw Failure.malformed
       }
       // Every reply is billed, including one retried below.
+      costGuard?.record(cost: reply.usage?.cost)
       onUsage?(reply.usage.flatMap { u in
         guard let prompt = u.prompt_tokens, let generated = u.completion_tokens else { return nil }
         return TokenUsage.reported(prompt: prompt, generated: generated)

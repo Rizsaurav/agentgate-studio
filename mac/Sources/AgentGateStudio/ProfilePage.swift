@@ -16,6 +16,7 @@ struct ProfilePage: View {
         agent
         keys
         TokenUsageSection()
+        CloudLimitsSection()
         shortcuts
       }
       .frame(maxWidth: 680, alignment: .leading)
@@ -179,5 +180,74 @@ private struct TokenUsageSection: View {
       }
     }
     .onAppear { app.loadTokenCounts() }
+  }
+}
+
+/// Spending limits for cloud models, and what has been spent today and this session.
+private struct CloudLimitsSection: View {
+  @Environment(AppModel.self) private var app
+  @State private var turn = ""
+  @State private var session = ""
+  @State private var day = ""
+  @State private var saved = false
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      Text("Cloud spending limits").font(.system(size: 16, weight: .semibold))
+      Text("Checked before every cloud request. Uses the cost the provider reports. Leave a field empty for no limit.")
+        .font(.system(size: 12)).foregroundStyle(Theme.muted)
+      Card(padding: 14) {
+        VStack(alignment: .leading, spacing: 10) {
+          HStack(spacing: 14) {
+            field("Per turn", $turn)
+            field("Per session", $session)
+            field("Per day", $day)
+            Button(saved ? "Saved" : "Save") { save() }.buttonStyle(PrimaryButtonStyle())
+          }
+          Divider()
+          HStack(spacing: 18) {
+            Text("Today: \(Spend.format(app.spentToday))\(app.cloudLimits.perDay.map { " of \(Spend.format($0))" } ?? "")")
+              .fontWeight(.medium)
+            Text("This session: \(Spend.format(app.costGuard.spentThisSession))").foregroundStyle(Theme.muted)
+            if app.costGuard.unpricedReplies > 0 {
+              Text("\(app.costGuard.unpricedReplies) without a reported cost").foregroundStyle(Theme.muted)
+            }
+          }
+          .font(.system(size: 12))
+          if let limit = app.cloudLimits.perDay, app.spentToday >= limit {
+            Text("Today's limit is reached. Nothing more is sent to cloud models until tomorrow.")
+              .font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.danger)
+          }
+        }
+      }
+    }
+    .onAppear {
+      app.refreshSpend()
+      turn = text(app.cloudLimits.perTurn)
+      session = text(app.cloudLimits.perSession)
+      day = text(app.cloudLimits.perDay)
+    }
+  }
+
+  private func field(_ label: String, _ value: Binding<String>) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text(label).font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.muted)
+      HStack(spacing: 2) {
+        Text("$").foregroundStyle(Theme.muted)
+        TextField("none", text: value).field().frame(width: 80).accessibilityLabel("\(label) limit in dollars")
+          .onChange(of: value.wrappedValue) { saved = false }
+      }
+    }
+  }
+
+  private func text(_ value: Double?) -> String { value.map { String(format: "%.2f", $0) } ?? "" }
+
+  private func save() {
+    func number(_ text: String) -> Double? { Double(text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "$", with: "")) }
+    app.setCloudLimits(CloudLimits(perTurn: number(turn), perSession: number(session), perDay: number(day)))
+    turn = text(app.cloudLimits.perTurn)
+    session = text(app.cloudLimits.perSession)
+    day = text(app.cloudLimits.perDay)
+    saved = true
   }
 }
