@@ -97,12 +97,14 @@ private actor Calls {
     let rig = try RepairRunnerTests.Rig()
     defer { try? FileManager.default.removeItem(at: rig.dir) }
     let (runner, _) = runner(rig, reply: Self.twoRisky, timeout: .milliseconds(200)) { _, _ in
-      try? await Task.sleep(for: .seconds(30))
+      // An approver who never answers: the run must not wait for it.
+      try? await Task.sleep(for: .seconds(3600))
       return true
     }
     let started = Date()
     let error = await rig.run(runner)
-    #expect(Date().timeIntervalSince(started) < 10)
+    // Far below the approver's hour, with room for a busy CI runner.
+    #expect(Date().timeIntervalSince(started) < 60)
     guard case .unrepaired(_, let why) = error else { Issue.record("expected unrepaired, got \(String(describing: error))"); return }
     #expect(why.contains("No answer came"))
     #expect(try rig.store.load("old-model") != nil)
