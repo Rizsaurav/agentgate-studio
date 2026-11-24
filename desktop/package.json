@@ -1,0 +1,26 @@
+{
+  "name": "agentgate-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "compile": "tsc",
+    "test": "node --test test/*.test.mjs",
+    "prepare:app": "node scripts/prepare.mjs",
+    "dev": "npm run compile && electron .",
+    "build": "npm run typecheck && npm test && npm run compile && npm run prepare:app && node scripts/package.mjs"
+  },
+  "devDependencies": {
+    "@electron/packager": "20.3.0",
+    "@types/node": "24.19.2",
+    "electron": "45.2.1",
+    "node": "24.22.2",
+    "typescript": "7.0.2"
+  },
+  "overrides": {
+    "glob": "14.0.3",
+    "minimatch": "11.0.4"
+  }
+}

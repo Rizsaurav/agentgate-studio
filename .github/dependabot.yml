@@ -1,0 +1,18 @@
+# Base images are pinned by digest so every teammate builds the same thing. Dependabot opens a
+# pull request when a new digest is published for the same tag, so pinning does not freeze security
+# fixes. Updates target `dev`, like all other work.
+version: 2
+updates:
+  - package-ecosystem: docker
+    directories: ['/', '/scanner']
+    target-branch: dev
+    schedule:
+      interval: weekly
+    groups:
+      base-images:
+        patterns: ['*']
+  - package-ecosystem: docker-compose
+    directory: '/'
+    target-branch: dev
+    schedule:
+      interval: weekly

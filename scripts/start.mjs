@@ -2,7 +2,8 @@
 // Starts everything the app needs, waits until it is ready, and opens the Models page.
 // Ctrl+C stops what this script started. Flags: --rebuild, --no-open.
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,6 +16,9 @@ const scannerPort = Number(process.env.AGENTGATE_SCANNER_PORT ?? 8765);
 const scannerUrl =
   process.env.AGENTGATE_SCANNER_URL ?? `http://127.0.0.1:${scannerPort}`;
 const started = [];
+// Next.js sends anonymous usage data unless told not to; nothing leaves this computer by default.
+// Inherited by the build and the server below. The Docker image and Mac app set the same.
+process.env.NEXT_TELEMETRY_DISABLED ??= '1';
 
 const say = (message) => console.log(`[agentgate] ${message}`);
 async function up(url) {
@@ -31,11 +35,11 @@ async function waitFor(url, seconds) {
   }
   return false;
 }
-function launch(name, command, args, env = {}) {
+function launch(name, command, args, env = {}, quiet = false) {
   const child = spawn(command, args, {
     cwd: root,
     env: { ...process.env, ...env },
-    stdio: ['ignore', 'ignore', 'inherit'],
+    stdio: ['ignore', 'ignore', quiet ? 'ignore' : 'inherit'],
   });
   child.on('exit', (code, signal) => {
     if (!shuttingDown)
@@ -53,14 +57,32 @@ function shutdown() {
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
-// 1. Local models.
+// 1. Local models. Ollama is optional: it starts here only if models are already installed;
+// otherwise the app starts it when someone installs a local model. API keys work without it.
+const ollamaModels = join(
+  process.env.OLLAMA_MODELS ?? join(homedir(), '.ollama', 'models'),
+  'manifests',
+);
+const hasLocalModels =
+  existsSync(ollamaModels) && readdirSync(ollamaModels).length > 0;
 if (await up(`${ollamaUrl}/api/version`)) {
   say('Ollama is already running.');
+} else if (!hasLocalModels) {
+  say(
+    'No local models yet. Use an API key, or install a local model in the app (Ollama starts then).',
+  );
 } else if (
   spawnSync('ollama', ['--version'], { stdio: 'ignore' }).status === 0
 ) {
   say('Starting Ollama…');
-  launch('Ollama', 'ollama', ['serve']);
+  // Ollama logs every request to stderr; keep the terminal for our own messages.
+  launch(
+    'Ollama',
+    'ollama',
+    ['serve'],
+    { OLLAMA_KEEP_ALIVE: process.env.OLLAMA_KEEP_ALIVE ?? '30m' },
+    true,
+  );
   if (!(await waitFor(`${ollamaUrl}/api/version`, 30)))
     say('Ollama did not start; local models will be unavailable.');
 } else {
@@ -88,10 +110,28 @@ if (await up(`${scannerUrl}/health`)) {
   );
 }
 
-// 3. The app.
+// 3. The app. Rebuild when the source changed since the last build (for example after git pull).
 const build = join(root, 'apps', 'web', '.next', 'BUILD_ID');
-if (!existsSync(build) || process.argv.includes('--rebuild')) {
-  say('Building the app (one time)…');
+function newestChange(dir) {
+  let newest = 0;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (['node_modules', '.next'].includes(entry.name)) continue;
+    const path = join(dir, entry.name);
+    newest = Math.max(
+      newest,
+      entry.isDirectory() ? newestChange(path) : statSync(path).mtimeMs,
+    );
+  }
+  return newest;
+}
+const stale =
+  !existsSync(build) ||
+  Math.max(
+    newestChange(join(root, 'apps', 'web')),
+    newestChange(join(root, 'packages', 'controller', 'src')),
+  ) > statSync(build).mtimeMs;
+if (stale || process.argv.includes('--rebuild')) {
+  say('Building the app…');
   const built = spawnSync('npm', ['run', 'build'], {
     cwd: root,
     stdio: 'inherit',
@@ -114,8 +154,6 @@ launch(
     String(port),
   ],
   {
-    AGENTGATE_DOCS_ROOT:
-      process.env.AGENTGATE_DOCS_ROOT ?? join(root, 'fixtures'),
     AGENTGATE_SCANNER_URL: scannerUrl,
   },
 );

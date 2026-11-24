@@ -1,7 +1,16 @@
 import { randomUUID } from 'node:crypto';
-import { readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
+import {
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import {
   basename,
+  dirname,
   extname,
   isAbsolute,
   join,
@@ -10,11 +19,14 @@ import {
 } from 'node:path';
 import type Database from 'better-sqlite3';
 import { z } from 'zod';
-import { detectSecrets } from './policy';
+import { detectSecrets, safeExcerpt } from './policy';
+import { projectDocumentPathSchema } from './project-import';
 import { projectIdSchema, type ProjectRepository } from './projects';
 
 const MAX_FILE_BYTES = 200_000;
 const MAX_FILES = 50;
+const MAX_UPLOADS = 10;
+const UPLOAD_FOLDER = 'uploads';
 const MAX_CHUNK_CHARS = 800;
 const ALLOWED_EXTENSIONS = ['.md', '.txt'];
 export const DEFAULT_PASSAGES = 4;
@@ -29,6 +41,8 @@ export const documentSchema = z
     status: documentStatusSchema,
     createdAt: z.iso.datetime(),
     chunkCount: z.number().int().nonnegative(),
+    /** Passages the scanner flagged; they never reach a model unless the user releases them. */
+    withheld: z.number().int().nonnegative(),
   })
   .strict();
 export type Document = z.infer<typeof documentSchema>;
@@ -39,6 +53,8 @@ export const passageSchema = z
     path: z.string(),
     seq: z.number().int(),
     text: z.string(),
+    /** The user reviewed this flagged passage and released it, so it is not scanned again. */
+    released: z.boolean(),
   })
   .strict();
 export type Passage = z.infer<typeof passageSchema>;
@@ -54,16 +70,22 @@ export type NewDocument = {
   projectId: string;
   title: string;
   path: string;
-  status: Document['status'];
   createdAt: string;
   chunks: string[];
+  /** Indexes into `chunks` that the scanner flagged. */
+  withheld: number[];
 };
 export interface DocumentRepository {
   add(document: NewDocument): void;
   list(projectId: string): Document[];
   remove(projectId: string, id: string): void;
   search(projectId: string, ftsQuery: string, limit: number): Passage[];
-  quarantine(projectId: string, id: string): void;
+  withhold(projectId: string, documentId: string, seqs: number[]): void;
+  release(projectId: string, documentId: string, seq: number): boolean;
+  withheldPassages(
+    projectId: string,
+    documentId: string,
+  ): { seq: number; text: string }[];
 }
 
 export type ReferenceResult = {
@@ -72,7 +94,7 @@ export type ReferenceResult = {
   skipped: { path: string; reason: string }[];
 };
 
-/** Decides whether an ingested document may be used; throws if it could not be checked. */
+/** Returns the indexes of chunks that must be withheld; throws if the document could not be checked. */
 export type DocumentScreen = (
   document: {
     projectId: string;
@@ -81,7 +103,37 @@ export type DocumentScreen = (
     path: string;
   },
   chunks: string[],
-) => Promise<{ allowed: true } | { allowed: false; reason: string }>;
+) => Promise<{ withheld: number[] }>;
+
+// Zero-width, bidirectional and Unicode tag characters can hide text from a reader but not from a model.
+const INVISIBLE =
+  /[\u0000-\u0008\u000b-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]|[\u{e0000}-\u{e007f}]/gu;
+
+/**
+ * Removes invisible characters and layout whitespace before chunking, so the scanner and the model
+ * read the same plain text. Text converted from PDFs is padded with runs of spaces that make
+ * ordinary prose look like injected instructions; Markdown keeps its indentation for code blocks.
+ */
+export function normalizeText(text: string, extension: string): string {
+  const keepIndent = extension === '.md';
+  return text
+    .replace(/\r\n?/g, '\n')
+    .replace(INVISIBLE, '')
+    .split('\n')
+    .map((line) => {
+      const indent = keepIndent ? (/^[ \t]*/.exec(line)?.[0] ?? '') : '';
+      return (
+        indent +
+        line
+          .slice(indent.length)
+          .replace(/[ \t]+/g, ' ')
+          .trim()
+      );
+    })
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
 
 /** Splits on blank lines, then packs paragraphs into chunks of bounded size. */
 export function chunkText(text: string): string[] {
@@ -131,17 +183,24 @@ export class SqliteDocuments implements DocumentRepository {
           document.projectId,
           document.title,
           document.path,
-          document.status,
+          document.withheld.length === document.chunks.length
+            ? 'quarantined'
+            : 'active',
           document.createdAt,
         );
       const insertChunk = this.db.prepare(
-        'INSERT INTO chunks (document_id, seq, text) VALUES (?, ?, ?)',
+        'INSERT INTO chunks (document_id, seq, text, state) VALUES (?, ?, ?, ?)',
       );
       const insertFts = this.db.prepare(
         'INSERT INTO chunks_fts (rowid, text) VALUES (?, ?)',
       );
       document.chunks.forEach((text, seq) => {
-        const { lastInsertRowid } = insertChunk.run(document.id, seq, text);
+        const { lastInsertRowid } = insertChunk.run(
+          document.id,
+          seq,
+          text,
+          document.withheld.includes(seq) ? 'withheld' : 'ok',
+        );
         insertFts.run(lastInsertRowid, text);
       });
     })();
@@ -152,19 +211,62 @@ export class SqliteDocuments implements DocumentRepository {
       this.db
         .prepare(
           `SELECT d.id, d.project_id AS projectId, d.title, d.path, d.status, d.created_at AS createdAt,
-                  (SELECT COUNT(*) FROM chunks c WHERE c.document_id = d.id) AS chunkCount
+                  (SELECT COUNT(*) FROM chunks c WHERE c.document_id = d.id) AS chunkCount,
+                  (SELECT COUNT(*) FROM chunks c WHERE c.document_id = d.id AND c.state = 'withheld') AS withheld
            FROM documents d WHERE d.project_id = ? ORDER BY d.created_at, d.id`,
         )
         .all(projectId),
     );
   }
 
-  quarantine(projectId: string, id: string): void {
+  withhold(projectId: string, documentId: string, seqs: number[]): void {
+    this.db.transaction(() => {
+      const mark = this.db.prepare(
+        `UPDATE chunks SET state = 'withheld' WHERE document_id = ? AND seq = ? AND state = 'ok'
+         AND document_id IN (SELECT id FROM documents WHERE project_id = ?)`,
+      );
+      for (const seq of seqs) mark.run(documentId, seq, projectId);
+      this.refreshStatus(projectId, documentId);
+    })();
+  }
+
+  release(projectId: string, documentId: string, seq: number): boolean {
+    return this.db.transaction(() => {
+      const { changes } = this.db
+        .prepare(
+          `UPDATE chunks SET state = 'released' WHERE document_id = ? AND seq = ? AND state = 'withheld'
+           AND document_id IN (SELECT id FROM documents WHERE project_id = ?)`,
+        )
+        .run(documentId, seq, projectId);
+      this.refreshStatus(projectId, documentId);
+      return changes > 0;
+    })();
+  }
+
+  withheldPassages(
+    projectId: string,
+    documentId: string,
+  ): { seq: number; text: string }[] {
+    return z.array(z.object({ seq: z.number().int(), text: z.string() })).parse(
+      this.db
+        .prepare(
+          `SELECT c.seq, c.text FROM chunks c JOIN documents d ON d.id = c.document_id
+             WHERE d.project_id = ? AND d.id = ? AND c.state = 'withheld' ORDER BY c.seq`,
+        )
+        .all(projectId, documentId),
+    );
+  }
+
+  /** A document is quarantined only when none of its passages may be used. */
+  private refreshStatus(projectId: string, documentId: string): void {
     this.db
       .prepare(
-        "UPDATE documents SET status = 'quarantined' WHERE project_id = ? AND id = ?",
+        `UPDATE documents SET status = CASE WHEN EXISTS
+           (SELECT 1 FROM chunks WHERE document_id = documents.id AND state != 'withheld')
+           THEN 'active' ELSE 'quarantined' END
+         WHERE project_id = ? AND id = ?`,
       )
-      .run(projectId, id);
+      .run(projectId, documentId);
   }
 
   remove(projectId: string, id: string): void {
@@ -187,15 +289,30 @@ export class SqliteDocuments implements DocumentRepository {
     return z.array(passageSchema).parse(
       this.db
         .prepare(
-          `SELECT d.id AS documentId, d.title, d.path, c.seq, c.text
+          `SELECT d.id AS documentId, d.title, d.path, c.seq, c.text, c.state = 'released' AS released
            FROM chunks_fts f
            JOIN chunks c ON c.id = f.rowid
            JOIN documents d ON d.id = c.document_id
-           WHERE chunks_fts MATCH ? AND d.project_id = ? AND d.status = 'active'
+           WHERE chunks_fts MATCH ? AND d.project_id = ? AND c.state != 'withheld'
            ORDER BY bm25(chunks_fts) LIMIT ?`,
         )
-        .all(ftsQuery, projectId, limit),
+        .all(ftsQuery, projectId, limit)
+        .map((row) => ({
+          ...(row as Record<string, unknown>),
+          released: (row as { released: number }).released === 1,
+        })),
     );
+  }
+}
+
+/** Writes a file only if it does not exist yet; returns whether it was written. */
+function writeNew(path: string, bytes: Uint8Array): boolean {
+  try {
+    writeFileSync(path, bytes, { flag: 'wx' });
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
+    throw error;
   }
 }
 
@@ -214,6 +331,101 @@ export class DocumentService {
 
   get configured(): boolean {
     return this.root !== null;
+  }
+
+  /**
+   * Saves uploaded files inside the reference folder and returns their paths for `reference`.
+   * Names are reduced to a safe basename; content is judged later by the same checks as any file.
+   */
+  store(files: { name: string; bytes: Uint8Array }[]): {
+    paths: string[];
+    rejected: { name: string; reason: string }[];
+  } {
+    if (this.root === null)
+      throw new Error('No reference document folder is configured.');
+    const folder = join(this.root, UPLOAD_FOLDER);
+    mkdirSync(folder, { recursive: true });
+    const paths: string[] = [];
+    const rejected: { name: string; reason: string }[] = [];
+    for (const file of files.slice(0, MAX_UPLOADS)) {
+      const name = basename(file.name)
+        .replace(/[^A-Za-z0-9._ -]/g, '_')
+        .replace(/^\.+/, '_');
+      if (!ALLOWED_EXTENSIONS.includes(extname(name)))
+        rejected.push({
+          name,
+          reason: 'Only .md and .txt files are supported.',
+        });
+      else if (file.bytes.length === 0)
+        rejected.push({ name, reason: 'The file is empty.' });
+      else if (file.bytes.length > MAX_FILE_BYTES)
+        rejected.push({ name, reason: 'The file is too large.' });
+      else {
+        // "wx" never overwrites: a name already used by an earlier upload gets a unique suffix.
+        const extension = extname(name);
+        const stem = name.slice(0, name.length - extension.length);
+        let saved = name;
+        if (!writeNew(join(folder, saved), file.bytes)) {
+          saved = `${stem}-${randomUUID().slice(0, 8)}${extension}`;
+          if (!writeNew(join(folder, saved), file.bytes))
+            throw new Error('The file could not be saved.');
+        }
+        paths.push(`${UPLOAD_FOLDER}/${saved}`);
+      }
+    }
+    for (const file of files.slice(MAX_UPLOADS))
+      rejected.push({
+        name: basename(file.name),
+        reason: `Only ${MAX_UPLOADS} files can be added at once.`,
+      });
+    return { paths, rejected };
+  }
+
+  /** Stores manifest-selected files under a unique confined folder for normal reference checks. */
+  storeProjectImport(files: { path: string; bytes: Uint8Array }[]): string[] {
+    const root = this.root;
+    if (root === null)
+      throw new Error('No reference document folder is configured.');
+    if (files.length === 0 || files.length > MAX_FILES)
+      throw new Error(`Import between 1 and ${MAX_FILES} documents.`);
+    const paths = files.map((file) =>
+      projectDocumentPathSchema.parse(file.path),
+    );
+    if (new Set(paths).size !== paths.length)
+      throw new Error('Imported document paths must be unique.');
+    for (const [index, file] of files.entries()) {
+      if (file.bytes.length === 0)
+        throw new Error(`The imported file ${paths[index]} is empty.`);
+      if (file.bytes.length > MAX_FILE_BYTES)
+        throw new Error(`The imported file ${paths[index]} is too large.`);
+    }
+
+    const uploadRoot = join(root, UPLOAD_FOLDER);
+    mkdirSync(uploadRoot, { recursive: true, mode: 0o700 });
+    const realUploadRoot = realpathSync(uploadRoot);
+    const uploadRootRelative = relative(root, realUploadRoot);
+    if (uploadRootRelative.startsWith('..') || isAbsolute(uploadRootRelative))
+      throw new Error('The upload folder is outside the reference folder.');
+
+    const folder = join(uploadRoot, `import-${randomUUID()}`);
+    mkdirSync(folder, { mode: 0o700 });
+    try {
+      return files.map((file, index) => {
+        const path = paths[index];
+        if (!path) throw new Error('An imported document path is missing.');
+        const target = join(folder, ...path.split('/'));
+        mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
+        const realParent = realpathSync(dirname(target));
+        const parentRelative = relative(folder, realParent);
+        if (parentRelative.startsWith('..') || isAbsolute(parentRelative))
+          throw new Error('An imported document path is outside its folder.');
+        writeFileSync(target, file.bytes, { flag: 'wx', mode: 0o600 });
+        return relative(root, target);
+      });
+    } catch (error) {
+      rmSync(folder, { recursive: true, force: true });
+      throw error;
+    }
   }
 
   async reference(input: unknown): Promise<ReferenceResult> {
@@ -244,7 +456,7 @@ export class DocumentService {
         skip(text.reason);
         continue;
       }
-      const chunks = chunkText(text);
+      const chunks = chunkText(normalizeText(text, extname(file)));
       if (detectSecrets(text).length > 0) {
         skip('Contains what looks like a credential, so it was not ingested.');
         continue;
@@ -260,7 +472,7 @@ export class DocumentService {
         path: display,
         createdAt: new Date().toISOString(),
       };
-      const verdict = await this.screen(
+      const { withheld } = await this.screen(
         {
           projectId,
           documentId: metadata.id,
@@ -269,23 +481,63 @@ export class DocumentService {
         },
         chunks,
       );
-      const status = verdict.allowed
-        ? ('active' as const)
-        : ('quarantined' as const);
-      this.repository.add({ ...metadata, status, chunks });
+      this.repository.add({ ...metadata, chunks, withheld });
       const document = documentSchema.parse({
         ...metadata,
-        status,
+        status: withheld.length === chunks.length ? 'quarantined' : 'active',
         chunkCount: chunks.length,
+        withheld: withheld.length,
       });
-      if (verdict.allowed) result.added.push(document);
-      else result.quarantined.push({ document, reason: verdict.reason });
+      if (document.status === 'active') result.added.push(document);
+      else
+        result.quarantined.push({
+          document,
+          reason: 'Every passage contains instructions aimed at the model.',
+        });
     }
     return result;
   }
 
-  quarantine(projectId: string, documentId: string): void {
-    this.repository.quarantine(projectId, documentId);
+  withhold(projectId: string, documentId: string, seqs: number[]): void {
+    this.repository.withhold(projectId, documentId, seqs);
+  }
+
+  /** Withheld passages for review, whole (a reviewer must see all of it), unless they hold a credential. */
+  withheldPassages(
+    projectId: unknown,
+    documentId: unknown,
+  ): { seq: number; excerpt: string }[] {
+    return this.repository
+      .withheldPassages(
+        projectIdSchema.parse(projectId),
+        z.uuid().parse(documentId),
+      )
+      .map(({ seq, text }) => ({
+        seq,
+        excerpt:
+          safeExcerpt(text, MAX_CHUNK_CHARS) ??
+          'Hidden: it looks like a credential.',
+      }));
+  }
+
+  /**
+   * The user reviewed a withheld passage and accepts it, so it reaches the model unscanned from now
+   * on. Returns what was released, for the security record, or null if nothing was withheld there.
+   */
+  release(
+    projectId: unknown,
+    documentId: unknown,
+    seq: unknown,
+  ): { document: Document; excerpt: string } | null {
+    const project = projectIdSchema.parse(projectId);
+    const id = z.uuid().parse(documentId);
+    const index = z.coerce.number().int().nonnegative().parse(seq);
+    const passage = this.withheldPassages(project, id).find(
+      (candidate) => candidate.seq === index,
+    );
+    if (!passage || !this.repository.release(project, id, index)) return null;
+    const document = this.list(project).find((d) => d.id === id);
+    return document ? { document, excerpt: passage.excerpt } : null;
   }
 
   list(projectId: unknown): Document[] {

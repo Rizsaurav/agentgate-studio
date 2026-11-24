@@ -75,7 +75,7 @@ describe('project persistence vertical slice', () => {
     const { filename, service } = setup();
     const raw = new Database(filename);
     raw
-      .prepare('INSERT INTO projects VALUES (?, ?, ?)')
+      .prepare('INSERT INTO projects (id, name, created_at) VALUES (?, ?, ?)')
       .run('invalid-id', 'Project', 'not-a-date');
     raw.close();
     expect(() => service.list()).toThrow();

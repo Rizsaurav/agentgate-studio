@@ -2,6 +2,7 @@
 import { useActionState } from 'react';
 import { startSession } from '@/app/actions';
 import { Button } from '@/components/ui/button';
+import { modelLabel } from '@/lib/model-label';
 
 export function StartSession({
   projectId,
@@ -29,7 +30,7 @@ export function StartSession({
           <optgroup key={group.provider} label={group.label}>
             {group.models.map((model) => (
               <option key={model} value={`${group.provider}/${model}`}>
-                {model}
+                {modelLabel(model)}
               </option>
             ))}
           </optgroup>

@@ -1,12 +1,7 @@
-import {
-  createModels,
-  createProvider,
-  type Api,
-  type Model,
-} from '@earendil-works/pi-ai';
-import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
+import type { Api, Model } from '@earendil-works/pi-ai';
 import type { StreamFn } from '@earendil-works/pi-agent-core';
 import { z } from 'zod';
+import { openAICompatibleRegistry } from './openai-compatible';
 import type { ModelRef } from './sessions';
 
 export const DEFAULT_OLLAMA_URL = 'http://127.0.0.1:11434';
@@ -71,33 +66,13 @@ export class OllamaCatalog implements AgentModels {
     const installed = await this.listInstalled();
     if (!installed.includes(ref.modelId))
       throw new Error(`Model ${ref.modelId} is not installed in Ollama.`);
-    const models: Model<'openai-completions'>[] = installed.map((id) => ({
-      id,
-      name: id,
-      api: 'openai-completions',
-      provider: 'ollama',
+    const registry = openAICompatibleRegistry({
+      id: 'ollama',
+      name: 'Ollama',
       baseUrl: `${this.baseUrl}/v1`,
-      reasoning: false,
-      input: ['text'],
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 32768,
-      maxTokens: 2048,
-      // Ollama's OpenAI-compatible endpoint has no `developer` role or reasoning effort.
-      compat: { supportsDeveloperRole: false, supportsReasoningEffort: false },
-    }));
-    const registry = createModels();
-    registry.setProvider(
-      createProvider({
-        id: 'ollama',
-        name: 'Ollama',
-        baseUrl: `${this.baseUrl}/v1`,
-        auth: {
-          apiKey: { name: 'Ollama', resolve: async () => ({ auth: {} }) },
-        },
-        models,
-        api: openAICompletionsApi(),
-      }),
-    );
+      modelIds: installed,
+      apiKey: null,
+    });
     const model = registry.getModel('ollama', ref.modelId);
     if (!model) throw new Error(`Model ${ref.modelId} could not be loaded.`);
     return {

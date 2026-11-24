@@ -1,0 +1,85 @@
+# One command for every teammate: `docker compose up --build`, then open http://localhost:3000.
+# Local models: by default the app uses Ollama on your computer (fast, uses your GPU on a Mac).
+# To run Ollama in a container instead: `docker compose --profile ollama up --build`
+# with AGENTGATE_OLLAMA_URL=http://ollama:11434 in .env (CPU only on macOS and Windows).
+name: agentgate
+
+services:
+  app:
+    build: .
+    ports:
+      # Loopback only, like the app itself: nothing on your network can reach it.
+      - '127.0.0.1:${PORT:-3000}:3000'
+    environment:
+      AGENTGATE_SCANNER_URL: http://scanner:8765
+      AGENTGATE_OLLAMA_URL: ${AGENTGATE_OLLAMA_URL:-http://host.docker.internal:11434}
+      # Optional keys. A container has no OS keychain, so keys come from the environment.
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      XAI_API_KEY: ${XAI_API_KEY:-}
+      AGENTGATE_CUSTOM_API_KEY: ${AGENTGATE_CUSTOM_API_KEY:-}
+      # To keep a key out of .env and the container environment, use a Docker secret instead:
+      # leave the variable above empty, uncomment these lines and the `secrets:` block at the end,
+      # and put the key in ./secrets/openrouter_api_key (git-ignored). Works for every key: NAME_FILE.
+      # OPENROUTER_API_KEY_FILE: /run/secrets/openrouter_api_key
+    # secrets:
+    #   - openrouter_api_key
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    volumes:
+      - data:/data
+    depends_on:
+      scanner:
+        condition: service_healthy
+      # Only with `--profile ollama`; without it the app uses Ollama on your computer.
+      ollama:
+        condition: service_healthy
+        required: false
+    restart: unless-stopped
+
+  # The evaluation suite, kept out of the application image. Only with the profile:
+  # `docker compose --profile evals run --rm --build evals` runs the required suite against the
+  # scanner container. No ports, no keys: it uses a scripted model.
+  evals:
+    profiles: [evals]
+    build:
+      context: .
+      target: evals
+    environment:
+      AGENTGATE_SCANNER_URL: http://scanner:8765
+    depends_on:
+      scanner:
+        condition: service_healthy
+
+  scanner:
+    build: ./scanner
+    volumes:
+      - model-cache:/home/scanner/.cache/huggingface
+    restart: unless-stopped
+
+  ollama:
+    profiles: ['ollama']
+    image: ollama/ollama:0.40.13@sha256:b2f0122c476bc9fe7ce679d8bb4bd555351e25e2554eefb156f61cb0a89cf429
+    volumes:
+      - ollama:/root/.ollama
+    # No ports: the app reaches it on the compose network, nothing outside the machine can.
+    healthcheck:
+      test: ['CMD', 'ollama', 'list']
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  data:
+  model-cache:
+  ollama:
+# secrets:
+#   openrouter_api_key:
+#     file: ./secrets/openrouter_api_key

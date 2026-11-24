@@ -1,18 +1,24 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { projectIdSchema } from '@agentgate/controller';
+import { PROVIDER_INFO, projectIdSchema } from '@agentgate/controller';
 import {
+  agentStore,
   cloud,
   context,
+  customEndpoint,
   documents,
   ollama,
   projects,
+  projectImports,
   sessions,
 } from '@/lib/controller';
-import { removeContext, removeReference } from '@/app/actions';
+import { releasePassage, removeContext, removeReference } from '@/app/actions';
 import { AddContext, AddReference } from '@/components/knowledge-forms';
 import { StartSession } from '@/components/start-session';
-import { Button } from '@/components/ui/button';
+import { Panel } from '@/components/panel';
+import { ModelSetup } from '@/components/model-setup';
+import { Icon } from '@/components/icon';
+import { CiStrip, ConnectRepository } from '@/components/ci-status';
 export const dynamic = 'force-dynamic';
 export default async function ProjectPage({
   params,
@@ -23,20 +29,23 @@ export default async function ProjectPage({
   if (!projectIdSchema.safeParse(id).success) notFound();
   const project = projects().find(id);
   if (!project) notFound();
-  const sessionList = sessions().listSessions(project.id);
+  const sessionList = sessions().listSessions(id);
   const installed = await ollama()
     .listInstalled()
-    .then((models) => ({ models, error: null }))
-    .catch((error: unknown) => ({
-      models: null,
-      error: error instanceof Error ? error.message : 'Ollama is unavailable.',
-    }));
-  const cloudStatus = await cloud().status();
-  const contextItems = context().list(project.id);
-  const preview = context().render(project.id);
-  const references = documents().list(project.id);
+    .then((models) => ({ models, error: false }))
+    .catch(() => ({ models: [] as string[], error: true }));
+  const cloudStatus = await cloud()
+    .status()
+    .catch(() => null);
+  const custom = await customEndpoint()
+    .status()
+    .catch(() => ({ configured: false as const }));
+  const contextItems = context().list(id),
+    preview = context().render(id),
+    references = documents().list(id);
+  const importMetadata = projectImports().find(id);
   const groups = [
-    ...(installed.models?.length
+    ...(installed.models.length
       ? [
           {
             label: 'Ollama (local)',
@@ -45,201 +54,300 @@ export default async function ProjectPage({
           },
         ]
       : []),
-    ...cloudStatus
+    ...(cloudStatus ?? [])
       .filter((entry) => entry.configured)
       .map((entry) => ({
-        label: `${entry.provider} (cloud)`,
+        label: PROVIDER_INFO[entry.provider].name,
         provider: entry.provider,
         models: entry.models,
       })),
+    ...(custom.configured
+      ? [{ label: custom.name, provider: 'custom', models: custom.models }]
+      : []),
   ];
   return (
     <>
-      <Link href="/" className="text-sm text-teal-800 hover:underline">
+      <Link href="/" className="breadcrumb-link">
         ← All projects
       </Link>
-      <p className="mb-4 mt-10 text-xs font-semibold uppercase tracking-widest text-teal-800">
-        Project / Saved locally
-      </p>
-      <h1 className="break-words text-4xl font-semibold tracking-tight">
-        {project.name}
-      </h1>
-      <section
-        aria-labelledby="details-title"
-        className="mt-10 rounded-xl border border-stone-300 bg-white p-6 sm:p-8"
-      >
-        <h2 id="details-title" className="text-xl font-semibold">
-          Your project is ready to reopen.
-        </h2>
-        <p className="mt-3 max-w-xl text-sm leading-6 text-stone-600">
-          This record is persisted in SQLite. Refresh the page or restart the
-          application and return to the same project.
-        </p>
-        <dl className="mt-6 grid gap-6 text-sm sm:grid-cols-2">
-          <div>
-            <dt className="text-stone-600">Project ID</dt>
-            <dd className="mt-2 break-all font-mono text-xs">{project.id}</dd>
-          </div>
-          <div>
-            <dt className="text-stone-600">Created (UTC)</dt>
-            <dd className="mt-2">
-              {project.createdAt.replace('T', ' ').replace('Z', '')}
-            </dd>
-          </div>
-        </dl>
-      </section>
-      <section
-        aria-labelledby="sessions-title"
-        className="mt-6 rounded-xl border border-stone-300 bg-white p-6 sm:p-8"
-      >
-        <h2 id="sessions-title" className="text-xl font-semibold">
-          Agent sessions
-        </h2>
-        {sessionList.length > 0 && (
-          <ul className="mt-4 space-y-2">
-            {sessionList.map((session) => (
-              <li key={session.id}>
-                <Link
-                  href={`/projects/${project.id}/sessions/${session.id}`}
-                  className="text-sm text-teal-800 hover:underline"
-                >
-                  {session.model.modelId} ·{' '}
-                  {session.createdAt.slice(0, 16).replace('T', ' ')} UTC
-                </Link>
+      <header className="project-header">
+        <div className="page-heading">
+          <span className="eyebrow">Project workspace</span>
+          <h1>{project.name}</h1>
+          <p>
+            {sessionList.length}{' '}
+            {sessionList.length === 1 ? 'session' : 'sessions'} ·{' '}
+            {references.length} reference documents · Tools disabled
+          </p>
+        </div>
+        <div className="project-header-actions">
+          <Panel title="Shared context" trigger="Context" icon="context">
+            <p className="muted">
+              Every model receives this project context with each task. Add only
+              goals, decisions, and outcomes you have verified.
+            </p>
+            <pre
+              aria-label="Context shared with models"
+              className="context-preview"
+            >
+              {preview || 'Nothing is shared yet.'}
+            </pre>
+            <ul className="context-items">
+              {contextItems.map((item) => (
+                <li key={item.id}>
+                  <span>
+                    <strong className="capitalize">{item.kind}</strong>
+                    <br />
+                    {item.text}
+                  </span>
+                  <form action={removeContext}>
+                    <input type="hidden" name="projectId" value={id} />
+                    <input type="hidden" name="id" value={item.id} />
+                    <button
+                      type="submit"
+                      aria-label={`Remove ${item.kind}: ${item.text}`}
+                      className="text-button"
+                    >
+                      Remove
+                    </button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+            <AddContext projectId={id} />
+          </Panel>
+          <Panel
+            title="Reference documents"
+            trigger="References"
+            icon="document"
+          >
+            <p className="muted">
+              Retrieval uses passages from these documents. Files are read only
+              from the configured reference folder. Passages that look like
+              instructions aimed at the model are withheld until you review
+              them.
+            </p>
+            <ul className="context-items">
+              {references.map((document) => (
+                <li key={document.id}>
+                  <div>
+                    <strong>{document.title}</strong>
+                    <p className="metadata">
+                      {document.path} · {document.chunkCount} passages
+                      {document.withheld > 0
+                        ? ` · ${document.withheld} withheld`
+                        : ''}
+                    </p>
+                    <span
+                      className={`status-label ${document.status === 'quarantined' ? 'failure' : ''}`}
+                    >
+                      {document.status}
+                    </span>
+                    {document.withheld > 0 && (
+                      <details className="answer-details">
+                        <summary>Review withheld passages</summary>
+                        <p>
+                          The scanner flagged these as instructions aimed at the
+                          model, so the model never sees them. Release one only
+                          if you trust it: it is not scanned again.
+                        </p>
+                        {documents()
+                          .withheldPassages(id, document.id)
+                          .map((passage) => (
+                            <form key={passage.seq} action={releasePassage}>
+                              <blockquote>{passage.excerpt}</blockquote>
+                              <input
+                                type="hidden"
+                                name="projectId"
+                                value={id}
+                              />
+                              <input
+                                type="hidden"
+                                name="documentId"
+                                value={document.id}
+                              />
+                              <input
+                                type="hidden"
+                                name="seq"
+                                value={passage.seq}
+                              />
+                              <button type="submit" className="text-button">
+                                Release passage {passage.seq + 1}
+                              </button>
+                            </form>
+                          ))}
+                      </details>
+                    )}
+                  </div>
+                  <form action={removeReference}>
+                    <input type="hidden" name="projectId" value={id} />
+                    <input type="hidden" name="id" value={document.id} />
+                    <button
+                      type="submit"
+                      aria-label={`Remove ${document.title}`}
+                      className="text-button"
+                    >
+                      Remove
+                    </button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+            {documents().configured ? (
+              <AddReference projectId={id} />
+            ) : (
+              <p className="muted">
+                Set <code>AGENTGATE_DOCS_ROOT</code> to a folder of .md or .txt
+                files and restart to add references.
+              </p>
+            )}
+            <Link href="/security" className="subtle-button mt-6">
+              <Icon name="shield" />
+              Inspect security findings
+            </Link>
+          </Panel>
+        </div>
+      </header>
+      {importMetadata?.suggestedQuestions.length ? (
+        <section
+          className="soft-surface mt-8"
+          aria-labelledby="suggestions-title"
+        >
+          <h2 id="suggestions-title" className="mb-3">
+            Suggested questions
+          </h2>
+          <ul className="space-y-2">
+            {importMetadata.suggestedQuestions.map((question, index) => (
+              <li key={`${index}-${question}`} className="muted">
+                {question}
               </li>
             ))}
           </ul>
+        </section>
+      ) : null}
+      <section className="ci-section" aria-labelledby="ci-title">
+        <div className="section-heading">
+          <h2 id="ci-title">CI/CD</h2>
+          {project.repository && (
+            <a
+              href={`https://github.com/${project.repository}/actions`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="muted"
+            >
+              {project.repository}
+            </a>
+          )}
+        </div>
+        {project.repository ? (
+          <>
+            <CiStrip
+              projectId={id}
+              repository={project.repository}
+              groups={groups}
+            />
+            <details className="metadata mt-3">
+              <summary className="cursor-pointer">Change repository</summary>
+              <ConnectRepository
+                projectId={id}
+                repository={project.repository}
+              />
+            </details>
+          </>
+        ) : (
+          <ConnectRepository projectId={id} repository={null} />
         )}
-        <div className="mt-6 space-y-4">
-          {installed.error && (
-            <p className="text-sm text-stone-700">
-              {installed.error} Start it with <code>ollama serve</code> to use
-              local models.
+      </section>
+      <div className="project-session-grid">
+        <section aria-labelledby="sessions-title">
+          <div className="section-heading">
+            <h2 id="sessions-title">Agent sessions</h2>
+            <span className="muted">Persisted on this computer</span>
+          </div>
+          {sessionList.length === 0 ? (
+            <div className="empty-state">
+              <span className="empty-icon">
+                <Icon name="message" width={28} height={28} />
+              </span>
+              <h3>Your next conversation starts here.</h3>
+              <p>
+                Choose an available model to start. Shared project context
+                follows you between sessions.
+              </p>
+            </div>
+          ) : (
+            <div className="session-list">
+              {sessionList.map((session) => (
+                <Link
+                  className="session-link"
+                  key={session.id}
+                  href={`/projects/${id}/sessions/${session.id}`}
+                >
+                  <Icon name="message" />
+                  <div>
+                    <strong>{session.model.modelId}</strong>
+                    <span>
+                      {session.model.provider} ·{' '}
+                      {session.createdAt.slice(0, 16).replace('T', ' ')} UTC
+                    </span>
+                  </div>
+                  <Icon name="chevron" width={16} />
+                </Link>
+              ))}
+            </div>
+          )}
+        </section>
+        <section className="soft-surface" aria-labelledby="new-session-title">
+          <h2 id="new-session-title" className="mb-5">
+            New conversation
+          </h2>
+          {installed.error && agentStore().usesLocalModels() && (
+            <p className="muted mb-5">
+              Local models are starting. They appear here within a minute.
+            </p>
+          )}
+          {cloudStatus === null && (
+            <p role="alert" className="error-message mb-5">
+              Cloud credentials could not be checked. Unlock the OS credential
+              store to reconnect.
             </p>
           )}
           {groups.length > 0 ? (
-            <StartSession projectId={project.id} groups={groups} />
+            <StartSession projectId={id} groups={groups} />
           ) : (
-            <p role="alert" className="text-sm text-red-800">
-              No models are available.{' '}
-              <Link href="/models" className="underline">
-                Install a local model or connect a cloud provider
-              </Link>
-              .
-            </p>
+            <div className="space-y-6">
+              <p className="muted">
+                Pick how this project gets a model. You can add the other later.
+              </p>
+              <div>
+                <h3 className="mb-2 font-medium">Use an API key</h3>
+                <p className="muted mb-3">
+                  OpenRouter, Anthropic, OpenAI, Google, Groq, DeepSeek, Mistral
+                  or xAI. Nothing to install.
+                </p>
+                <Link href="/models" className="subtle-button">
+                  <Icon name="spark" />
+                  Add an API key
+                </Link>
+              </div>
+              <div>
+                <h3 className="mb-2 font-medium">
+                  Run a model on this computer
+                </h3>
+                <ModelSetup />
+              </div>
+            </div>
           )}
-        </div>
-      </section>
-      <section
-        aria-labelledby="context-title"
-        className="mt-6 rounded-xl border border-stone-300 bg-white p-6 sm:p-8"
-      >
-        <h2 id="context-title" className="text-xl font-semibold">
-          Shared context
-        </h2>
-        <p className="mt-2 text-sm leading-6 text-stone-600">
-          Every model in this project receives exactly the text below with each
-          task, so you can switch models without losing it. Credentials are
-          rejected.
+        </section>
+      </div>
+      <details className="mt-10 metadata">
+        <summary className="cursor-pointer">Project details</summary>
+        <p className="mt-3 break-all">
+          ID: {id}
+          <br />
+          Created {project.createdAt.replace('T', ' ').replace('Z', ' UTC')}
         </p>
-        <pre
-          aria-label="Context shared with models"
-          className="mt-4 whitespace-pre-wrap break-words rounded-md bg-stone-100 p-4 text-sm"
-        >
-          {preview || 'Nothing is shared yet.'}
-        </pre>
-        {contextItems.length > 0 && (
-          <ul className="mt-4 space-y-2 text-sm">
-            {contextItems.map((item) => (
-              <li
-                key={item.id}
-                className="flex items-start justify-between gap-3"
-              >
-                <span className="break-words">
-                  <span className="font-medium capitalize">{item.kind}</span>:{' '}
-                  {item.text}
-                </span>
-                <form action={removeContext}>
-                  <input type="hidden" name="projectId" value={project.id} />
-                  <input type="hidden" name="id" value={item.id} />
-                  <button
-                    type="submit"
-                    aria-label={`Remove ${item.kind}: ${item.text}`}
-                    className="text-teal-800 underline"
-                  >
-                    Remove
-                  </button>
-                </form>
-              </li>
-            ))}
-          </ul>
-        )}
-        <div className="mt-6">
-          <AddContext projectId={project.id} />
-        </div>
-      </section>
-      <section
-        aria-labelledby="references-title"
-        className="mt-6 rounded-xl border border-stone-300 bg-white p-6 sm:p-8"
-      >
-        <h2 id="references-title" className="text-xl font-semibold">
-          Reference documents
-        </h2>
-        <p className="mt-2 text-sm leading-6 text-stone-600">
-          Answers use passages retrieved from these documents and name their
-          sources. Files are read only from the configured reference folder.
-        </p>
-        {references.length > 0 && (
-          <ul className="mt-4 space-y-2 text-sm">
-            {references.map((document) => (
-              <li
-                key={document.id}
-                className="flex items-start justify-between gap-3"
-              >
-                <span className="break-words">
-                  <span className="font-medium">{document.title}</span>{' '}
-                  <span className="font-mono text-xs text-stone-600">
-                    {document.path} · {document.chunkCount} passages ·{' '}
-                    {document.status}
-                  </span>
-                  {document.status === 'quarantined' && (
-                    <>
-                      {' '}
-                      <Link href="/security" className="text-red-800 underline">
-                        Quarantined: not used in answers (see why)
-                      </Link>
-                    </>
-                  )}
-                </span>
-                <form action={removeReference}>
-                  <input type="hidden" name="projectId" value={project.id} />
-                  <input type="hidden" name="id" value={document.id} />
-                  <button
-                    type="submit"
-                    aria-label={`Remove ${document.title}`}
-                    className="text-teal-800 underline"
-                  >
-                    Remove
-                  </button>
-                </form>
-              </li>
-            ))}
-          </ul>
-        )}
-        <div className="mt-6">
-          {documents().configured ? (
-            <AddReference projectId={project.id} />
-          ) : (
-            <p className="text-sm text-stone-700">
-              Set <code>AGENTGATE_DOCS_ROOT</code> to a folder of .md or .txt
-              files and restart to add references.
-            </p>
-          )}
-        </div>
-      </section>
-      <Button asChild variant="outline" className="mt-8">
-        <Link href="/">Back to workspace</Link>
-      </Button>
+      </details>
     </>
   );
 }

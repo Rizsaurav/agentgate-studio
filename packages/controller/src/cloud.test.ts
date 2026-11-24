@@ -1,26 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  EnvironmentBackend,
   CloudCatalog,
   KeychainBackend,
+  CLOUD_PROVIDERS,
+  PROVIDER_INFO,
   SecretCredentialStore,
   apiKeySchema,
   describeProviderError,
-  type SecretBackend,
 } from './index';
+import { MemoryBackend } from './test-support';
 
-class MemoryBackend implements SecretBackend {
-  readonly values = new Map<string, string>();
-  async get(account: string) {
-    return this.values.get(account) ?? null;
-  }
-  async set(account: string, secret: string) {
-    this.values.set(account, secret);
-  }
-  async delete(account: string) {
-    this.values.delete(account);
-  }
-}
 const PROVIDERS = ['anthropic', 'openai'];
 
 describe('SecretCredentialStore', () => {
@@ -129,14 +120,15 @@ describe('provider errors and key validation', () => {
 
 describe('CloudCatalog', () => {
   const catalog = () =>
-    new CloudCatalog(new SecretCredentialStore(new MemoryBackend(), PROVIDERS));
+    new CloudCatalog(
+      new SecretCredentialStore(new MemoryBackend(), CLOUD_PROVIDERS),
+    );
 
-  it('lists Pi built-in models and reports missing keys', async () => {
+  it('lists every connectable provider with its built-in models', async () => {
     const status = await catalog().status();
-    expect(status.map((entry) => entry.provider)).toEqual([
-      'anthropic',
-      'openai',
-    ]);
+    expect(status.map((entry) => entry.provider)).toEqual([...CLOUD_PROVIDERS]);
+    for (const provider of CLOUD_PROVIDERS)
+      expect(PROVIDER_INFO[provider].name).toBeTruthy();
     for (const entry of status) expect(entry.models.length).toBeGreaterThan(0);
   });
 
@@ -178,3 +170,21 @@ describe.runIf(process.env.AGENTGATE_LIVE_CLOUD === '1')(
     );
   },
 );
+
+describe('environment credentials (containers)', () => {
+  it('reads keys from the environment, treats blanks as unset, and refuses to save', async () => {
+    const backend = new EnvironmentBackend({
+      OPENROUTER_API_KEY: ' sk-or-test ',
+      OPENAI_API_KEY: '  ',
+    });
+    expect(JSON.parse((await backend.get('openrouter')) ?? '{}')).toEqual({
+      type: 'api_key',
+      key: 'sk-or-test',
+    });
+    expect(await backend.get('openai')).toBeNull();
+    expect(await backend.get('anthropic')).toBeNull();
+    expect(await backend.get('unknown')).toBeNull();
+    await expect(backend.set()).rejects.toThrow('environment variables');
+    await expect(backend.delete()).rejects.toThrow('environment variables');
+  });
+});

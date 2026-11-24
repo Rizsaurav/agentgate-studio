@@ -5,20 +5,32 @@ import { revalidatePath } from 'next/cache';
 import {
   createProjectSchema,
   createSessionSchema,
+  fixForProposal,
+  fixTask,
   isLocalMutation,
+  ProjectImportFailure,
+  questionSchema,
   runIdSchema,
   sendPromptSchema,
 } from '@agentgate/controller';
 import {
+  agentModel,
+  agentStore,
   cloud,
   context,
+  customEndpoint,
   documents,
+  endpoints,
   evals,
   projects,
+  projectImportService,
   puller,
   runs,
+  security,
   sessions,
 } from '@/lib/controller';
+import { assistant } from '@/lib/assistant';
+import { githubCi } from '@/lib/github';
 
 export type CreateProjectState = { error: string | null };
 export async function createProject(
@@ -52,12 +64,128 @@ export async function createProject(
   redirect(`/projects/${id}`);
 }
 
+export type ImportProjectState = {
+  error: string | null;
+  notice: string | null;
+  projectId: string | null;
+};
+export async function importProject(
+  _previous: ImportProjectState,
+  form: FormData,
+): Promise<ImportProjectState> {
+  if (!(await isLocalRequest()))
+    return {
+      error: 'Requests must come from this local workspace.',
+      notice: null,
+      projectId: null,
+    };
+
+  let projectId: string | null = null;
+  try {
+    const manifestText = String(form.get('manifest') ?? '');
+    let pathsValue: unknown;
+    try {
+      pathsValue = JSON.parse(String(form.get('relativePaths') ?? ''));
+    } catch {
+      throw new Error('The imported document paths are invalid.');
+    }
+    if (!Array.isArray(pathsValue))
+      throw new Error('The imported document paths are invalid.');
+    const paths: string[] = [];
+    for (const path of pathsValue) {
+      if (typeof path !== 'string')
+        throw new Error('The imported document paths are invalid.');
+      paths.push(path);
+    }
+
+    const uploads = form.getAll('files');
+    if (
+      uploads.length !== paths.length ||
+      uploads.some((file) => !(file instanceof File))
+    )
+      throw new Error('Select every document listed in the project manifest.');
+    const uploadsAsFiles = uploads.filter(
+      (file): file is File => file instanceof File,
+    );
+    if (uploadsAsFiles.some((file) => file.size === 0))
+      throw new Error('An imported document is empty.');
+    if (uploadsAsFiles.some((file) => file.size > 200_000))
+      throw new Error('An imported document is too large.');
+    if (uploadsAsFiles.reduce((sum, file) => sum + file.size, 0) > 10_000_000)
+      throw new Error(
+        'The selected project documents are too large to import.',
+      );
+    const files = await Promise.all(
+      uploadsAsFiles.map(async (file, index) => {
+        const path = paths[index];
+        if (!path) throw new Error('An imported document path is missing.');
+        return {
+          path,
+          bytes: new Uint8Array(await file.arrayBuffer()),
+        };
+      }),
+    );
+    const imported = await projectImportService().import({
+      manifestText,
+      files,
+    });
+    projectId = imported.project.id;
+
+    const added = imported.references.reduce(
+      (count, result) => count + result.added.length,
+      0,
+    );
+    const quarantined = imported.references.flatMap(
+      (result) => result.quarantined,
+    );
+    const skipped = imported.references.flatMap((result) => result.skipped);
+    const notes = [
+      ...quarantined.map(({ document }) => `${document.title} was quarantined`),
+      ...skipped.map(({ path, reason }) => `${path}: ${reason}`),
+    ];
+    revalidatePath('/');
+    revalidatePath(`/projects/${projectId}`);
+    return {
+      error: null,
+      notice: `Imported ${imported.project.name} with ${added} usable document(s).${
+        notes.length > 0 ? ` Review: ${notes.join('; ')}` : ''
+      }`,
+      projectId,
+    };
+  } catch (error) {
+    if (error instanceof ProjectImportFailure) projectId = error.projectId;
+    return {
+      error: userMessage(
+        error,
+        projectId
+          ? 'The project was created, but importing its context or documents did not finish.'
+          : 'The project folder could not be imported.',
+      ),
+      notice: null,
+      projectId,
+    };
+  }
+}
+
 async function isLocalRequest(): Promise<boolean> {
   const requestHeaders = await headers();
   return isLocalMutation(
     requestHeaders.get('origin'),
     requestHeaders.get('host'),
   );
+}
+
+/** The project and model a session form chose. Option values are `provider/modelId`; ids may contain slashes. */
+function sessionChoice(form: FormData) {
+  const choice = String(form.get('model') ?? '');
+  const separator = choice.indexOf('/');
+  return createSessionSchema.safeParse({
+    projectId: form.get('projectId'),
+    model: {
+      provider: choice.slice(0, separator),
+      modelId: choice.slice(separator + 1),
+    },
+  });
 }
 
 export type StartSessionState = { error: string | null };
@@ -67,16 +195,7 @@ export async function startSession(
 ): Promise<StartSessionState> {
   if (!(await isLocalRequest()))
     return { error: 'Requests must come from this local workspace.' };
-  // Option values are `provider/modelId`; model ids may themselves contain slashes or colons.
-  const choice = String(form.get('model') ?? '');
-  const separator = choice.indexOf('/');
-  const parsed = createSessionSchema.safeParse({
-    projectId: form.get('projectId'),
-    model: {
-      provider: choice.slice(0, separator),
-      modelId: choice.slice(separator + 1),
-    },
-  });
+  const parsed = sessionChoice(form);
   if (!parsed.success) return { error: 'Choose an installed model.' };
   let id: string;
   try {
@@ -149,6 +268,51 @@ export async function connectProvider(
   return { error: null, saved: true };
 }
 
+/** The form is reset after every submission, so the non-secret fields come back to refill it. The key never does. */
+export type CustomEndpointState = ConnectState & {
+  values: { name: string; baseUrl: string; models: string } | null;
+};
+export async function connectCustomEndpoint(
+  _previous: CustomEndpointState,
+  form: FormData,
+): Promise<CustomEndpointState> {
+  const values = {
+    name: String(form.get('name') ?? ''),
+    baseUrl: String(form.get('baseUrl') ?? ''),
+    models: String(form.get('models') ?? ''),
+  };
+  if (!(await isLocalRequest()))
+    return {
+      error: 'Requests must come from this local workspace.',
+      saved: false,
+      values,
+    };
+  try {
+    await customEndpoint().connect({
+      ...values,
+      apiKey: String(form.get('apiKey') ?? ''),
+    });
+  } catch (error) {
+    // Validation text or fixed provider-failure text; the server's own reply is never shown.
+    return {
+      error:
+        error instanceof Error
+          ? firstLine(error.message)
+          : 'The endpoint could not be saved.',
+      saved: false,
+      values,
+    };
+  }
+  revalidatePath('/models');
+  return { error: null, saved: true, values };
+}
+
+export async function disconnectCustomEndpoint(): Promise<void> {
+  if (!(await isLocalRequest())) return;
+  await customEndpoint().disconnect();
+  revalidatePath('/models');
+}
+
 export async function disconnectProvider(form: FormData): Promise<void> {
   if (!(await isLocalRequest())) return;
   await cloud().disconnect(form.get('provider'));
@@ -210,6 +374,37 @@ export async function removeContext(form: FormData): Promise<void> {
   revalidatePath(`/projects/${form.get('projectId')}`);
 }
 
+type ReferenceResult = Awaited<
+  ReturnType<ReturnType<typeof documents>['reference']>
+>;
+
+/** One message for the whole batch: an error only when nothing could be added. */
+function referenceFeedback(
+  results: ReferenceResult[],
+  rejected: { name: string; reason: string }[] = [],
+): FormState {
+  const added = results.reduce((sum, result) => sum + result.added.length, 0);
+  const problems = [
+    ...rejected.map((r) => `${r.name}: ${r.reason}`),
+    ...results.flatMap((result) => [
+      ...result.quarantined.map(
+        (q) => `${q.document.path}: quarantined (${q.reason})`,
+      ),
+      ...result.added
+        .filter((document) => document.withheld > 0)
+        .map(
+          (document) =>
+            `${document.path}: ${document.withheld} of ${document.chunkCount} passages withheld for review.`,
+        ),
+      ...result.skipped.map((skip) => `${skip.path}: ${skip.reason}`),
+    ]),
+  ].join(' ');
+  return {
+    error: added === 0 && problems ? problems : null,
+    notice: `Added ${added} document(s).${added > 0 && problems ? ` Notes: ${problems}` : ''}`,
+  };
+}
+
 export async function addReference(
   _previous: FormState,
   form: FormData,
@@ -220,21 +415,26 @@ export async function addReference(
       notice: null,
     };
   try {
-    const result = await documents().reference({
-      projectId: form.get('projectId'),
-      path: form.get('path'),
-    });
-    revalidatePath(`/projects/${form.get('projectId')}`);
-    const problems = [
-      ...result.quarantined.map(
-        (q) => `${q.document.path}: quarantined (${q.reason})`,
-      ),
-      ...result.skipped.map((s) => `${s.path}: ${s.reason}`),
-    ].join(' ');
-    return {
-      error: result.added.length === 0 && problems ? problems : null,
-      notice: `Added ${result.added.length} document(s).${result.added.length > 0 && problems ? ` Not used: ${problems}` : ''}`,
-    };
+    const projectId = form.get('projectId');
+    const uploads = await Promise.all(
+      form
+        .getAll('files')
+        .filter(
+          (entry): entry is File => entry instanceof File && entry.size > 0,
+        )
+        .map(async (file) => ({
+          name: file.name,
+          bytes: new Uint8Array(await file.arrayBuffer()),
+        })),
+    );
+    // Chosen files take priority; the typed path is for files already in the reference folder.
+    const stored = uploads.length > 0 ? documents().store(uploads) : null;
+    const paths = stored ? stored.paths : [form.get('path')];
+    const results: ReferenceResult[] = [];
+    for (const path of paths)
+      results.push(await documents().reference({ projectId, path }));
+    revalidatePath(`/projects/${projectId}`);
+    return referenceFeedback(results, stored?.rejected);
   } catch (error) {
     return {
       error: userMessage(error, 'The documents could not be added.'),
@@ -247,6 +447,32 @@ export async function removeReference(form: FormData): Promise<void> {
   if (!(await isLocalRequest())) return;
   documents().remove(form.get('projectId'), form.get('id'));
   revalidatePath(`/projects/${form.get('projectId')}`);
+}
+
+/** Releases a withheld passage after the user reviewed it; the override is kept with the security events. */
+export async function releasePassage(form: FormData): Promise<void> {
+  if (!(await isLocalRequest())) return;
+  const projectId = String(form.get('projectId'));
+  const released = documents().release(
+    projectId,
+    form.get('documentId'),
+    form.get('seq'),
+  );
+  if (released)
+    security().record({
+      projectId,
+      runId: null,
+      documentId: released.document.id,
+      stage: 'ingestion',
+      rule: 'user-release',
+      source: `${released.document.title} (${released.document.path})`,
+      outcome: 'released',
+      detail:
+        'The user reviewed a withheld passage and released it to the model.',
+      evidence: released.excerpt.slice(0, 160),
+      score: null,
+    });
+  revalidatePath(`/projects/${projectId}`);
 }
 
 /** Records an assistant answer the user has checked as a verified outcome in the shared context. */
@@ -266,11 +492,23 @@ export async function startEvaluation(form: FormData): Promise<void> {
 }
 
 export type PullResult = { error: string | null };
-export async function pullModel(model: string): Promise<PullResult> {
+export async function pullModel(
+  model: string,
+  fallbacks: string[] = [],
+): Promise<PullResult> {
   if (!(await isLocalRequest()))
     return { error: 'Requests must come from this local workspace.' };
+  return installLocalModel(model, fallbacks);
+}
+
+/** Installs and starts Ollama in the background if needed, then the download. Local models are opt-in. */
+async function installLocalModel(
+  model: unknown,
+  fallbacks: unknown[] = [],
+): Promise<PullResult> {
   try {
-    puller().start(model);
+    agentStore().setUsesLocalModels();
+    puller().start(model, Array.isArray(fallbacks) ? fallbacks : []);
   } catch (error) {
     return { error: userMessage(error, 'The download could not be started.') };
   }
@@ -279,4 +517,169 @@ export async function pullModel(model: string): Promise<PullResult> {
 
 export async function cancelPull(): Promise<void> {
   if (await isLocalRequest()) puller().cancel();
+}
+
+export async function unqueueModel(model: string): Promise<void> {
+  if (await isLocalRequest()) puller().unqueue(model);
+}
+
+/** Deletes an installed local model; the page confirms with the person first. */
+export async function removeModel(model: string): Promise<PullResult> {
+  if (!(await isLocalRequest()))
+    return { error: 'Requests must come from this local workspace.' };
+  try {
+    await puller().uninstall(model);
+  } catch (error) {
+    return { error: userMessage(error, 'The model could not be removed.') };
+  }
+  revalidatePath('/models');
+  return { error: null };
+}
+
+export async function connectAssistant(
+  _previous: ConnectState,
+  form: FormData,
+): Promise<ConnectState> {
+  if (!(await isLocalRequest()))
+    return {
+      error: 'Requests must come from this local workspace.',
+      saved: false,
+    };
+  try {
+    await agentModel().connect(form.get('apiKey'));
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error
+          ? firstLine(error.message)
+          : 'The key could not be saved.',
+      saved: false,
+    };
+  }
+  return { error: null, saved: true };
+}
+
+export async function disconnectAssistant(): Promise<void> {
+  if (await isLocalRequest()) await agentModel().disconnect();
+}
+
+export async function setAssistantEnabled(enabled: boolean): Promise<void> {
+  if (await isLocalRequest()) agentStore().setEnabled(enabled === true);
+}
+
+/** Starts the question in the background; the answer shows up in the assistant's feed. */
+export async function askAssistant(question: string): Promise<PullResult> {
+  if (!(await isLocalRequest()))
+    return { error: 'Requests must come from this local workspace.' };
+  const { supervisor } = assistant();
+  try {
+    const parsed = questionSchema.parse(question);
+    const reason = await supervisor.unavailable();
+    if (reason) return { error: reason };
+    void supervisor.ask(parsed).catch((error: unknown) => {
+      agentStore().addNote(
+        'action',
+        `Could not answer: ${error instanceof Error ? error.message : 'unknown error'}`,
+      );
+    });
+  } catch (error) {
+    return { error: userMessage(error, 'The question could not be sent.') };
+  }
+  return { error: null };
+}
+
+/**
+ * Installing a model, or an action asked for in a question, is never automatic: the assistant
+ * proposes, and only this action carries it out.
+ */
+export async function decideProposal(
+  id: string,
+  approve: boolean,
+): Promise<PullResult> {
+  if (!(await isLocalRequest()))
+    return { error: 'Requests must come from this local workspace.' };
+  const note = agentStore().findNote(id);
+  if (note?.kind !== 'proposal' || note.status !== 'open')
+    return { error: 'That suggestion is no longer open.' };
+  // Closed first, so a double click cannot run the same approval twice.
+  agentStore().setStatus(id, approve ? 'approved' : 'dismissed');
+  if (!approve) return { error: null };
+  const fix = fixForProposal(note.text);
+  if (fix) {
+    try {
+      await assistant().supervisor.performApproved(fix);
+    } catch (error) {
+      return { error: userMessage(error, 'That action could not be done.') };
+    }
+    return { error: null };
+  }
+  const started = await installLocalModel(note.text);
+  if (started.error) agentStore().setStatus(id, 'open');
+  return started;
+}
+
+/** The first validation message of a schema error, for a form. */
+function validationMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.name === 'ZodError') {
+    const issues = (error as Error & { issues?: { message?: unknown }[] })
+      .issues;
+    const message = issues?.[0]?.message;
+    if (typeof message === 'string') return message;
+  }
+  return fallback;
+}
+
+export type RepositoryState = { error: string | null };
+/** Connects a project to the GitHub repository whose CI it shows; an empty value disconnects it. */
+export async function connectRepository(
+  _previous: RepositoryState,
+  form: FormData,
+): Promise<RepositoryState> {
+  if (!(await isLocalRequest()))
+    return { error: 'Requests must come from this local workspace.' };
+  const projectId = String(form.get('projectId') ?? '');
+  try {
+    projects().setRepository(projectId, form.get('repository'));
+  } catch (error) {
+    return {
+      error: validationMessage(error, 'The repository could not be saved.'),
+    };
+  }
+  revalidatePath(`/projects/${projectId}`);
+  return { error: null };
+}
+
+export type FixState = { error: string | null };
+/**
+ * Starts a session whose first task is a failed run's log tail. The failure is read again here
+ * from GitHub, never taken from the page, so only that tail is sent, and like any task it is
+ * scanned before a model sees it.
+ */
+export async function fixWithAgent(
+  _previous: FixState,
+  form: FormData,
+): Promise<FixState> {
+  if (!(await isLocalRequest()))
+    return { error: 'Requests must come from this local workspace.' };
+  const parsed = sessionChoice(form);
+  if (!parsed.success) return { error: 'Choose a model for the agent.' };
+  const project = projects().find(parsed.data.projectId);
+  if (!project?.repository)
+    return { error: 'Connect a GitHub repository first.' };
+  let failure: Awaited<ReturnType<ReturnType<typeof githubCi>['failure']>>;
+  try {
+    failure = await githubCi().failure(project.repository, form.get('runId'));
+  } catch (error) {
+    return { error: userMessage(error, 'The failed run could not be read.') };
+  }
+  if (!failure)
+    return { error: 'That run did not fail, so there is nothing to fix.' };
+  let sessionId: string;
+  try {
+    sessionId = sessions().createSession(parsed.data).id;
+    runs().enqueue({ sessionId, prompt: fixTask(failure) });
+  } catch {
+    return { error: 'The session could not be started.' };
+  }
+  redirect(`/projects/${parsed.data.projectId}/sessions/${sessionId}`);
 }

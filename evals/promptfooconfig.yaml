@@ -9,3 +9,7 @@ providers:
 prompts:
   - '{{question}}'
 tests: file://tests/cases.yaml
+# The scanner checks one batch at a time, so parallel cases only queue behind each other and can hit
+# its client timeout, which fails closed and reads as a test failure.
+evaluateOptions:
+  maxConcurrency: 1

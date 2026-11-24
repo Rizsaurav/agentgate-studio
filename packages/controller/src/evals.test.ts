@@ -6,6 +6,7 @@ import {
   EvalService,
   SqliteEvals,
   configurationIdentity,
+  guardrailRates,
   openDatabase,
 } from './index';
 
@@ -14,11 +15,20 @@ afterEach(() => {
   for (const task of cleanup.splice(0)) task();
 });
 
-/** A repository root whose `eval` script is a real process we control. */
+/** A repository with a CLI fixture, launched with the production process boundary. */
 function fakeRepo(evalScript: string) {
   const root = mkdtempSync(join(tmpdir(), 'agentgate-evalrepo-'));
   mkdirSync(join(root, 'evals'));
   mkdirSync(join(root, 'scanner'));
+  mkdirSync(join(root, 'node_modules', 'promptfoo', 'dist', 'src'), {
+    recursive: true,
+  });
+  mkdirSync(join(root, 'node_modules', 'tsx', 'dist'), { recursive: true });
+  writeFileSync(join(root, 'node_modules', 'tsx', 'dist', 'loader.mjs'), '');
+  writeFileSync(
+    join(root, 'node_modules', 'promptfoo', 'dist', 'src', 'entrypoint.js'),
+    evalScript,
+  );
   writeFileSync(
     join(root, 'evals', 'promptfooconfig.yaml'),
     'description: x\n',
@@ -40,8 +50,8 @@ function fakeRepo(evalScript: string) {
   });
   return { root, db, repository: new SqliteEvals(db) };
 }
-// The trailing `--` makes node pass the worker's `-o <file>` to the script instead of parsing it.
-const node = (code: string) => `node -e ${JSON.stringify(code)} --`;
+// CLI fixture source; no shell interpolation is involved.
+const node = (code: string) => code;
 const WRITES_RESULT = (exit: number) =>
   node(
     `const o=process.argv[process.argv.indexOf('-o')+1];require('fs').writeFileSync(o,JSON.stringify({results:{results:[{success:true,testCase:{description:'ok case'}},{success:false,testCase:{description:'bad case'},gradingResult:{reason:'r',componentResults:[{pass:false,reason:'Custom function returned false\\nsecret detail'}]}}]}}));process.exit(${exit})`,
@@ -66,11 +76,12 @@ describe('evaluation worker', () => {
     });
     expect(stored?.configHash).toBe(run.configHash);
     expect(service.results(run.id)).toEqual([
-      { description: 'ok case', passed: true, reason: null },
+      { description: 'ok case', passed: true, reason: null, measures: null },
       {
         description: 'bad case',
         passed: false,
         reason: 'Custom function returned false',
+        measures: null,
       },
     ]);
   });
@@ -184,3 +195,90 @@ describe.runIf(process.env.AGENTGATE_SCANNER_URL)(
     }, 300_000);
   },
 );
+
+/** A suite result with tagged cases, as Promptfoo writes it (metadata is kept on testCase). */
+const TAGGED = (cases: object[]) =>
+  node(
+    `const o=process.argv[process.argv.indexOf('-o')+1];require('fs').writeFileSync(o,JSON.stringify({results:{results:${JSON.stringify(cases)}}}));process.exit(100)`,
+  );
+const tagged = (
+  description: string,
+  success: boolean,
+  measures?: string,
+): object => ({
+  success,
+  testCase: {
+    description,
+    ...(measures ? { metadata: { measures, other: 'kept out' } } : {}),
+  },
+  ...(success ? {} : { gradingResult: { reason: 'failed' } }),
+});
+
+describe('false-positive and detection rates', () => {
+  it('stores what each case measures and reports both rates for the run', async () => {
+    const { root, repository } = fakeRepo(
+      TAGGED([
+        tagged('benign rules', true, 'false-positive'),
+        tagged('benign runbook', false, 'false-positive'),
+        tagged('direct injection', true, 'detection'),
+        tagged('poisoned document', true, 'detection'),
+        tagged('injection in a manual', false, 'detection'),
+        tagged('path outside the folder', true),
+      ]),
+    );
+    const service = new EvalService(repository, root);
+    const run = await service.enqueue('enforced');
+    await service.idle();
+    const results = service.results(run.id);
+    expect(results.map((r) => r.measures)).toEqual([
+      'false-positive',
+      'false-positive',
+      'detection',
+      'detection',
+      'detection',
+      null,
+    ]);
+    expect(guardrailRates(results)).toEqual({
+      falsePositives: { count: 1, total: 2 },
+      detections: { count: 2, total: 3 },
+    });
+  });
+
+  it('turns a misspelt measure into an error instead of dropping the case', async () => {
+    const { root, repository } = fakeRepo(
+      TAGGED([tagged('typo', true, 'detecton')]),
+    );
+    const service = new EvalService(repository, root);
+    await service.enqueue('enforced');
+    await service.idle();
+    expect(service.recent()[0]?.status).toBe('error');
+  });
+
+  it('has no rate without tagged cases, and a rate of zero when nothing is flagged', () => {
+    expect(
+      guardrailRates([{ description: 'x', passed: true, reason: null }]),
+    ).toEqual({ falsePositives: null, detections: null });
+    expect(
+      guardrailRates([
+        {
+          description: 'benign',
+          passed: true,
+          reason: null,
+          measures: 'false-positive',
+        },
+      ]),
+    ).toEqual({ falsePositives: { count: 0, total: 1 }, detections: null });
+  });
+
+  it('every tagged case in the real suite is a known measure, with both kinds present', async () => {
+    const { readFileSync } = await import('node:fs');
+    const suite = readFileSync(
+      join(import.meta.dirname, '../../../evals/tests/cases.yaml'),
+      'utf8',
+    );
+    const measures = [...suite.matchAll(/^\s+measures:\s*(\S+)\s*$/gm)].map(
+      (match) => match[1],
+    );
+    expect(new Set(measures)).toEqual(new Set(['false-positive', 'detection']));
+  });
+});

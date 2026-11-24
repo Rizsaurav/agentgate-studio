@@ -117,6 +117,76 @@ CREATE TABLE eval_results (
   PRIMARY KEY (run_id, idx)
 ) STRICT;`;
 
+const AGENT = `
+CREATE TABLE agent_usage (
+  day TEXT PRIMARY KEY NOT NULL,
+  tokens INTEGER NOT NULL DEFAULT 0,
+  calls INTEGER NOT NULL DEFAULT 0
+) STRICT;
+CREATE TABLE agent_settings (
+  key TEXT PRIMARY KEY NOT NULL,
+  value TEXT NOT NULL
+) STRICT;
+CREATE TABLE agent_notes (
+  id TEXT PRIMARY KEY NOT NULL,
+  created_at TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK(kind IN ('question','answer','finding','action','proposal')),
+  finding_id TEXT,
+  text TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','approved','dismissed'))
+) STRICT;
+CREATE INDEX agent_notes_created ON agent_notes(created_at);`;
+
+// Passages are withheld one at a time; documents quarantined before this held no per-passage verdict,
+// so all their passages start withheld (fail closed) and can be reviewed and released.
+const WITHHELD_PASSAGES = `
+ALTER TABLE chunks ADD COLUMN state TEXT NOT NULL DEFAULT 'ok' CHECK(state IN ('ok','withheld','released'));
+UPDATE chunks SET state = 'withheld' WHERE document_id IN (SELECT id FROM documents WHERE status = 'quarantined');
+CREATE TABLE security_events_new (
+  id TEXT PRIMARY KEY NOT NULL,
+  project_id TEXT NOT NULL,
+  run_id TEXT,
+  document_id TEXT,
+  stage TEXT NOT NULL CHECK(stage IN ('input','ingestion','retrieval','output')),
+  rule TEXT NOT NULL,
+  source TEXT NOT NULL,
+  outcome TEXT NOT NULL CHECK(outcome IN ('blocked','quarantined','excluded','released')),
+  detail TEXT NOT NULL,
+  evidence TEXT,
+  score REAL,
+  created_at TEXT NOT NULL
+) STRICT;
+INSERT INTO security_events_new SELECT * FROM security_events;
+DROP TABLE security_events;
+ALTER TABLE security_events_new RENAME TO security_events;
+CREATE INDEX security_events_by_time ON security_events(created_at DESC);`;
+
+/**
+ * Indexes for the lookups that otherwise scan a whole table as it grows. Checked with
+ * EXPLAIN QUERY PLAN; measured in docs/PERFORMANCE.md.
+ */
+const LOOKUP_INDEXES = `
+CREATE INDEX runs_by_session ON runs(session_id, created_at, id);
+CREATE INDEX runs_queued ON runs(created_at, id) WHERE status = 'queued';
+CREATE INDEX sessions_by_project ON sessions(project_id, created_at DESC, id);
+CREATE INDEX security_events_by_run ON security_events(run_id, created_at, id);
+CREATE INDEX chunks_by_document ON chunks(document_id, seq);`;
+
+/** Which guardrail an evaluation case measures, for the false-positive and detection rates. */
+const EVAL_MEASURES = `
+ALTER TABLE eval_results ADD COLUMN measures TEXT CHECK(measures IN ('false-positive','detection'));`;
+
+/** The GitHub repository a project shows CI for, as owner/name. */
+const PROJECT_REPOSITORY = `
+ALTER TABLE projects ADD COLUMN repository TEXT CHECK(repository IS NULL OR length(repository) BETWEEN 3 AND 140);`;
+
+const PROJECT_IMPORT_METADATA = `
+CREATE TABLE project_import_metadata (
+  project_id TEXT PRIMARY KEY NOT NULL REFERENCES projects(id),
+  suggested_questions TEXT NOT NULL,
+  expected_behaviors TEXT NOT NULL
+) STRICT;`;
+
 /** Ordered migrations; PRAGMA user_version is the number applied. Never edit an applied entry. */
 const MIGRATIONS = [
   PROJECTS,
@@ -124,6 +194,12 @@ const MIGRATIONS = [
   CONTEXT_AND_DOCUMENTS,
   SECURITY,
   EVALUATIONS,
+  AGENT,
+  WITHHELD_PASSAGES,
+  LOOKUP_INDEXES,
+  EVAL_MEASURES,
+  PROJECT_REPOSITORY,
+  PROJECT_IMPORT_METADATA,
 ];
 
 /** Single owner of the application database file, schema, and migrations. */

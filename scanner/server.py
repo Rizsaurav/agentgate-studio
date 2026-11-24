@@ -1,6 +1,7 @@
 """Local HTTP boundary around LLM Guard's prompt-injection scanner.
 
-Binds to loopback only and returns scores, never the scanned text. All policy
+Binds to loopback by default (a container sets AGENTGATE_SCANNER_HOST so other containers on
+its private network can reach it) and returns scores, never the scanned text. All policy
 (what to block, quarantine, and log) stays in the Node controller.
 """
 
@@ -12,16 +13,18 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from llm_guard.input_scanners import PromptInjection
 from llm_guard.input_scanners.prompt_injection import MatchType
 
-HOST = "127.0.0.1"
+HOST = os.environ.get("AGENTGATE_SCANNER_HOST", "127.0.0.1")
 PORT = int(os.environ.get("AGENTGATE_SCANNER_PORT", "8765"))
 THRESHOLD = float(os.environ.get("AGENTGATE_SCANNER_THRESHOLD", "0.9"))
 MAX_BODY_BYTES = 512 * 1024
 MAX_TEXTS = 64
 MAX_TEXT_CHARS = 32_000
 
-# CHUNKS scans the whole text, so an injection placed after the model's
-# 512-token window is still seen.
+# One model, two ways of reading text. "chunks" splits long text into windows so an injection placed
+# after the model's 512-token window is still seen; "full" reads text that already fits one window
+# as a whole, which avoids the false positives that splitting ordinary instructions into pieces causes.
 scanner = PromptInjection(threshold=THRESHOLD, match_type=MatchType.CHUNKS)
+MODES = {"chunks": MatchType.CHUNKS, "full": MatchType.FULL}
 scan_lock = threading.Lock()
 
 
@@ -52,9 +55,13 @@ class Handler(BaseHTTPRequestHandler):
         if length <= 0 or length > MAX_BODY_BYTES:
             return self._send(413, {"error": "invalid body size"})
         try:
-            texts = json.loads(self.rfile.read(length)).get("texts")
+            payload = json.loads(self.rfile.read(length))
+            texts = payload.get("texts")
+            mode = payload.get("mode", "chunks")
         except (ValueError, AttributeError):
             return self._send(400, {"error": "invalid json"})
+        if not isinstance(mode, str) or mode not in MODES:
+            return self._send(400, {"error": "invalid mode"})
         if (
             not isinstance(texts, list)
             or not 0 < len(texts) <= MAX_TEXTS
@@ -63,6 +70,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(400, {"error": "invalid texts"})
         results = []
         with scan_lock:
+            # The match type is read per scan and the lock serialises requests, so setting it here is safe.
+            scanner._match_type = MODES[mode]
             for text in texts:
                 _, valid, score = scanner.scan(text)
                 results.append({"valid": bool(valid), "score": float(score)})

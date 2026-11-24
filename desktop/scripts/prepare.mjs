@@ -1,0 +1,66 @@
+import { cp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
+const desktop = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const root = resolve(desktop, '..'),
+  stage = join(desktop, 'stage');
+const build = spawnSync(
+  process.execPath,
+  [
+    join(root, 'node_modules', 'next', 'dist', 'bin', 'next'),
+    'build',
+    join(root, 'apps', 'web'),
+  ],
+  {
+    cwd: root,
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      AGENTGATE_STANDALONE: '1',
+      NEXT_TELEMETRY_DISABLED: '1',
+    },
+  },
+);
+if (build.status !== 0) process.exit(build.status ?? 1);
+await rm(stage, { recursive: true, force: true });
+await mkdir(stage, { recursive: true });
+// Turbopack links native modules into .next/node_modules with absolute symlinks to this machine's
+// build folder. Copying them as links leaves the packaged app pointing at paths that do not exist
+// anywhere else, and every page then fails with a missing module. Copy their contents instead.
+await cp(join(root, 'apps', 'web', '.next', 'standalone'), join(stage, 'web'), {
+  recursive: true,
+  dereference: true,
+});
+await cp(
+  join(root, 'apps', 'web', '.next', 'static'),
+  join(stage, 'web', 'apps', 'web', '.next', 'static'),
+  { recursive: true },
+);
+// Custom server needs the complete Next runtime, not only its generated server entrypoint trace.
+await cp(
+  join(root, 'node_modules', 'next'),
+  join(stage, 'web', 'node_modules', 'next'),
+  { recursive: true },
+);
+await cp(
+  join(root, 'apps', 'web', '.next', 'required-server-files.json'),
+  join(stage, 'web', 'apps', 'web', '.next', 'required-server-files.json'),
+);
+await mkdir(join(stage, 'runtime'), { recursive: true });
+await cp(
+  join(desktop, 'node_modules', 'node', 'bin', 'node'),
+  join(stage, 'runtime', 'node'),
+);
+for (const file of ['server.mjs', 'access.mjs'])
+  await cp(join(desktop, 'scripts', file), join(stage, file));
+await writeFile(
+  join(stage, 'BUILD.json'),
+  JSON.stringify(
+    { node: '24.22.2', electron: '45.2.1', architecture: process.arch },
+    null,
+    2,
+  ),
+);
+// The evaluation suite is not shipped: it runs in CI and from source (`npm run eval`).
+console.log('Desktop resources prepared.');
