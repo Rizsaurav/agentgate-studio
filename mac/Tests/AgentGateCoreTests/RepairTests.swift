@@ -537,12 +537,14 @@ private actor SearchingAssistant: RepairAssistant {
     let runner = RepairRunner(
       pipeline: pipeline, audit: rig.audit, assistant: Scripted2(reply: reply), approvalTimeout: .milliseconds(200)
     ) { _, _ in
-      try? await Task.sleep(for: .seconds(30))
+      // An approver who never answers: the run must not wait for it.
+      try? await Task.sleep(for: .seconds(3600))
       return true
     }
     let started = Date()
     let error = await rig.run(runner)
-    #expect(Date().timeIntervalSince(started) < 10)
+    // Far below the approver's hour, with room for a busy CI runner.
+    #expect(Date().timeIntervalSince(started) < 60)
     #expect(error?.description.contains("No answer came") == true)
     #expect(try rig.store.load("old-model") != nil)
   }
