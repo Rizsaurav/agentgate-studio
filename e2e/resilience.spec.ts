@@ -174,7 +174,9 @@ test('main pages fit a 390px phone without horizontal scrolling', async ({
     projectPath,
     '/models',
     '/security',
-    '/evaluations',
+    // /evaluations redirects here from a streamed page, which Next.js finishes in the browser after
+    // load; reading the page during that second navigation destroys the context. Check the target.
+    '/security?view=evaluations',
   ]) {
     await page.goto(server.url + path);
     const overflow = await page.evaluate(
