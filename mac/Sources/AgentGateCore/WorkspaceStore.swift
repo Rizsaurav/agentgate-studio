@@ -6,12 +6,16 @@ public struct Project: Codable, Sendable, Equatable, Identifiable, Hashable {
   public var createdAt: Date
   /// The folder on this Mac the agent works in. Nil for projects made before folders existed.
   public var folder: String?
+  /// Language, package manager, test command and CI, detected when the project was added and
+  /// correctable by the user. Nil for projects added before detection existed.
+  public var summary: ProjectSummary?
 
-  public init(id: UUID, name: String, createdAt: Date, folder: String? = nil) {
+  public init(id: UUID, name: String, createdAt: Date, folder: String? = nil, summary: ProjectSummary? = nil) {
     self.id = id
     self.name = name
     self.createdAt = createdAt
     self.folder = folder
+    self.summary = summary
   }
 }
 
