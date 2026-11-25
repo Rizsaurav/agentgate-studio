@@ -25,6 +25,10 @@ public struct RepoSummary: Sendable, Equatable {
   public var isGit: Bool
   /// More files than the scan reads: counts are for the first `RepoScan.fileLimit`.
   public var truncated: Bool
+  /// The project's files, relative to its folder, for @ mentions in the composer.
+  public var paths: [String] = []
+  /// The instructions file the agent reads at the start of every session, when the project has one.
+  public var instructions: String?
 
   public var primaryLanguage: String? { languages.first { $0.name != "Other" }?.name }
 }
@@ -71,6 +75,9 @@ public enum RepoScan {
       files: paths.count, lines: counts.values.reduce(0) { $0 + $1.lines }, languages: rank(counts),
       testCommand: testCommand(files: Set(paths), read: { try? String(contentsOf: folder.appendingPathComponent($0), encoding: .utf8) }),
       branch: nil, lastCommit: nil, lastCommitDate: nil, changed: 0, isGit: isGit, truncated: truncated)
+    summary.paths = paths
+    summary.instructions = FileManager.default.fileExists(atPath: folder.appendingPathComponent("AGENTS.md").path)
+      ? "AGENTS.md" : nil
     if isGit {
       let branch = Git.run(["-C", folder.path, "rev-parse", "--abbrev-ref", "HEAD"], timeout: timeout).output?
         .trimmingCharacters(in: .whitespacesAndNewlines)

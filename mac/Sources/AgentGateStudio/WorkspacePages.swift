@@ -159,6 +159,7 @@ struct ProjectPage: View {
                   summary: app.repoSummaries[projectId], folder: folder, blocked: app.repoScanBlocked.contains(projectId),
                   retry: { app.scanRepo(projectId, force: true) })
               }
+              if project.folder != nil { SchedulesCard(projectId: projectId) }
               let sessions = app.sessions(in: projectId)
               Text(sessions.isEmpty ? "CHATS" : "CHATS  ·  \(sessions.count)")
                 .font(.system(size: 11, weight: .semibold)).tracking(0.8).foregroundStyle(Theme.muted).padding(.top, 8)

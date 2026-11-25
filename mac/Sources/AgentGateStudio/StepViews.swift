@@ -33,6 +33,7 @@ struct AgentTurnView: View {
       if live && app.generating && app.pendingPermission == nil && app.transcript.running == nil {
         WorkingLine(started: app.turnStarted, label: steps.isEmpty ? "Thinking" : "Working")
       }
+      if !live, let changes = message.changes, !changes.isEmpty { ChangesCard(changes: changes) }
       if !live, let usage = message.usage { UsageLine(steps: steps, usage: usage) }
     }
     .font(.system(size: 14))
@@ -101,7 +102,7 @@ struct StepCard: View {
   /// Commands, edits, failures and refusals are open; reads and searches are one line until clicked.
   static func opensByDefault(_ step: AgentStep) -> Bool {
     if step.status != .done { return true }
-    return ["bash", "edit", "write", "patch", "multiedit"].contains(step.tool)
+    return ["bash", "edit", "write", "patch", "multiedit", "todowrite"].contains(step.tool)
   }
 
   var body: some View {
@@ -159,6 +160,9 @@ struct StepCard: View {
 
   private var subject: String {
     if preparing { return step.tool == "bash" ? "Preparing the command…" : "Preparing…" }
+    if let todos = step.todos, !todos.isEmpty {
+      return "\(todos.filter(\.isDone).count) of \(todos.count) done"
+    }
     if let purpose = step.purpose, !purpose.isEmpty, step.tool == "bash" { return purpose }
     return step.text.replacingOccurrences(of: "\n", with: " ")
   }
@@ -182,9 +186,17 @@ struct StepCard: View {
     case "glob": return running ? "Finding files" : "Found files"
     case "list": return running ? "Listing folder" : "Listed folder"
     case "webfetch": return running ? "Fetching" : "Fetched"
-    case "todowrite", "todoread": return "Updated the plan"
-    case "task": return running ? "Running a helper agent" : "Helper agent finished"
-    default: return step.tool
+    case "todowrite", "todoread": return "To-do list"
+    case "task": return running ? "Helper agent working" : step.status == .failed ? "Helper agent failed" : "Helper agent finished"
+    case "skill": return running ? "Loading skill" : "Loaded skill"
+    case "websearch": return running ? "Searching the web" : "Searched the web"
+    case "lsp": return running ? "Looking up code" : "Looked up code"
+    default:
+      // MCP tools are named <server>_<tool>.
+      if let split = step.tool.firstIndex(of: "_") {
+        return "\(step.tool[..<split]): \(step.tool[step.tool.index(after: split)...].replacingOccurrences(of: "_", with: " "))"
+      }
+      return step.tool
     }
   }
 
@@ -201,7 +213,10 @@ struct StepCard: View {
     case "webfetch": return "globe"
     case "todowrite", "todoread": return "checklist"
     case "task": return "person.2"
-    default: return "wrench.and.screwdriver"
+    case "skill": return "book"
+    case "websearch": return "globe.badge.chevron.backward"
+    case "lsp": return "arrow.triangle.branch"
+    default: return step.tool.contains("_") ? "puzzlepiece.extension" : "wrench.and.screwdriver"
     }
   }
 
@@ -218,7 +233,8 @@ struct StepCard: View {
 
   private var hasBody: Bool {
     if preparing { return false }
-    return permission != nil || step.tool == "bash" || step.diff != nil || !step.output.isEmpty || step.error != nil || step.kind == .refused
+    return permission != nil || step.tool == "bash" || step.diff != nil || !step.output.isEmpty || step.error != nil
+      || step.kind == .refused || !(step.todos ?? []).isEmpty
   }
 
   @ViewBuilder private var content: some View {
@@ -230,6 +246,8 @@ struct StepCard: View {
         TerminalOutput(
           command: step.text, output: step.output, running: step.status == .running && permission == nil,
           exitCode: step.exitCode)
+      } else if let todos = step.todos, !todos.isEmpty {
+        TodoList(items: todos)
       } else if let diff = step.diff {
         DiffView(diff: diff)
       } else if step.kind == .refused {
@@ -247,6 +265,103 @@ struct StepCard: View {
         Text("Earlier output was cut; the end is shown.").font(.system(size: 11)).foregroundStyle(Theme.muted)
       }
       if let permission { ApprovalBar(permission: permission) }
+    }
+  }
+}
+
+/// What the turn changed in the project, measured against the moment before it started.
+struct ChangesCard: View {
+  let changes: [FileChange]
+  @State private var expanded = false
+
+  private var added: Int { changes.reduce(0) { $0 + $1.added } }
+  private var removed: Int { changes.reduce(0) { $0 + $1.removed } }
+  private var shown: [FileChange] { expanded ? changes : Array(changes.prefix(5)) }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      HStack(spacing: 8) {
+        Image(systemName: "doc.on.doc").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.accent)
+        Text("Changed \(plural(changes.count, "file"))").font(.system(size: 13, weight: .semibold))
+        Text("+\(added)").foregroundStyle(Theme.success).font(.system(size: 12, weight: .medium, design: .monospaced))
+        Text("−\(removed)").foregroundStyle(Theme.danger).font(.system(size: 12, weight: .medium, design: .monospaced))
+        Spacer()
+        Text("this turn").font(.system(size: 11)).foregroundStyle(Theme.muted)
+      }
+      .padding(.horizontal, 12).padding(.vertical, 10)
+      Divider().overlay(Theme.line)
+      VStack(alignment: .leading, spacing: 6) {
+        ForEach(shown) { change in
+          HStack(spacing: 8) {
+            Text(badge(change.kind)).font(.system(size: 10, weight: .bold, design: .monospaced))
+              .foregroundStyle(color(change.kind)).frame(width: 14)
+            Text(change.path).font(.system(size: 12, design: .monospaced)).lineLimit(1).truncationMode(.middle)
+            Spacer()
+            Text("+\(change.added)").foregroundStyle(Theme.success)
+            Text("−\(change.removed)").foregroundStyle(Theme.danger)
+          }
+          .font(.system(size: 11.5, design: .monospaced))
+        }
+        if changes.count > 5 {
+          Button(expanded ? "Show fewer" : "Show all \(changes.count)") { expanded.toggle() }.buttonStyle(LinkButtonStyle())
+        }
+      }
+      .padding(12)
+    }
+    .background(RoundedRectangle(cornerRadius: 12).fill(Theme.surface))
+    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.accent.opacity(0.3)))
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel("Changed \(plural(changes.count, "file")), \(added) lines added, \(removed) removed")
+  }
+
+  private func badge(_ kind: FileChange.Kind) -> String {
+    switch kind {
+    case .added: "A"
+    case .modified: "M"
+    case .deleted: "D"
+    }
+  }
+
+  private func color(_ kind: FileChange.Kind) -> Color {
+    switch kind {
+    case .added: Theme.success
+    case .modified: Theme.warning
+    case .deleted: Theme.danger
+    }
+  }
+}
+
+/// The agent's to-do list as a checklist: done, in progress, and still to do.
+struct TodoList: View {
+  let items: [TodoItem]
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 7) {
+      ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+        HStack(alignment: .firstTextBaseline, spacing: 9) {
+          Image(systemName: symbol(item)).font(.system(size: 12)).foregroundStyle(color(item))
+          Text(item.content).font(.system(size: 13)).strikethrough(item.status == "cancelled")
+            .foregroundStyle(item.isDone || item.status == "cancelled" ? Theme.muted : Theme.text)
+        }
+      }
+    }
+    .accessibilityElement(children: .combine)
+  }
+
+  private func symbol(_ item: TodoItem) -> String {
+    switch item.status {
+    case "completed": "checkmark.circle.fill"
+    case "in_progress": "circle.dotted.circle"
+    case "cancelled": "xmark.circle"
+    default: "circle"
+    }
+  }
+
+  private func color(_ item: TodoItem) -> Color {
+    switch item.status {
+    case "completed": Theme.success
+    case "in_progress": Theme.accent
+    default: Theme.muted
     }
   }
 }

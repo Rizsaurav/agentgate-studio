@@ -25,12 +25,15 @@ public struct AgentStep: Codable, Sendable, Equatable, Identifiable {
   public var ended: Date?
   /// Earlier output was cut, by the harness or to keep the transcript small.
   public var truncated: Bool
+  /// The agent's to-do list, for a todowrite step.
+  public var todos: [TodoItem]?
 
   public init(
     id: String, kind: Kind, tool: String = "", text: String, title: String? = nil, purpose: String? = nil,
     output: String = "", diff: String? = nil, exitCode: Int? = nil, error: String? = nil, status: Status,
-    started: Date? = nil, ended: Date? = nil, truncated: Bool = false
+    started: Date? = nil, ended: Date? = nil, truncated: Bool = false, todos: [TodoItem]? = nil
   ) {
+    self.todos = todos
     self.id = id
     self.kind = kind
     self.tool = tool
@@ -63,6 +66,28 @@ public struct AgentStep: Codable, Sendable, Equatable, Identifiable {
     }
     return (added, removed)
   }
+}
+
+/// One entry of the agent's to-do list.
+public struct TodoItem: Codable, Sendable, Equatable {
+  public var content: String
+  /// pending, in_progress, completed or cancelled.
+  public var status: String
+
+  public init(content: String, status: String) {
+    self.content = content
+    self.status = status
+  }
+
+  private enum CodingKeys: String, CodingKey { case content, status }
+
+  public init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    content = try c.decode(String.self, forKey: .content)
+    status = try c.decodeIfPresent(String.self, forKey: .status) ?? "pending"
+  }
+
+  public var isDone: Bool { status == "completed" }
 }
 
 /// What one turn used, for the line under the answer.
@@ -225,7 +250,7 @@ public struct Transcript: Sendable, Equatable {
       purpose: tool.purpose, output: output, diff: tool.diff.map { Self.kept($0, clean: clean).text },
       exitCode: tool.exitCode, error: tool.error.map(clean), status: status,
       started: tool.callID.flatMap { approvedAt[$0] } ?? tool.started,
-      ended: tool.ended, truncated: tool.truncated || cut)
+      ended: tool.ended, truncated: tool.truncated || cut, todos: tool.todos)
     if let index = all.firstIndex(where: { $0.id == tool.id }) {
       // Updates carry the whole state; keep what an earlier update knew and this one leaves out.
       var merged = step

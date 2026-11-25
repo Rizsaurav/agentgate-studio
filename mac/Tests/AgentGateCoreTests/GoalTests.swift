@@ -111,6 +111,36 @@ import Testing
     #expect(session.goal == nil)
   }
 
+  @Test func aClaimedCompletionWithoutAPassingCheckIsCheckedFirst() throws {
+    var goal = Goal(objective: "Make the tests pass", maxRounds: 4, check: "python3 -m unittest")
+    _ = goal.startRound()
+    goal.finishRound(answer: "GOAL COMPLETE: fixed", edits: 1, checkPassed: nil)
+    #expect(goal.phase == .active && goal.verifying)
+    let checkRound = goal.startRound()
+    #expect(try #require(checkRound).contains("Run `python3 -m unittest` now"))
+    goal.finishRound(answer: "GOAL COMPLETE: fixed", edits: 0, checkPassed: false)
+    #expect(goal.phase == .active && !goal.verifying && goal.note?.contains("did not pass") == true)
+    _ = goal.startRound()
+    goal.finishRound(answer: "Ran it, all green.\nGOAL COMPLETE: fixed", edits: 1, checkPassed: true)
+    #expect(goal.phase == .complete)
+  }
+
+  @Test func aCompletionThatRanTheCheckInTheSameRoundIsAccepted() {
+    var goal = Goal(objective: "x", check: "swift test")
+    _ = goal.startRound()
+    goal.finishRound(answer: "GOAL COMPLETE: done", edits: 1, checkPassed: true)
+    #expect(goal.phase == .complete && !goal.verifying)
+  }
+
+  @Test func theLastRunOfTheCheckDecidesWhetherItPassed() {
+    let goal = Goal(objective: "x", check: "python3 -m unittest")
+    #expect(goal.checkResult(commands: [("python3 -m unittest", 1), ("python3  -m unittest -v", 0)]) == true)
+    #expect(goal.checkResult(commands: [("python3 -m unittest", 0), ("cd . && python3 -m unittest", 1)]) == false)
+    #expect(goal.checkResult(commands: [("ls", 0)]) == nil)
+    #expect(goal.checkResult(commands: [("python3 -m unittest", nil)]) == nil)
+    #expect(Goal(objective: "x").checkResult(commands: [("anything", 0)]) == nil)
+  }
+
   @Test func theOptimizeObjectiveNamesTheProjectsOwnCheck() {
     #expect(Goal.optimize(testCommand: "swift test").contains("Verify every change with `swift test`."))
     #expect(Goal.optimize(testCommand: nil).contains("Find the project's build or tests"))

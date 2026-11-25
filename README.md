@@ -10,7 +10,7 @@ Pick a model, click Install, open a folder, and ask. The model runs on your Mac,
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-000000?logo=apple&logoColor=white)
 ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-native-8A63D2)
 ![llama.cpp](https://img.shields.io/badge/engine-llama.cpp-4B5563)
-![Tests](https://img.shields.io/badge/Swift%20tests-245-2EA44F)
+![Tests](https://img.shields.io/badge/Swift%20tests-281-2EA44F)
 
 <img src="docs/images/agent-run.gif" alt="The agent finds a bug in cart.py, asks before editing, recovers from a failed command and proves the fix with the tests" width="900">
 
@@ -74,10 +74,38 @@ How the rounds work:
 
 - **One objective per chat, saved with it.** A goal survives a restart. Its phase is always one of four: active, paused, blocked or complete.
 - **The app drives the rounds, not the model.** When a turn ends, the app reads the last line of the answer: `GOAL COMPLETE`, `GOAL BLOCKED` or `GOAL CONTINUE`. Any model that can follow an instruction can run a goal; no special tools are needed.
+- **Done means verified.** When the project has a test command, the agent saying `GOAL COMPLETE` is not enough: the goal completes only once that command has run in the round and exited 0. A claim without proof starts a check round instead. (Found by the end-to-end suite, where a 4B model once declared victory with the tests still red.)
 - **It stops on its own.** A round cap (8 by default, up to 50), three rounds in a row with no file changed, a failed round, or Stop all end the run, and the banner says why. Pausing stops the round in progress.
 - **The workspace is the authority.** Each round tells the model to trust the current files and tool results, not what earlier rounds claimed.
 
 The design follows the goal service and round driver of [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (MIT), rebuilt in Swift for this app: one durable goal, rounds started only when the agent is idle, a hard round cap, and a stop after repeated rounds without progress.
+
+## Capabilities
+
+Everything beyond reading, editing and running commands is a switch on the **Capabilities** page, off by default. Each one adds instructions a local model reads before every answer, so fewer is faster, and every call it makes still passes the gate.
+
+| Capability                       | What the agent gets                                                                                             | Leaves your Mac          | Checked live                 |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------ | ---------------------------- |
+| **Plan first** (in the composer) | A read-only planning agent; you press Carry out when the plan is right                                          | No                       | Yes                          |
+| **Goals**                        | Rounds toward one objective until done, blocked or out of rounds; done only when the project's own check passes | No                       | Yes                          |
+| **To-do list**                   | A checklist it keeps and ticks off, shown in the chat                                                           | No                       | Yes                          |
+| **Helper agents**                | Hands a separate part of a big task to a helper with its own context                                            | No                       | Yes                          |
+| **Project skills**               | Reusable instructions in `.agents/skills/<name>/SKILL.md`, loaded when relevant                                 | No                       | Yes                          |
+| **MCP servers**                  | Tools from Model Context Protocol servers you add; every call asks first                                        | Whatever the server does | Yes                          |
+| **Fetch web pages**              | Reads a public page after you approve it; local and private addresses are refused                               | The address              | Yes                          |
+| **Web search**                   | Searches for documentation through Exa, each search approved                                                    | The query, to Exa        | No (needs an Exa account)    |
+| **Code navigation**              | Definitions and references from language servers already installed                                              | No                       | No (needs a language server) |
+
+Always there, no switch: `AGENTS.md` instructions read at the start of every chat, `@file` mentions with suggestions as you type, a **changed-files card** after every turn (measured against the moment the turn started, so earlier uncommitted work is not counted), **search across all chats** in ⌘K, and **scheduled tasks** per project (run while the app is open).
+
+**Hardened by default.** A repository's own agent configuration is ignored, so a cloned repo cannot loosen permissions or start servers; your personal assistant settings and skills in the home folder stay out of the agent; nothing is downloaded behind your back; commands stop after 5 minutes; and the same call repeated in a loop is refused with a reason the model can act on.
+
+<details>
+<summary>How this compares to DeepSeek Harness</summary>
+
+The feature set was mapped against the 55 plugin packages of [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (MIT). Goals, plan mode, to-do lists, subagents and background jobs, skills, MCP, compaction, the loop guard and tool timeouts, deliverables (changed files), session search, schedules, workspace instructions and `@file` context, the sandbox and one-shot approvals are all covered, natively or through the bundled harness. Left out on purpose: the DeepSeek account and telemetry packages (this app sends nothing home), the ACP and SDK servers, SSH remote hosts, Office document rendering, computer-use and browser-use (too much reach for a local 4B model), and the plugin framework itself. Image attachments wait for a vision model in the catalog.
+
+</details>
 
 ## Quick start
 
@@ -395,9 +423,10 @@ What made the difference:
 
 ## Quality
 
-- **245 Swift tests** across 44 suites (17 of them live, run with `AGENTGATE_LIVE=1`): the planner, goal rounds, the repo scan, downloads (resume, stalls, checksums), the install matrix, repair policy, every rule in the gate, the sandbox profile, and the transcript, including recorded approval events.
+- **281 Swift tests** across 50 suites (28 of them live, run with `AGENTGATE_LIVE=1`): the planner, goal rounds and their checks, capabilities and the hardened harness configuration, the repo scan, per-turn changes, chat search, schedules, downloads (resume, stalls, checksums), the install matrix, repair policy, every rule in the gate, the sandbox profile, and the transcript, including recorded approval events.
 - **Recorded fixtures.** The transcript tests replay real event streams recorded from the harness, so a harness update that changes its events fails a test instead of the app.
 - **Live tests on demand.** `AGENTGATE_LIVE=1 swift test` downloads a real model, loads it, chats, and starts the real harness behind its password.
+- **End to end, with the real model.** `AGENTGATE_LIVE=1 AGENTGATE_E2E=1 swift test --filter AgentEndToEnd` runs the bundled engine, the sandboxed harness, Qwen3 4B and the gate through 11 scenarios: a bug fixed and proved with the tests (and its changed files measured), a symlink that leads out of the project refused, plan mode changing nothing, a goal that completes only once its check passes, the to-do checklist, a project skill, a helper agent, an MCP tool through the gate, `AGENTS.md` reaching the model, a hostile `opencode.json` in a cloned repo ignored, and (with `AGENTGATE_E2E_NETWORK=1`) a web fetch passed while a local address is refused.
 - **CI on every pull request:** the Mac app's build and tests on macOS, typecheck, lint, unit tests and production build for the web app, security evaluations, a Docker smoke test, and browser end-to-end tests.
 - **Pinned and verified dependencies.** llama.cpp `b11765` and OpenCode `v1.19.5` are fetched by tag and checked against SHA-256 before use.
 
@@ -411,6 +440,9 @@ By default, only model downloads. Everything else is something you turn on or ap
 | Chat with the agent                               | Nothing from the app: the model runs on this Mac. Commands you approve can use the network (a package install, for example); uploads are blocked by rule. | Whatever that command contacts                 |
 | Turn on the supervising agent for failed installs | A failure report with keys and private paths removed, plus any web searches it makes                                                                      | The provider you chose (OpenRouter by default) |
 | Let a repair switch the download source           | A request for the model file                                                                                                                              | hf-mirror.com                                  |
+| Turn on Fetch web pages, and approve a fetch      | A request for that public page                                                                                                                            | That site                                      |
+| Turn on Web search, and approve a search          | The search query                                                                                                                                          | Exa                                            |
+| Add an MCP server                                 | Whatever that server sends; it runs inside the agent's sandbox                                                                                            | Depends on the server                          |
 | Open a project's CI/CD tab                        | Requests for that repository's workflow runs, with your `gh` login                                                                                        | GitHub                                         |
 
 Keys live in the macOS Keychain, are checked once with their provider, and are never shown again or logged.
@@ -421,7 +453,7 @@ Keys live in the macOS Keychain, are checked once with their provider, and are n
 mac/                     The native app (this README)
   Sources/AgentGateCore/   Model layer: planner, installer, engine, harness, gate, transcript, goals, repo scan
   Sources/AgentGateStudio/ Views and controllers (SwiftUI)
-  Tests/AgentGateCoreTests/ 245 tests, recorded harness fixtures
+  Tests/AgentGateCoreTests/ 281 tests, recorded harness fixtures, live end-to-end suite
   scripts/                 build_app.sh, pinned runtime fetchers, catalog builder
 apps/web/                The web app (Next.js): RAG over project documents, prompt-injection scanner, evaluations
 packages/controller/     The web app's controller: runs, documents, protection pipeline, SQLite
@@ -439,6 +471,8 @@ The repository also holds a cross-platform **web app**: agent sessions on Ollama
 - [x] Sandboxed agent with a four-layer gate and every step in the chat
 - [x] Lean harness: first answer in 4.5 s on a 4B model
 - [x] Goals: optimize a repository in rounds, with a repo overview on every project
+- [x] Capabilities: plan mode, to-do lists, helper agents, skills, MCP, web, code navigation, schedules, chat search
+- [ ] Image attachments with a vision model
 - [ ] Instant first answer: load the model at launch and keep the prompt cache on disk
 - [ ] Speculative decoding with a small draft model
 - [ ] A native Swift agent loop in place of the bundled harness

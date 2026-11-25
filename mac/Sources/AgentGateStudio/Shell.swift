@@ -43,6 +43,7 @@ struct Shell: View {
     case .security: SecurityPage()
     case .models: ModelsPage()
     case .profile: ProfilePage()
+    case .capabilities: CapabilitiesPage()
     }
   }
 }
@@ -67,6 +68,9 @@ private struct Sidebar: View {
         NavRow(title: "Workspace", symbol: "house", selected: workspaceSelected) { app.route = .workspace }
         NavRow(title: "Security & Verification", symbol: "checkmark.shield", selected: app.route == .security) {
           app.route = .security
+        }
+        NavRow(title: "Capabilities", symbol: "square.stack.3d.up", selected: app.route == .capabilities) {
+          app.route = .capabilities
         }
       }
       .padding(.horizontal, 14).padding(.top, 30)
@@ -220,6 +224,7 @@ private struct TitleBar: View {
     case .security: "Security & Verification"
     case .models: "Providers"
     case .profile: "Profile"
+    case .capabilities: "Capabilities"
     default: "Workspace"
     }
   }
@@ -234,7 +239,7 @@ private struct CommandPalette: View {
   private var items: [(label: String, symbol: String, route: Route)] {
     let fixed: [(String, String, Route)] = [
       ("Workspace", "house", .workspace), ("Security & Verification", "checkmark.shield", .security),
-      ("Models & Providers", "cube", .models),
+      ("Models & Providers", "cube", .models), ("Capabilities", "square.stack.3d.up", .capabilities),
     ]
     let all = fixed + app.projects.map { ($0.name, "bubble.left", Route.project($0.id)) }
     return all.filter { query.isEmpty || $0.0.localizedCaseInsensitiveContains(query) }
@@ -245,9 +250,11 @@ private struct CommandPalette: View {
       HStack(spacing: 10) {
         Image(systemName: "magnifyingglass").foregroundStyle(Theme.muted)
         TextField("Find", text: $query, prompt: Text(""))
-          .inputHint("Go to a project or view…", when: query.isEmpty)
+          .inputHint("Go to a project or view, or search your chats…", when: query.isEmpty)
           .textFieldStyle(.plain).font(.system(size: 15))
-          .onSubmit { if let first = items.first { go(first.route) } }
+          .onSubmit {
+            if let first = items.first { go(first.route) } else if let hit = hits.first { go(.session(hit.sessionId)) }
+          }
       }
       .padding(16)
       Rectangle().fill(Theme.line).frame(height: 1)
@@ -264,13 +271,43 @@ private struct CommandPalette: View {
             }
             .buttonStyle(.plain)
           }
+          if !hits.isEmpty {
+            Text("IN YOUR CHATS").font(.system(size: 10, weight: .semibold)).tracking(0.8).foregroundStyle(Theme.muted)
+              .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 2)
+          }
+          ForEach(hits) { hit in
+            Button { go(.session(hit.sessionId)) } label: {
+              HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "text.bubble").foregroundStyle(Theme.muted).frame(width: 18).padding(.top, 2)
+                VStack(alignment: .leading, spacing: 3) {
+                  Text(title(of: hit.sessionId)).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                  Text(hit.snippet).font(.system(size: 11.5)).foregroundStyle(Theme.muted).lineLimit(2)
+                }
+                Spacer()
+              }
+              .padding(.horizontal, 12).padding(.vertical, 7).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+          }
         }
         .padding(8)
       }
-      .frame(height: 260)
+      .frame(height: 320)
     }
     .frame(width: 520).studioGlass(radius: 20).preferredColorScheme(.dark)
     .onExitCommand { dismiss() }
+  }
+
+  /// Chats whose messages, commands or files mention every word of the query.
+  private var hits: [SessionSearch.Hit] {
+    query.count < 2 ? [] : SessionSearch.search(query, in: app.workspace.sessions, limit: 8)
+  }
+
+  private func title(of id: UUID) -> String {
+    guard let session = app.session(id) else { return "Chat" }
+    let project = app.project(session.projectId)?.name ?? ""
+    let first = session.goal?.objective ?? session.messages.first?.content ?? "Chat"
+    return project.isEmpty ? first : "\(project) · \(first)"
   }
 
   private func go(_ route: Route) {

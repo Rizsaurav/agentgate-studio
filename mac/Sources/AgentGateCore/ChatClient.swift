@@ -10,8 +10,15 @@ public struct ChatMessage: Sendable, Equatable, Identifiable, Codable {
   public var usage: TurnUsage?
   /// For a message the app sent on the user's behalf: the goal round it starts. Nil for the user's own words.
   public var goalRound: Int?
+  /// A message sent to the plan agent, which looks but changes nothing. Nil for ordinary messages.
+  public var plan: Bool?
+  /// For an agent answer in a git project: the files the turn changed. Nil when nothing changed or it is unknown.
+  public var changes: [FileChange]?
 
-  public init(role: Role, content: String, steps: [AgentStep]? = nil, usage: TurnUsage? = nil, goalRound: Int? = nil) {
+  public init(
+    role: Role, content: String, steps: [AgentStep]? = nil, usage: TurnUsage? = nil, goalRound: Int? = nil, plan: Bool? = nil
+  ) {
+    self.plan = plan
     self.role = role
     self.content = content
     self.steps = steps
