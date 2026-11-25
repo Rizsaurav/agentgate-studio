@@ -120,6 +120,8 @@ final class AppModel {
       resumable = runStore.unfinished(installed: Set(installed.map(\.id)))
       refreshAgents()
       workspace = try workspaceStore.load()
+      // No round is running at launch: a goal left active by a quit or crash waits for the user to resume it.
+      for index in workspace.sessions.indices { workspace.sessions[index].goal?.pause() }
     } catch {
       errorMessage = String(describing: error)
     }
@@ -220,6 +222,88 @@ final class AppModel {
   }
 
   private func persist() throws { try workspaceStore.save(workspace) }
+
+  // MARK: Goals
+
+  /// Starts a chat in the project that works toward an objective in rounds, with the chosen model, else the loaded
+  /// one, else the first installed one.
+  func startGoal(
+    _ objective: String, in project: UUID, with chosen: InstalledModel? = nil, maxRounds: Int = Goal.defaultMaxRounds
+  ) {
+    guard let model = chosen ?? active ?? installed.first else {
+      errorMessage = "Install a model first."
+      return
+    }
+    startSession(in: project, with: model)
+    guard case .session(let id) = route else { return }
+    startGoal(objective, inSession: id, maxRounds: maxRounds)
+  }
+
+  /// Gives a session a goal and starts its first round.
+  func startGoal(_ objective: String, inSession id: UUID, maxRounds: Int = Goal.defaultMaxRounds) {
+    guard !generating, let index = workspace.sessions.firstIndex(where: { $0.id == id }) else { return }
+    let goal = Goal(objective: objective, maxRounds: maxRounds)
+    guard !goal.objective.isEmpty else { return }
+    workspace.sessions[index].goal = goal
+    nextRound(in: id)
+  }
+
+  /// Pauses the goal. A round in progress is stopped, like the Stop button.
+  func pauseGoal(in id: UUID) {
+    guard let index = workspace.sessions.firstIndex(where: { $0.id == id }) else { return }
+    workspace.sessions[index].goal?.pause()
+    do { try persist() } catch { errorMessage = String(describing: error) }
+    if streamingSession == id { stopAgent() }
+  }
+
+  /// Starts the next round of a paused or blocked goal, with more rounds when it ran out.
+  func resumeGoal(in id: UUID, extraRounds: Int = 0) {
+    guard !generating, let index = workspace.sessions.firstIndex(where: { $0.id == id }),
+          workspace.sessions[index].goal?.resume(extraRounds: extraRounds) == true else { return }
+    nextRound(in: id)
+  }
+
+  func clearGoal(in id: UUID) {
+    guard streamingSession != id, let index = workspace.sessions.firstIndex(where: { $0.id == id }) else { return }
+    workspace.sessions[index].goal = nil
+    do { try persist() } catch { errorMessage = String(describing: error) }
+  }
+
+  private func nextRound(in id: UUID) {
+    guard let index = workspace.sessions.firstIndex(where: { $0.id == id }),
+          let prompt = workspace.sessions[index].goal?.startRound(),
+          let round = workspace.sessions[index].goal?.roundsStarted else {
+      do { try persist() } catch { errorMessage = String(describing: error) }
+      return
+    }
+    send(prompt, in: id, goalRound: round)
+  }
+
+  /// Files the turn changed with edits that went through.
+  private var editedFiles: Int {
+    Set(transcript.steps.filter {
+      $0.kind == .tool && ["edit", "write", "patch", "multiedit"].contains($0.tool) && $0.status == .done
+    }.map(\.text)).count
+  }
+
+  // MARK: Repository overview
+
+  /// What each project folder holds, scanned once when its page opens.
+  private(set) var repoSummaries: [UUID: RepoSummary] = [:]
+  /// Projects whose folder did not answer in time, usually because macOS is asking the user for access.
+  private(set) var repoScanBlocked: Set<UUID> = []
+  private var scanning: Set<UUID> = []
+
+  func scanRepo(_ project: UUID, force: Bool = false) {
+    guard let folder = self.project(project)?.folder, force || repoSummaries[project] == nil,
+          scanning.insert(project).inserted else { return }
+    repoScanBlocked.remove(project)
+    Task {
+      let summary = await Task.detached(priority: .utility) { RepoScan.scan(URL(fileURLWithPath: folder)) }.value
+      if let summary { repoSummaries[project] = summary } else { repoScanBlocked.insert(project) }
+      scanning.remove(project)
+    }
+  }
 
   // MARK: Tokens
 
@@ -598,16 +682,18 @@ final class AppModel {
   /// The file of the latest edit, exactly as the model wrote it, for the policy check. Never the
   /// redacted text shown on screen: that would hide a path outside the project.
   private var lastEditPath: String?
+  /// Why the turn in progress failed, if it did, so a goal round can say so.
+  private var turnFailure: String?
 
   /// Sends a task in a session. The agent harness runs it in the project's folder with the session's model.
-  func send(_ text: String, in sessionId: UUID) {
+  func send(_ text: String, in sessionId: UUID, goalRound: Int? = nil) {
     guard !generating, let index = workspace.sessions.firstIndex(where: { $0.id == sessionId }) else { return }
     let session = workspace.sessions[index]
     guard let folder = project(session.projectId)?.folder else {
       errorMessage = "This project has no folder. Open a folder to let the agent work."
       return
     }
-    workspace.sessions[index].messages.append(ChatMessage(role: .user, content: text))
+    workspace.sessions[index].messages.append(ChatMessage(role: .user, content: text, goalRound: goalRound))
     workspace.sessions[index].messages.append(ChatMessage(role: .assistant, content: ""))
     generating = true
     streamingSession = sessionId
@@ -643,6 +729,7 @@ final class AppModel {
         try await watchForQuestions(server)
       } catch {
         append("\(error)", to: sessionId)
+        turnFailure = String(describing: error)
         finishTurn()
       }
     }
@@ -660,6 +747,10 @@ final class AppModel {
   }
 
   func stopAgent() {
+    // Stopping a goal round pauses the goal, so the next round does not start on its own.
+    if let id = streamingSession, let index = workspace.sessions.firstIndex(where: { $0.id == id }) {
+      workspace.sessions[index].goal?.pause()
+    }
     guard generating, let id = streamingSession,
           let agentId = workspace.sessions.first(where: { $0.id == id })?.agentSession, let agent else { return }
     Task { try? await agent.client.abort(session: agentId) }
@@ -838,6 +929,7 @@ final class AppModel {
     case .idle: finishTurn()
     case .failed(let message):
       if let id = streamingSession { append("\n\nError: \(message)", to: id) }
+      turnFailure = message
       finishTurn()
     default: break
     }
@@ -870,11 +962,24 @@ final class AppModel {
     turnReportedUsage = false
     transcript.finish(seconds: turnStarted.map { Date().timeIntervalSince($0) } ?? 0)
     showTranscript(usage: transcript.usage)
+    let finished = streamingSession
+    var continueGoal = false
+    if let id = finished, let index = workspace.sessions.firstIndex(where: { $0.id == id }),
+       workspace.sessions[index].goal?.phase == .active {
+      if let turnFailure {
+        workspace.sessions[index].goal?.failRound(turnFailure)
+      } else {
+        workspace.sessions[index].goal?.finishRound(answer: transcript.answer, edits: editedFiles)
+      }
+      continueGoal = workspace.sessions[index].goal?.canStartRound == true
+    }
+    turnFailure = nil
     generating = false
     pendingPermission = nil
     queuedPermissions = []
     streamingSession = nil
     do { try persist() } catch { errorMessage = String(describing: error) }
+    if continueGoal, let finished { nextRound(in: finished) }
   }
 
   private func append(_ text: String, to sessionId: UUID) {

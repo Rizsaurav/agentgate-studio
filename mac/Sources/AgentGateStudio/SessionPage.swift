@@ -38,6 +38,9 @@ struct SessionPage: View {
             .help("Open a terminal in this project's folder (⌃`)")
           }
         }
+        if let goal = session.goal {
+          GoalBanner(sessionId: session.id, goal: goal)
+        }
         if terminalOpen, let folder = project.folder {
           VSplitView {
             conversation(session).frame(minHeight: 280).layoutPriority(1)
@@ -57,6 +60,7 @@ struct SessionPage: View {
       .padding(.horizontal, 42).padding(.top, 28).padding(.bottom, 20)
       .frame(maxWidth: 860, maxHeight: .infinity, alignment: .topLeading)
       .frame(maxWidth: .infinity, alignment: .center)
+      .task(id: project.id) { app.scanRepo(project.id) }
     } else {
       Text("This session no longer exists.").foregroundStyle(Theme.muted)
     }
@@ -71,10 +75,21 @@ struct SessionPage: View {
   private func conversation(_ session: Session) -> some View {
     VStack(spacing: 0) {
       if session.messages.isEmpty {
-        VStack(spacing: 12) {
+        VStack(spacing: 18) {
           IconTile(symbol: "sparkle", size: 56)
-          Text("What are we working on?").font(.system(size: 15, weight: .semibold))
+          VStack(spacing: 6) {
+            Text("What are we working on?").font(.system(size: 17, weight: .semibold))
+            Text("Ask for one change, or give the agent a goal and it works in rounds until it is done.")
+              .font(.system(size: 13)).foregroundStyle(Theme.muted).multilineTextAlignment(.center)
+          }
+          SuggestionChips(
+            testCommand: app.repoSummaries[session.projectId]?.testCommand,
+            disabled: !app.agentOn || app.generating,
+            send: { app.send($0, in: session.id) },
+            startGoal: { app.startGoal($0, inSession: session.id) })
+            .padding(.top, 6)
         }
+        .padding(.horizontal, 20)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
       } else {
         ScrollViewReader { proxy in
@@ -127,6 +142,10 @@ struct SessionPage: View {
         modelMenu(session)
         Text(modelState(session)).font(.system(size: 11)).foregroundStyle(Theme.muted)
         Spacer()
+        Button { runAsGoal() } label: { Label("Goal", systemImage: "scope") }
+          .buttonStyle(SubtleButtonStyle())
+          .help("Work toward this in rounds until it is done (up to \(Goal.defaultMaxRounds) rounds)")
+          .disabled(!app.agentOn || app.generating || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         Button { send() } label: { Label("Send", systemImage: "arrow.up") }
           .buttonStyle(PrimaryButtonStyle())
           .keyboardShortcut(.return, modifiers: .command)
@@ -165,15 +184,35 @@ struct SessionPage: View {
     draft = ""
     app.send(text, in: sessionId)
   }
+
+  private func runAsGoal() {
+    let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty, app.agentOn else { return }
+    draft = ""
+    app.startGoal(text, inSession: sessionId)
+  }
 }
 
 private struct UserTurn: View {
   let message: ChatMessage
+  @State private var showPrompt = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
-      Text("YOU").font(.system(size: 10, weight: .semibold)).tracking(0.6).foregroundStyle(Theme.muted)
-      Text(message.content).textSelection(.enabled).lineSpacing(3)
+      if let round = message.goalRound {
+        // The app wrote this message, so it is folded: the round is what matters, the prompt is there if wanted.
+        HStack(spacing: 6) {
+          Image(systemName: "scope").font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.accent)
+          Text("GOAL  ·  ROUND \(round)").font(.system(size: 10, weight: .semibold)).tracking(0.6)
+            .foregroundStyle(Theme.accent)
+          Spacer()
+          Button(showPrompt ? "Hide prompt" : "Show prompt") { showPrompt.toggle() }.buttonStyle(LinkButtonStyle())
+        }
+        if showPrompt { Text(message.content).textSelection(.enabled).lineSpacing(3).font(.system(size: 12)) }
+      } else {
+        Text("YOU").font(.system(size: 10, weight: .semibold)).tracking(0.6).foregroundStyle(Theme.muted)
+        Text(message.content).textSelection(.enabled).lineSpacing(3)
+      }
     }
     .font(.system(size: 14))
     .padding(12)

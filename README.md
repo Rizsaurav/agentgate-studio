@@ -10,7 +10,7 @@ Pick a model, click Install, open a folder, and ask. The model runs on your Mac,
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-000000?logo=apple&logoColor=white)
 ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-native-8A63D2)
 ![llama.cpp](https://img.shields.io/badge/engine-llama.cpp-4B5563)
-![Tests](https://img.shields.io/badge/Swift%20tests-230-2EA44F)
+![Tests](https://img.shields.io/badge/Swift%20tests-245-2EA44F)
 
 <img src="docs/images/agent-run.gif" alt="The agent finds a bug in cart.py, asks before editing, recovers from a failed command and proves the fix with the tests" width="900">
 
@@ -33,6 +33,7 @@ AGENTGATE Studio addresses both:
 
 |                                        |                                                                                                                                                                                                                                                  |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Optimize a repo in rounds**          | Give the agent a goal, or press "Optimize this repo", and it keeps going: one small, verified change per round, until it reports the goal met, says it needs you, or stops itself after three rounds that change nothing.                        |
 | **One click to a working local model** | A pure, deterministic planner sizes the model to this Mac. An eight-step install (Hardware, Compatibility, Quantization, Download, Configure, Load, Test, Ready) is visible as it runs, survives a quit or crash, and resumes where it stopped.  |
 | **Agent orchestration you can watch**  | The app runs three processes, the model engine, the agent harness and itself, and turns the harness's event stream into a live transcript: reasoning, commands, output, diffs, approvals and refusals in the order they happened.                |
 | **A gate on every tool call**          | Four layers: call validation, policy rules, your approval, and the OS sandbox underneath. A refused call tells the model why, so it corrects itself instead of stopping.                                                                         |
@@ -52,6 +53,31 @@ AGENTGATE Studio addresses both:
 <td width="50%"><img src="docs/images/security.png" alt="Security page with the rule self-test and the agent activity log"><br><sub><b>Rules you can test.</b> A 28-case self-test of the rules, and a log of every request the agent made in the recording above, with its verdict.</sub></td>
 </tr>
 </table>
+
+## Optimize a repo in rounds
+
+Open a project and AGENTGATE reads it first: languages, size, branch, last commit, and the command that checks it (`swift test`, `npm test`, `cargo test`, `go test ./...`, `pytest` and more). Press **Optimize this repo**, or type any objective and press **Goal**, and the agent works toward it in rounds.
+
+<div align="center">
+<img src="docs/images/goal-rounds.gif" alt="A goal runs three rounds on its own, adding one test per round, and completes" width="860">
+<br><sub>A real three-round goal, sped up: one new edge-case test per round. Rounds 2 and 3 start on their own, every edit and command still waits for approval, and the goal completes at round 3 of 8.</sub>
+</div>
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/repo-overview.png" alt="Project page with the repository overview: language bar, file and line counts, test command and last commit"><br><sub><b>The repo at a glance.</b> Languages, lines of code, uncommitted files, the check the agent will use, and one button to start.</sub></td>
+<td width="50%"><img src="docs/images/goal-complete.png" alt="A completed goal: a green round track, round 3 of 8, and the agent's summary"><br><sub><b>Every round is visible.</b> The track fills as rounds run; the banner shows the phase, the rounds used and the agent's own summary.</sub></td>
+</tr>
+</table>
+
+How the rounds work:
+
+- **One objective per chat, saved with it.** A goal survives a restart. Its phase is always one of four: active, paused, blocked or complete.
+- **The app drives the rounds, not the model.** When a turn ends, the app reads the last line of the answer: `GOAL COMPLETE`, `GOAL BLOCKED` or `GOAL CONTINUE`. Any model that can follow an instruction can run a goal; no special tools are needed.
+- **It stops on its own.** A round cap (8 by default, up to 50), three rounds in a row with no file changed, a failed round, or Stop all end the run, and the banner says why. Pausing stops the round in progress.
+- **The workspace is the authority.** Each round tells the model to trust the current files and tool results, not what earlier rounds claimed.
+
+The design follows the goal service and round driver of [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (MIT), rebuilt in Swift for this app: one durable goal, rounds started only when the agent is idle, a hard round cap, and a stop after repeated rounds without progress.
 
 ## Quick start
 
@@ -216,6 +242,22 @@ stateDiagram-v2
 </tr>
 </table>
 
+**A goal**
+
+```mermaid
+stateDiagram-v2
+  [*] --> Active: Optimize this repo, or Goal
+  Active --> Active: round ends, GOAL CONTINUE, rounds left
+  Active --> Complete: GOAL COMPLETE
+  Active --> Blocked: GOAL BLOCKED
+  Active --> Blocked: 3 rounds with no change
+  Active --> Blocked: round failed or cap reached
+  Active --> Paused: Pause or Stop
+  Paused --> Active: Resume
+  Blocked --> Active: Try again, or add rounds
+  Complete --> [*]
+```
+
 ### Structure
 
 The Mac app follows Model, View, Controller. `AgentGateCore` is the model layer: no UI imports, every rule and algorithm in plain value types, tested directly. The `AgentGateStudio` target holds the SwiftUI views and two observable controllers.
@@ -302,6 +344,18 @@ classDiagram
     +append(entry)
     +entries() SecurityEntry[]
   }
+  class Goal {
+    <<Model>>
+    +Phase phase
+    +startRound() String
+    +finishRound(answer, edits)
+    +pause()
+    +resume(extraRounds) Bool
+  }
+  class RepoScan {
+    <<Model>>
+    +scan(folder) RepoSummary
+  }
 
   SessionPage --> AppModel
   StepCard --> AppModel
@@ -319,6 +373,8 @@ classDiagram
   AppModel --> ToolPolicy
   AppModel --> WorkspaceStore
   AppModel --> SecurityLog
+  AppModel --> Goal
+  AppModel --> RepoScan
 ```
 
 ## Performance
@@ -339,7 +395,7 @@ What made the difference:
 
 ## Quality
 
-- **230 Swift tests** across 42 suites (17 of them live, run with `AGENTGATE_LIVE=1`): the planner, downloads (resume, stalls, checksums), the install matrix, repair policy, every rule in the gate, the sandbox profile, and the transcript, including recorded approval events.
+- **245 Swift tests** across 44 suites (17 of them live, run with `AGENTGATE_LIVE=1`): the planner, goal rounds, the repo scan, downloads (resume, stalls, checksums), the install matrix, repair policy, every rule in the gate, the sandbox profile, and the transcript, including recorded approval events.
 - **Recorded fixtures.** The transcript tests replay real event streams recorded from the harness, so a harness update that changes its events fails a test instead of the app.
 - **Live tests on demand.** `AGENTGATE_LIVE=1 swift test` downloads a real model, loads it, chats, and starts the real harness behind its password.
 - **CI on every pull request:** the Mac app's build and tests on macOS, typecheck, lint, unit tests and production build for the web app, security evaluations, a Docker smoke test, and browser end-to-end tests.
@@ -363,9 +419,9 @@ Keys live in the macOS Keychain, are checked once with their provider, and are n
 
 ```text
 mac/                     The native app (this README)
-  Sources/AgentGateCore/   Model layer: planner, installer, engine, harness, gate, transcript
+  Sources/AgentGateCore/   Model layer: planner, installer, engine, harness, gate, transcript, goals, repo scan
   Sources/AgentGateStudio/ Views and controllers (SwiftUI)
-  Tests/AgentGateCoreTests/ 230 tests, recorded harness fixtures
+  Tests/AgentGateCoreTests/ 245 tests, recorded harness fixtures
   scripts/                 build_app.sh, pinned runtime fetchers, catalog builder
 apps/web/                The web app (Next.js): RAG over project documents, prompt-injection scanner, evaluations
 packages/controller/     The web app's controller: runs, documents, protection pipeline, SQLite
@@ -382,6 +438,7 @@ The repository also holds a cross-platform **web app**: agent sessions on Ollama
 - [x] Local models sized per Mac, with a visible, resumable, self-repairing install
 - [x] Sandboxed agent with a four-layer gate and every step in the chat
 - [x] Lean harness: first answer in 4.5 s on a 4B model
+- [x] Goals: optimize a repository in rounds, with a repo overview on every project
 - [ ] Instant first answer: load the model at launch and keep the prompt cache on disk
 - [ ] Speculative decoding with a small draft model
 - [ ] A native Swift agent loop in place of the bundled harness
