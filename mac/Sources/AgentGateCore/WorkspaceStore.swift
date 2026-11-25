@@ -24,6 +24,8 @@ public struct Session: Codable, Sendable, Equatable, Identifiable {
   public var messages: [ChatMessage]
   /// The harness's id for this conversation, so it continues after a restart.
   public var agentSession: String?
+  /// The objective this session works toward in rounds, if it has one.
+  public var goal: Goal?
 
   public init(id: UUID, projectId: UUID, modelId: String, modelName: String, createdAt: Date, messages: [ChatMessage]) {
     self.id = id

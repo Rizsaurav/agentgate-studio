@@ -154,7 +154,18 @@ struct ProjectPage: View {
           } else {
           HStack(alignment: .top, spacing: 36) {
             VStack(alignment: .leading, spacing: 14) {
+              if let folder = project.folder {
+                RepoOverview(
+                  summary: app.repoSummaries[projectId], folder: folder, blocked: app.repoScanBlocked.contains(projectId),
+                  retry: { app.scanRepo(projectId, force: true) })
+              }
               let sessions = app.sessions(in: projectId)
+              Text(sessions.isEmpty ? "CHATS" : "CHATS  ·  \(sessions.count)")
+                .font(.system(size: 11, weight: .semibold)).tracking(0.8).foregroundStyle(Theme.muted).padding(.top, 8)
+              if sessions.isEmpty {
+                Text("No chats yet. Start one, or let the agent optimize this repository in rounds.")
+                  .font(.system(size: 13)).foregroundStyle(Theme.muted)
+              }
               ForEach(sessions) { session in
                 SessionListRow(session: session) { app.route = .session(session.id) }
               }
@@ -188,6 +199,17 @@ struct ProjectPage: View {
                     }
                   }
                   .buttonStyle(PrimaryButtonStyle())
+                  if project.folder != nil {
+                    Divider().overlay(Theme.line).padding(.vertical, 4)
+                    VStack(alignment: .leading, spacing: 8) {
+                      Label("Optimize this repo", systemImage: "scope").font(.system(size: 14, weight: .semibold))
+                      Text("The agent works in rounds: one small, verified fix at a time, until the code is better or it needs you. Every command and edit still asks first.")
+                        .font(.system(size: 12)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
+                      Button { optimize() } label: { Label("Start", systemImage: "play.fill") }
+                        .buttonStyle(SubtleButtonStyle())
+                        .disabled(!app.agentOn || app.generating)
+                    }
+                  }
                 }
               }
             }
@@ -196,9 +218,15 @@ struct ProjectPage: View {
           }
         }
       }
+      .task(id: projectId) { app.scanRepo(projectId) }
     } else {
       Text("This project no longer exists.").foregroundStyle(Theme.muted)
     }
+  }
+
+  private func optimize() {
+    let model = app.installed.first { $0.id == modelId }
+    app.startGoal(Goal.optimize(testCommand: app.repoSummaries[projectId]?.testCommand), in: projectId, with: model)
   }
 
   private var selectedLabel: String {
@@ -211,16 +239,26 @@ private struct SessionListRow: View {
   let action: () -> Void
   @State private var hover = false
 
+  /// A goal chat is named by its objective; the first message there is the app's round prompt.
+  private var title: String {
+    if let goal = session.goal { return goal.objective }
+    return session.messages.first?.content ?? "New session"
+  }
+
   var body: some View {
     Button(action: action) {
       HStack(spacing: 14) {
-        IconTile(symbol: "bubble.left", size: 40)
+        IconTile(symbol: session.goal == nil ? "bubble.left" : "scope", size: 40)
         VStack(alignment: .leading, spacing: 5) {
-          Text(session.messages.first?.content ?? "New session").font(.system(size: 14, weight: .medium)).lineLimit(1)
+          Text(title).font(.system(size: 14, weight: .medium)).lineLimit(1)
           Text("\(session.modelName)  ·  \(plural(session.messages.filter { $0.role == .user }.count, "task"))  ·  \(isoDay(session.createdAt))")
             .font(.system(size: 12)).foregroundStyle(Theme.muted)
         }
         Spacer()
+        if let goal = session.goal {
+          Text("Goal · \(goal.phase.rawValue) · \(goal.roundsStarted)/\(goal.maxRounds)")
+            .font(.system(size: 11)).foregroundStyle(Theme.muted).monospacedDigit()
+        }
         Image(systemName: "arrow.up.right").font(.system(size: 12)).foregroundStyle(Theme.muted)
       }
       .padding(10)
