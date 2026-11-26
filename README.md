@@ -10,7 +10,7 @@ Pick a model, click Install, open a folder, and ask. The model runs on your Mac,
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-000000?logo=apple&logoColor=white)
 ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-native-8A63D2)
 ![llama.cpp](https://img.shields.io/badge/engine-llama.cpp-4B5563)
-![Tests](https://img.shields.io/badge/Swift%20tests-281-2EA44F)
+![Tests](https://img.shields.io/badge/Swift%20tests-283-2EA44F)
 
 <img src="docs/images/agent-run.gif" alt="The agent finds a bug in cart.py, asks before editing, recovers from a failed command and proves the fix with the tests" width="900">
 
@@ -95,6 +95,17 @@ Everything beyond reading, editing and running commands is a switch on the **Cap
 | **Fetch web pages**              | Reads a public page after you approve it; local and private addresses are refused                               | The address              | Yes                          |
 | **Web search**                   | Searches for documentation through Exa, each search approved                                                    | The query, to Exa        | No (needs an Exa account)    |
 | **Code navigation**              | Definitions and references from language servers already installed                                              | No                       | No (needs a language server) |
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/capabilities.png" alt="The Capabilities page: a card per capability with what it costs and whether anything leaves the Mac"><br><sub><b>Off until you need it.</b> Each card says what the agent gets and whether anything leaves your Mac.</sub></td>
+<td width="50%"><img src="docs/images/todo-explored.png" alt="A turn with the agent's look-ups folded into one Explored row and its to-do list as a checklist"><br><sub><b>Less noise, more signal.</b> Look-ups fold into one Explored row; the to-do list is one live checklist.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/images/changed-files.png" alt="The tests pass and a card lists the files the turn changed with lines added and removed"><br><sub><b>What this turn changed.</b> Measured against the moment the turn started, not the last commit.</sub></td>
+<td width="50%"><img src="docs/images/chat-search.png" alt="The command palette searching every chat for subtotal quantity, with snippets"><br><sub><b>Search every chat</b> with ⌘K: messages, answers, commands and files, with the matching line.</sub></td>
+</tr>
+</table>
 
 Always there, no switch: `AGENTS.md` instructions read at the start of every chat, `@file` mentions with suggestions as you type, a **changed-files card** after every turn (measured against the moment the turn started, so earlier uncommitted work is not counted), **search across all chats** in ⌘K, and **scheduled tasks** per project (run while the app is open).
 
@@ -423,7 +434,7 @@ What made the difference:
 
 ## Quality
 
-- **281 Swift tests** across 50 suites (28 of them live, run with `AGENTGATE_LIVE=1`): the planner, goal rounds and their checks, capabilities and the hardened harness configuration, the repo scan, per-turn changes, chat search, schedules, downloads (resume, stalls, checksums), the install matrix, repair policy, every rule in the gate, the sandbox profile, and the transcript, including recorded approval events.
+- **283 Swift tests** across 51 suites (28 of them live, run with `AGENTGATE_LIVE=1`): the planner, goal rounds and their checks, capabilities and the hardened harness configuration, the repo scan, per-turn changes, chat search, schedules, downloads (resume, stalls, checksums), the install matrix, repair policy, every rule in the gate, the sandbox profile, and the transcript, including recorded approval events.
 - **Recorded fixtures.** The transcript tests replay real event streams recorded from the harness, so a harness update that changes its events fails a test instead of the app.
 - **Live tests on demand.** `AGENTGATE_LIVE=1 swift test` downloads a real model, loads it, chats, and starts the real harness behind its password.
 - **End to end, with the real model.** `AGENTGATE_LIVE=1 AGENTGATE_E2E=1 swift test --filter AgentEndToEnd` runs the bundled engine, the sandboxed harness, Qwen3 4B and the gate through 11 scenarios: a bug fixed and proved with the tests (and its changed files measured), a symlink that leads out of the project refused, plan mode changing nothing, a goal that completes only once its check passes, the to-do checklist, a project skill, a helper agent, an MCP tool through the gate, `AGENTS.md` reaching the model, a hostile `opencode.json` in a cloned repo ignored, and (with `AGENTGATE_E2E_NETWORK=1`) a web fetch passed while a local address is refused.
@@ -453,7 +464,7 @@ Keys live in the macOS Keychain, are checked once with their provider, and are n
 mac/                     The native app (this README)
   Sources/AgentGateCore/   Model layer: planner, installer, engine, harness, gate, transcript, goals, repo scan
   Sources/AgentGateStudio/ Views and controllers (SwiftUI)
-  Tests/AgentGateCoreTests/ 281 tests, recorded harness fixtures, live end-to-end suite
+  Tests/AgentGateCoreTests/ 283 tests, recorded harness fixtures, live end-to-end suite
   scripts/                 build_app.sh, pinned runtime fetchers, catalog builder
 apps/web/                The web app (Next.js): RAG over project documents, prompt-injection scanner, evaluations
 packages/controller/     The web app's controller: runs, documents, protection pipeline, SQLite

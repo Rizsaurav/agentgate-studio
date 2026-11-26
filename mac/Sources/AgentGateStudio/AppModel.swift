@@ -798,8 +798,18 @@ final class AppModel {
     record(permission.tool, permission.detail, allow ? .allowed : .deniedByUser, rule: "")
     // The step's clock starts now: the time spent waiting for the user is not the command's.
     if allow { transcript.approved(callID: permission.callID) }
+    // A no is shown as the user's choice, and the model is told, so it can take another way instead of the turn
+    // ending on a bare rejection. Stop is there to end the turn.
+    var feedback: String?
+    if !allow {
+      transcript.refuse(
+        id: "denied-\(permission.id)", tool: permission.tool, detail: displayed(permission.detail),
+        reason: AgentStep.deniedByUser, callID: permission.callID)
+      showTranscript()
+      feedback = "The user declined this \(permission.tool) call. Do not repeat it. Take another way that does the task, or stop and explain what you need."
+    }
     Task {
-      do { try await agent.client.reply(permission: permission.id, allow: allow) }
+      do { try await agent.client.reply(permission: permission.id, allow: allow, message: feedback) }
       catch { errorMessage = String(describing: error) }
     }
   }

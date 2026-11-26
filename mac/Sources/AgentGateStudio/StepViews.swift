@@ -20,11 +20,16 @@ struct AgentTurnView: View {
         AnswerText(text: message.content)
       }
       let waiting = waitingStep(steps)
-      ForEach(steps) { step in
-        switch step.kind {
-        case .text: if !step.text.isEmpty { AnswerText(text: step.text) }
-        case .reasoning: if !step.text.isEmpty { ReasoningView(text: step.text) }
-        case .tool, .refused: StepCard(step: step, permission: step.id == waiting ? app.pendingPermission : nil)
+      ForEach(StepGroup.group(steps)) { item in
+        switch item {
+        case .explored(let looks):
+          ExploredRow(steps: looks)
+        case .single(let step):
+          switch step.kind {
+          case .text: if !step.text.isEmpty { AnswerText(text: step.text) }
+          case .reasoning: if !step.text.isEmpty { ReasoningView(text: step.text) }
+          case .tool, .refused: StepCard(step: step, permission: step.id == waiting ? app.pendingPermission : nil)
+          }
         }
       }
       if let note = notes(steps) { AnswerText(text: note).foregroundStyle(Theme.danger) }
@@ -56,11 +61,163 @@ struct AgentTurnView: View {
   }
 }
 
+/// Steps as the chat lays them out: runs of finished look-ups (reads, searches) fold into one row, so commands,
+/// edits and the answer stand out.
+enum StepGroup: Identifiable {
+  case single(AgentStep)
+  case explored([AgentStep])
+
+  var id: String {
+    switch self {
+    case .single(let step): step.id
+    case .explored(let steps): "explored-" + (steps.first?.id ?? "")
+    }
+  }
+
+  static let lookups: Set<String> = ["read", "glob", "grep", "list", "lsp"]
+
+  static func isLookup(_ step: AgentStep) -> Bool {
+    step.kind == .tool && step.status == .done && lookups.contains(step.tool)
+  }
+
+  static func group(_ steps: [AgentStep]) -> [StepGroup] {
+    var items: [StepGroup] = []
+    var run: [AgentStep] = []
+    func flush() {
+      if run.count >= 2 { items.append(.explored(run)) } else { items += run.map(StepGroup.single) }
+      run = []
+    }
+    // The to-do list is one living checklist: each update replaces the last, so only the newest is shown.
+    let lastTodo = steps.lastIndex { $0.tool == "todowrite" && !($0.todos ?? []).isEmpty }
+    for (index, step) in steps.enumerated() {
+      if step.tool == "todowrite", let lastTodo, index != lastTodo, step.status == .done { continue }
+      if isLookup(step) {
+        run.append(step)
+      } else if (step.kind == .text || step.kind == .reasoning) && step.text.isEmpty {
+        continue
+      } else {
+        flush()
+        items.append(.single(step))
+      }
+    }
+    flush()
+    return items
+  }
+}
+
+/// A run of look-ups in one line: how many files were read and searches made, open on a click.
+private struct ExploredRow: View {
+  let steps: [AgentStep]
+  @State private var open = false
+
+  /// What was looked at, each name once, in order.
+  private var names: [String] {
+    var seen: Set<String> = []
+    return steps.map { ($0.text as NSString).lastPathComponent }.filter { !$0.isEmpty && seen.insert($0).inserted }
+  }
+
+  private var summary: String {
+    let reads = steps.filter { $0.tool == "read" }.count
+    let searches = steps.count - reads
+    var parts: [String] = []
+    if reads > 0 { parts.append(plural(reads, "file") + " read") }
+    if searches > 0 { parts.append(searches == 1 ? "1 search" : "\(searches) searches") }
+    return parts.joined(separator: ", ")
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Button { open.toggle() } label: {
+        HStack(spacing: 10) {
+          Image(systemName: "binoculars").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.success)
+            .frame(width: 26, height: 26).background(RoundedRectangle(cornerRadius: 7).fill(Theme.success.opacity(0.12)))
+          Text("Explored").font(.system(size: 13, weight: .semibold))
+          Text(summary).font(.system(size: 12)).foregroundStyle(Theme.muted)
+          Text(names.prefix(4).joined(separator: "  "))
+            .font(.system(size: 11.5, design: .monospaced)).foregroundStyle(Theme.muted.opacity(0.8)).lineLimit(1)
+            .truncationMode(.tail)
+          Spacer(minLength: 8)
+          Image(systemName: open ? "chevron.down" : "chevron.right").font(.system(size: 10)).foregroundStyle(Theme.muted)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Theme.surface))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.success.opacity(0.3)))
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .help(open ? "Hide the look-ups" : "Show each look-up")
+      if open {
+        ForEach(steps) { StepCard(step: $0) }.padding(.leading, 18)
+      }
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Explored: \(summary)")
+  }
+}
+
+/// An answer drawn as blocks: headings, paragraphs with inline Markdown, code, and the app's control lines as labels.
 private struct AnswerText: View {
   let text: String
   var body: some View {
-    Text(LocalizedStringKey(text)).textSelection(.enabled).lineSpacing(3)
-      .frame(maxWidth: .infinity, alignment: .leading)
+    VStack(alignment: .leading, spacing: 10) {
+      ForEach(Array(AnswerBlock.parse(text).enumerated()), id: \.offset) { _, block in
+        switch block {
+        case .heading(let level, let title):
+          Text(LocalizedStringKey(title)).font(.system(size: level <= 2 ? 16 : 14.5, weight: .semibold))
+            .padding(.top, 4)
+        case .paragraph(let body):
+          Text(LocalizedStringKey(body)).lineSpacing(3)
+        case .code(let code):
+          Text(code).font(.system(size: 12.5, design: .monospaced))
+            .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Theme.bg))
+        case .marker(let kind, let detail):
+          MarkerLabel(kind: kind, detail: detail)
+        }
+      }
+    }
+    .textSelection(.enabled)
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+/// A control line the agent wrote for the app, shown as what it means.
+private struct MarkerLabel: View {
+  let kind: AnswerBlock.Marker
+  let detail: String
+
+  var body: some View {
+    HStack(alignment: .firstTextBaseline, spacing: 8) {
+      Label(title, systemImage: symbol).font(.system(size: 11, weight: .semibold)).foregroundStyle(color)
+        .padding(.horizontal, 9).padding(.vertical, 4).background(Capsule().fill(color.opacity(0.14)))
+      if !detail.isEmpty { Text(detail).font(.system(size: 13)).foregroundStyle(Theme.muted) }
+    }
+  }
+
+  private var title: String {
+    switch kind {
+    case .planReady: "Plan ready"
+    case .goalComplete: "Goal reported done"
+    case .goalBlocked: "Needs you"
+    case .goalContinue: "Next round"
+    }
+  }
+
+  private var symbol: String {
+    switch kind {
+    case .planReady: "list.bullet.clipboard"
+    case .goalComplete: "checkmark.seal"
+    case .goalBlocked: "hand.raised"
+    case .goalContinue: "arrow.forward.circle"
+    }
+  }
+
+  private var color: Color {
+    switch kind {
+    case .planReady, .goalContinue: Theme.accent
+    case .goalComplete: Theme.success
+    case .goalBlocked: Theme.warning
+    }
   }
 }
 
@@ -169,6 +326,7 @@ struct StepCard: View {
 
   private var verb: String {
     let running = step.status == .running || step.status == .pending
+    if step.output == AgentStep.deniedByUser { return step.tool == "bash" ? "You denied the command" : "You denied the \(step.tool)" }
     if step.kind == .refused || step.status == .refused {
       return step.tool == "bash" ? "Blocked command" : "Blocked \(step.tool)"
     }
@@ -200,7 +358,10 @@ struct StepCard: View {
     }
   }
 
+  private var deniedByUser: Bool { step.output == AgentStep.deniedByUser }
+
   private var icon: String {
+    if deniedByUser { return "hand.thumbsdown" }
     if step.kind == .refused { return "hand.raised.fill" }
     switch step.tool {
     case "bash": return "terminal"
@@ -222,6 +383,7 @@ struct StepCard: View {
 
   private var border: Color {
     if permission != nil { return Theme.warning }
+    if deniedByUser { return Theme.muted }
     switch step.status {
     case .running, .pending: return Theme.accent
     case .done: return Theme.success
@@ -254,7 +416,8 @@ struct StepCard: View {
         Label {
           Text(step.output).font(.system(size: 12.5)).textSelection(.enabled)
         } icon: {
-          Image(systemName: "shield.lefthalf.filled").foregroundStyle(Theme.danger)
+          Image(systemName: deniedByUser ? "hand.raised" : "shield.lefthalf.filled")
+            .foregroundStyle(deniedByUser ? Theme.muted : Theme.danger)
         }
         Text(step.text).font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.muted).textSelection(.enabled)
       } else if !step.output.isEmpty {

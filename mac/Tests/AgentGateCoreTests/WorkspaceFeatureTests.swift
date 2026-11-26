@@ -139,3 +139,35 @@ import Testing
     #expect(store.load() == [task])
   }
 }
+
+/// How an answer is split into what the chat draws.
+@Suite struct AnswerBlockTests {
+  @Test func headingsParagraphsCodeAndMarkersAreSeparated() {
+    let text = """
+      ### Risks:
+      - one
+      - two
+
+      Some **bold** text.
+      ```
+      python3 -m unittest
+      ```
+      **GOAL COMPLETE: all tests pass**
+      PLAN READY
+      """
+    #expect(AnswerBlock.parse(text) == [
+      .heading(level: 3, text: "Risks"),
+      .paragraph("- one\n- two"),
+      .paragraph("Some **bold** text."),
+      .code("python3 -m unittest"),
+      .marker(kind: .goalComplete, detail: "all tests pass"),
+      .marker(kind: .planReady, detail: ""),
+    ])
+  }
+
+  @Test func hashesWithoutASpaceAndUnclosedCodeStayText() {
+    #expect(AnswerBlock.parse("#hashtag here") == [.paragraph("#hashtag here")])
+    #expect(AnswerBlock.parse("```\nlet x = 1") == [.code("let x = 1")])
+    #expect(AnswerBlock.parse("I will say GOAL COMPLETE: later") == [.paragraph("I will say GOAL COMPLETE: later")])
+  }
+}

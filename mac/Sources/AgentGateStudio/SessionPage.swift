@@ -114,6 +114,8 @@ struct SessionPage: View {
           }
           // Follow the turn as it grows: new text, new steps, new output, a question.
           .onChange(of: session.messages.last) { proxy.scrollTo("bottom", anchor: .bottom) }
+          // A chat opens at its latest message, like any messages app.
+          .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
           .onChange(of: app.pendingPermission?.id) { proxy.scrollTo("bottom", anchor: .bottom) }
         }
       }
@@ -260,8 +262,10 @@ struct SessionPage: View {
     return lastUser.plan == true
   }
 
+  static let carryOutMessage = "Carry out the plan above, step by step. Verify the change with the project's tests or build."
+
   private func carryOutPlan() {
-    app.send("Carry out the plan above, step by step. Verify the change with the project's tests or build.", in: sessionId)
+    app.send(Self.carryOutMessage, in: sessionId)
   }
 
   private func runAsGoal() {
@@ -278,7 +282,10 @@ private struct UserTurn: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
-      if let round = message.goalRound {
+      if message.content == SessionPage.carryOutMessage {
+        Label("CARRY OUT THE PLAN", systemImage: "play.fill").font(.system(size: 10, weight: .semibold)).tracking(0.6)
+          .foregroundStyle(Theme.accent)
+      } else if let round = message.goalRound {
         // The app wrote this message, so it is folded: the round is what matters, the prompt is there if wanted.
         HStack(spacing: 6) {
           Image(systemName: "scope").font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.accent)

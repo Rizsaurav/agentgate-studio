@@ -50,6 +50,9 @@ public struct AgentStep: Codable, Sendable, Equatable, Identifiable {
     self.truncated = truncated
   }
 
+  /// The reason a step carries when the user pressed Deny, so the chat can say so instead of "blocked".
+  public static let deniedByUser = "You chose Deny. The agent was told to take another way."
+
   public var duration: TimeInterval? {
     guard let started, let ended else { return nil }
     return ended.timeIntervalSince(started)
