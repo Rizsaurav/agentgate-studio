@@ -20,11 +20,16 @@ struct AgentTurnView: View {
         AnswerText(text: message.content)
       }
       let waiting = waitingStep(steps)
-      ForEach(steps) { step in
-        switch step.kind {
-        case .text: if !step.text.isEmpty { AnswerText(text: step.text) }
-        case .reasoning: if !step.text.isEmpty { ReasoningView(text: step.text) }
-        case .tool, .refused: StepCard(step: step, permission: step.id == waiting ? app.pendingPermission : nil)
+      ForEach(StepGroup.group(steps)) { item in
+        switch item {
+        case .explored(let looks):
+          ExploredRow(steps: looks)
+        case .single(let step):
+          switch step.kind {
+          case .text: if !step.text.isEmpty { AnswerText(text: step.text) }
+          case .reasoning: if !step.text.isEmpty { ReasoningView(text: step.text) }
+          case .tool, .refused: StepCard(step: step, permission: step.id == waiting ? app.pendingPermission : nil)
+          }
         }
       }
       if let note = notes(steps) { AnswerText(text: note).foregroundStyle(Theme.danger) }
@@ -33,6 +38,7 @@ struct AgentTurnView: View {
       if live && app.generating && app.pendingPermission == nil && app.transcript.running == nil {
         WorkingLine(started: app.turnStarted, label: steps.isEmpty ? "Thinking" : "Working")
       }
+      if !live, let changes = message.changes, !changes.isEmpty { ChangesCard(changes: changes) }
       if !live, let usage = message.usage { UsageLine(steps: steps, usage: usage) }
     }
     .font(.system(size: 14))
@@ -55,11 +61,163 @@ struct AgentTurnView: View {
   }
 }
 
+/// Steps as the chat lays them out: runs of finished look-ups (reads, searches) fold into one row, so commands,
+/// edits and the answer stand out.
+enum StepGroup: Identifiable {
+  case single(AgentStep)
+  case explored([AgentStep])
+
+  var id: String {
+    switch self {
+    case .single(let step): step.id
+    case .explored(let steps): "explored-" + (steps.first?.id ?? "")
+    }
+  }
+
+  static let lookups: Set<String> = ["read", "glob", "grep", "list", "lsp"]
+
+  static func isLookup(_ step: AgentStep) -> Bool {
+    step.kind == .tool && step.status == .done && lookups.contains(step.tool)
+  }
+
+  static func group(_ steps: [AgentStep]) -> [StepGroup] {
+    var items: [StepGroup] = []
+    var run: [AgentStep] = []
+    func flush() {
+      if run.count >= 2 { items.append(.explored(run)) } else { items += run.map(StepGroup.single) }
+      run = []
+    }
+    // The to-do list is one living checklist: each update replaces the last, so only the newest is shown.
+    let lastTodo = steps.lastIndex { $0.tool == "todowrite" && !($0.todos ?? []).isEmpty }
+    for (index, step) in steps.enumerated() {
+      if step.tool == "todowrite", let lastTodo, index != lastTodo, step.status == .done { continue }
+      if isLookup(step) {
+        run.append(step)
+      } else if (step.kind == .text || step.kind == .reasoning) && step.text.isEmpty {
+        continue
+      } else {
+        flush()
+        items.append(.single(step))
+      }
+    }
+    flush()
+    return items
+  }
+}
+
+/// A run of look-ups in one line: how many files were read and searches made, open on a click.
+private struct ExploredRow: View {
+  let steps: [AgentStep]
+  @State private var open = false
+
+  /// What was looked at, each name once, in order.
+  private var names: [String] {
+    var seen: Set<String> = []
+    return steps.map { ($0.text as NSString).lastPathComponent }.filter { !$0.isEmpty && seen.insert($0).inserted }
+  }
+
+  private var summary: String {
+    let reads = steps.filter { $0.tool == "read" }.count
+    let searches = steps.count - reads
+    var parts: [String] = []
+    if reads > 0 { parts.append(plural(reads, "file") + " read") }
+    if searches > 0 { parts.append(searches == 1 ? "1 search" : "\(searches) searches") }
+    return parts.joined(separator: ", ")
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Button { open.toggle() } label: {
+        HStack(spacing: 10) {
+          Image(systemName: "binoculars").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.success)
+            .frame(width: 26, height: 26).background(RoundedRectangle(cornerRadius: 7).fill(Theme.success.opacity(0.12)))
+          Text("Explored").font(.system(size: 13, weight: .semibold))
+          Text(summary).font(.system(size: 12)).foregroundStyle(Theme.muted)
+          Text(names.prefix(4).joined(separator: "  "))
+            .font(.system(size: 11.5, design: .monospaced)).foregroundStyle(Theme.muted.opacity(0.8)).lineLimit(1)
+            .truncationMode(.tail)
+          Spacer(minLength: 8)
+          Image(systemName: open ? "chevron.down" : "chevron.right").font(.system(size: 10)).foregroundStyle(Theme.muted)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Theme.surface))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.success.opacity(0.3)))
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .help(open ? "Hide the look-ups" : "Show each look-up")
+      if open {
+        ForEach(steps) { StepCard(step: $0) }.padding(.leading, 18)
+      }
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Explored: \(summary)")
+  }
+}
+
+/// An answer drawn as blocks: headings, paragraphs with inline Markdown, code, and the app's control lines as labels.
 private struct AnswerText: View {
   let text: String
   var body: some View {
-    Text(LocalizedStringKey(text)).textSelection(.enabled).lineSpacing(3)
-      .frame(maxWidth: .infinity, alignment: .leading)
+    VStack(alignment: .leading, spacing: 10) {
+      ForEach(Array(AnswerBlock.parse(text).enumerated()), id: \.offset) { _, block in
+        switch block {
+        case .heading(let level, let title):
+          Text(LocalizedStringKey(title)).font(.system(size: level <= 2 ? 16 : 14.5, weight: .semibold))
+            .padding(.top, 4)
+        case .paragraph(let body):
+          Text(LocalizedStringKey(body)).lineSpacing(3)
+        case .code(let code):
+          Text(code).font(.system(size: 12.5, design: .monospaced))
+            .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Theme.bg))
+        case .marker(let kind, let detail):
+          MarkerLabel(kind: kind, detail: detail)
+        }
+      }
+    }
+    .textSelection(.enabled)
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+/// A control line the agent wrote for the app, shown as what it means.
+private struct MarkerLabel: View {
+  let kind: AnswerBlock.Marker
+  let detail: String
+
+  var body: some View {
+    HStack(alignment: .firstTextBaseline, spacing: 8) {
+      Label(title, systemImage: symbol).font(.system(size: 11, weight: .semibold)).foregroundStyle(color)
+        .padding(.horizontal, 9).padding(.vertical, 4).background(Capsule().fill(color.opacity(0.14)))
+      if !detail.isEmpty { Text(detail).font(.system(size: 13)).foregroundStyle(Theme.muted) }
+    }
+  }
+
+  private var title: String {
+    switch kind {
+    case .planReady: "Plan ready"
+    case .goalComplete: "Goal reported done"
+    case .goalBlocked: "Needs you"
+    case .goalContinue: "Next round"
+    }
+  }
+
+  private var symbol: String {
+    switch kind {
+    case .planReady: "list.bullet.clipboard"
+    case .goalComplete: "checkmark.seal"
+    case .goalBlocked: "hand.raised"
+    case .goalContinue: "arrow.forward.circle"
+    }
+  }
+
+  private var color: Color {
+    switch kind {
+    case .planReady, .goalContinue: Theme.accent
+    case .goalComplete: Theme.success
+    case .goalBlocked: Theme.warning
+    }
   }
 }
 
@@ -101,7 +259,7 @@ struct StepCard: View {
   /// Commands, edits, failures and refusals are open; reads and searches are one line until clicked.
   static func opensByDefault(_ step: AgentStep) -> Bool {
     if step.status != .done { return true }
-    return ["bash", "edit", "write", "patch", "multiedit"].contains(step.tool)
+    return ["bash", "edit", "write", "patch", "multiedit", "todowrite"].contains(step.tool)
   }
 
   var body: some View {
@@ -159,12 +317,16 @@ struct StepCard: View {
 
   private var subject: String {
     if preparing { return step.tool == "bash" ? "Preparing the command…" : "Preparing…" }
+    if let todos = step.todos, !todos.isEmpty {
+      return "\(todos.filter(\.isDone).count) of \(todos.count) done"
+    }
     if let purpose = step.purpose, !purpose.isEmpty, step.tool == "bash" { return purpose }
     return step.text.replacingOccurrences(of: "\n", with: " ")
   }
 
   private var verb: String {
     let running = step.status == .running || step.status == .pending
+    if step.output == AgentStep.deniedByUser { return step.tool == "bash" ? "You denied the command" : "You denied the \(step.tool)" }
     if step.kind == .refused || step.status == .refused {
       return step.tool == "bash" ? "Blocked command" : "Blocked \(step.tool)"
     }
@@ -182,13 +344,24 @@ struct StepCard: View {
     case "glob": return running ? "Finding files" : "Found files"
     case "list": return running ? "Listing folder" : "Listed folder"
     case "webfetch": return running ? "Fetching" : "Fetched"
-    case "todowrite", "todoread": return "Updated the plan"
-    case "task": return running ? "Running a helper agent" : "Helper agent finished"
-    default: return step.tool
+    case "todowrite", "todoread": return "To-do list"
+    case "task": return running ? "Helper agent working" : step.status == .failed ? "Helper agent failed" : "Helper agent finished"
+    case "skill": return running ? "Loading skill" : "Loaded skill"
+    case "websearch": return running ? "Searching the web" : "Searched the web"
+    case "lsp": return running ? "Looking up code" : "Looked up code"
+    default:
+      // MCP tools are named <server>_<tool>.
+      if let split = step.tool.firstIndex(of: "_") {
+        return "\(step.tool[..<split]): \(step.tool[step.tool.index(after: split)...].replacingOccurrences(of: "_", with: " "))"
+      }
+      return step.tool
     }
   }
 
+  private var deniedByUser: Bool { step.output == AgentStep.deniedByUser }
+
   private var icon: String {
+    if deniedByUser { return "hand.thumbsdown" }
     if step.kind == .refused { return "hand.raised.fill" }
     switch step.tool {
     case "bash": return "terminal"
@@ -201,12 +374,16 @@ struct StepCard: View {
     case "webfetch": return "globe"
     case "todowrite", "todoread": return "checklist"
     case "task": return "person.2"
-    default: return "wrench.and.screwdriver"
+    case "skill": return "book"
+    case "websearch": return "globe.badge.chevron.backward"
+    case "lsp": return "arrow.triangle.branch"
+    default: return step.tool.contains("_") ? "puzzlepiece.extension" : "wrench.and.screwdriver"
     }
   }
 
   private var border: Color {
     if permission != nil { return Theme.warning }
+    if deniedByUser { return Theme.muted }
     switch step.status {
     case .running, .pending: return Theme.accent
     case .done: return Theme.success
@@ -218,7 +395,8 @@ struct StepCard: View {
 
   private var hasBody: Bool {
     if preparing { return false }
-    return permission != nil || step.tool == "bash" || step.diff != nil || !step.output.isEmpty || step.error != nil || step.kind == .refused
+    return permission != nil || step.tool == "bash" || step.diff != nil || !step.output.isEmpty || step.error != nil
+      || step.kind == .refused || !(step.todos ?? []).isEmpty
   }
 
   @ViewBuilder private var content: some View {
@@ -230,13 +408,16 @@ struct StepCard: View {
         TerminalOutput(
           command: step.text, output: step.output, running: step.status == .running && permission == nil,
           exitCode: step.exitCode)
+      } else if let todos = step.todos, !todos.isEmpty {
+        TodoList(items: todos)
       } else if let diff = step.diff {
         DiffView(diff: diff)
       } else if step.kind == .refused {
         Label {
           Text(step.output).font(.system(size: 12.5)).textSelection(.enabled)
         } icon: {
-          Image(systemName: "shield.lefthalf.filled").foregroundStyle(Theme.danger)
+          Image(systemName: deniedByUser ? "hand.raised" : "shield.lefthalf.filled")
+            .foregroundStyle(deniedByUser ? Theme.muted : Theme.danger)
         }
         Text(step.text).font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.muted).textSelection(.enabled)
       } else if !step.output.isEmpty {
@@ -247,6 +428,103 @@ struct StepCard: View {
         Text("Earlier output was cut; the end is shown.").font(.system(size: 11)).foregroundStyle(Theme.muted)
       }
       if let permission { ApprovalBar(permission: permission) }
+    }
+  }
+}
+
+/// What the turn changed in the project, measured against the moment before it started.
+struct ChangesCard: View {
+  let changes: [FileChange]
+  @State private var expanded = false
+
+  private var added: Int { changes.reduce(0) { $0 + $1.added } }
+  private var removed: Int { changes.reduce(0) { $0 + $1.removed } }
+  private var shown: [FileChange] { expanded ? changes : Array(changes.prefix(5)) }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      HStack(spacing: 8) {
+        Image(systemName: "doc.on.doc").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.accent)
+        Text("Changed \(plural(changes.count, "file"))").font(.system(size: 13, weight: .semibold))
+        Text("+\(added)").foregroundStyle(Theme.success).font(.system(size: 12, weight: .medium, design: .monospaced))
+        Text("−\(removed)").foregroundStyle(Theme.danger).font(.system(size: 12, weight: .medium, design: .monospaced))
+        Spacer()
+        Text("this turn").font(.system(size: 11)).foregroundStyle(Theme.muted)
+      }
+      .padding(.horizontal, 12).padding(.vertical, 10)
+      Divider().overlay(Theme.line)
+      VStack(alignment: .leading, spacing: 6) {
+        ForEach(shown) { change in
+          HStack(spacing: 8) {
+            Text(badge(change.kind)).font(.system(size: 10, weight: .bold, design: .monospaced))
+              .foregroundStyle(color(change.kind)).frame(width: 14)
+            Text(change.path).font(.system(size: 12, design: .monospaced)).lineLimit(1).truncationMode(.middle)
+            Spacer()
+            Text("+\(change.added)").foregroundStyle(Theme.success)
+            Text("−\(change.removed)").foregroundStyle(Theme.danger)
+          }
+          .font(.system(size: 11.5, design: .monospaced))
+        }
+        if changes.count > 5 {
+          Button(expanded ? "Show fewer" : "Show all \(changes.count)") { expanded.toggle() }.buttonStyle(LinkButtonStyle())
+        }
+      }
+      .padding(12)
+    }
+    .background(RoundedRectangle(cornerRadius: 12).fill(Theme.surface))
+    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.accent.opacity(0.3)))
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel("Changed \(plural(changes.count, "file")), \(added) lines added, \(removed) removed")
+  }
+
+  private func badge(_ kind: FileChange.Kind) -> String {
+    switch kind {
+    case .added: "A"
+    case .modified: "M"
+    case .deleted: "D"
+    }
+  }
+
+  private func color(_ kind: FileChange.Kind) -> Color {
+    switch kind {
+    case .added: Theme.success
+    case .modified: Theme.warning
+    case .deleted: Theme.danger
+    }
+  }
+}
+
+/// The agent's to-do list as a checklist: done, in progress, and still to do.
+struct TodoList: View {
+  let items: [TodoItem]
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 7) {
+      ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+        HStack(alignment: .firstTextBaseline, spacing: 9) {
+          Image(systemName: symbol(item)).font(.system(size: 12)).foregroundStyle(color(item))
+          Text(item.content).font(.system(size: 13)).strikethrough(item.status == "cancelled")
+            .foregroundStyle(item.isDone || item.status == "cancelled" ? Theme.muted : Theme.text)
+        }
+      }
+    }
+    .accessibilityElement(children: .combine)
+  }
+
+  private func symbol(_ item: TodoItem) -> String {
+    switch item.status {
+    case "completed": "checkmark.circle.fill"
+    case "in_progress": "circle.dotted.circle"
+    case "cancelled": "xmark.circle"
+    default: "circle"
+    }
+  }
+
+  private func color(_ item: TodoItem) -> Color {
+    switch item.status {
+    case "completed": Theme.success
+    case "in_progress": Theme.accent
+    default: Theme.muted
     }
   }
 }

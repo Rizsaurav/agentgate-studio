@@ -159,6 +159,7 @@ struct ProjectPage: View {
                   summary: app.repoSummaries[projectId], folder: folder, blocked: app.repoScanBlocked.contains(projectId),
                   retry: { app.scanRepo(projectId, force: true) })
               }
+              if project.folder != nil { SchedulesCard(projectId: projectId) }
               let sessions = app.sessions(in: projectId)
               Text(sessions.isEmpty ? "CHATS" : "CHATS  ·  \(sessions.count)")
                 .font(.system(size: 11, weight: .semibold)).tracking(0.8).foregroundStyle(Theme.muted).padding(.top, 8)
@@ -192,7 +193,12 @@ struct ProjectPage: View {
                   }
                   .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
                   .accessibilityLabel("Model")
-                  .onAppear { if modelId.isEmpty { modelId = app.active?.id ?? app.installed.first?.id ?? "" } }
+                  // The loaded model, else the largest installed one: the best this Mac already has.
+                  .onAppear {
+                    if modelId.isEmpty {
+                      modelId = app.active?.id ?? app.installed.max { $0.bytes < $1.bytes }?.id ?? ""
+                    }
+                  }
                   Button("New chat") {
                     if let model = app.installed.first(where: { $0.id == modelId }) {
                       app.startSession(in: projectId, with: model)
@@ -239,6 +245,24 @@ private struct SessionListRow: View {
   let action: () -> Void
   @State private var hover = false
 
+  private func goalLabel(_ phase: Goal.Phase) -> String {
+    switch phase {
+    case .active: "Goal running"
+    case .paused: "Goal paused"
+    case .blocked: "Goal needs you"
+    case .complete: "Goal done"
+    }
+  }
+
+  private func goalTone(_ phase: Goal.Phase) -> StatusPill.Tone {
+    switch phase {
+    case .active: .pending
+    case .paused: .neutral
+    case .blocked: .bad
+    case .complete: .ok
+    }
+  }
+
   /// A goal chat is named by its objective; the first message there is the app's round prompt.
   private var title: String {
     if let goal = session.goal { return goal.objective }
@@ -256,8 +280,11 @@ private struct SessionListRow: View {
         }
         Spacer()
         if let goal = session.goal {
-          Text("Goal · \(goal.phase.rawValue) · \(goal.roundsStarted)/\(goal.maxRounds)")
-            .font(.system(size: 11)).foregroundStyle(Theme.muted).monospacedDigit()
+          HStack(spacing: 6) {
+            StatusPill(text: goalLabel(goal.phase), tone: goalTone(goal.phase))
+            Text("\(goal.roundsStarted) of \(goal.maxRounds) rounds").font(.system(size: 11)).foregroundStyle(Theme.muted)
+              .monospacedDigit()
+          }
         }
         Image(systemName: "arrow.up.right").font(.system(size: 12)).foregroundStyle(Theme.muted)
       }

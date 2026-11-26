@@ -5,6 +5,8 @@ struct SessionPage: View {
   @Environment(AppModel.self) private var app
   let sessionId: UUID
   @State private var draft = ""
+  /// The next message goes to the plan agent, which looks and writes a plan but changes nothing.
+  @State private var planFirst = false
   @FocusState private var composerFocused: Bool
   @AppStorage("terminalOpen") private var terminalOpen = false
 
@@ -112,6 +114,8 @@ struct SessionPage: View {
           }
           // Follow the turn as it grows: new text, new steps, new output, a question.
           .onChange(of: session.messages.last) { proxy.scrollTo("bottom", anchor: .bottom) }
+          // A chat opens at its latest message, like any messages app.
+          .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
           .onChange(of: app.pendingPermission?.id) { proxy.scrollTo("bottom", anchor: .bottom) }
         }
       }
@@ -123,6 +127,21 @@ struct SessionPage: View {
 
   private func composer(_ session: Session) -> some View {
     VStack(alignment: .leading, spacing: 12) {
+      if awaitingPlanApproval(session) {
+        HStack(spacing: 10) {
+          Image(systemName: "list.bullet.clipboard").foregroundStyle(Theme.accent)
+          VStack(alignment: .leading, spacing: 2) {
+            Text("The plan is ready. Nothing has changed yet.").font(.system(size: 13, weight: .medium))
+            Text("Carry it out as written, or type what to change and send it with Plan first on.")
+              .font(.system(size: 11.5)).foregroundStyle(Theme.muted)
+          }
+          Spacer()
+          Button("Revise") { planFirst = true; composerFocused = true }.buttonStyle(SubtleButtonStyle())
+          Button { carryOutPlan() } label: { Label("Carry out", systemImage: "play.fill") }
+            .buttonStyle(PrimaryButtonStyle()).disabled(!app.agentOn)
+        }
+        .padding(.bottom, 4)
+      }
       if !app.agentOn {
         HStack(spacing: 10) {
           Image(systemName: "key").foregroundStyle(Theme.accent)
@@ -131,8 +150,26 @@ struct SessionPage: View {
           Button("Add a key") { app.route = .profile }.buttonStyle(PrimaryButtonStyle())
         }
       }
+      let suggestions = mentionSuggestions(session)
+      if !suggestions.isEmpty {
+        VStack(alignment: .leading, spacing: 2) {
+          ForEach(suggestions, id: \.self) { path in
+            Button { insertMention(path) } label: {
+              HStack(spacing: 8) {
+                Image(systemName: "doc").font(.system(size: 11)).foregroundStyle(Theme.muted)
+                Text(path).font(.system(size: 12, design: .monospaced)).lineLimit(1).truncationMode(.middle)
+                Spacer()
+              }
+              .padding(.horizontal, 8).padding(.vertical, 5).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+          }
+        }
+        .padding(6)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Theme.raised))
+      }
       TextField("Task", text: $draft, prompt: Text(""), axis: .vertical)
-        .inputHint("Ask anything about your project…", when: draft.isEmpty)
+        .inputHint("Ask anything about your project… Type @ to mention a file.", when: draft.isEmpty)
         .textFieldStyle(.plain).font(.system(size: 14)).lineLimit(3...8)
         .accessibilityLabel("Task")
         .focused($composerFocused)
@@ -142,6 +179,12 @@ struct SessionPage: View {
         modelMenu(session)
         Text(modelState(session)).font(.system(size: 11)).foregroundStyle(Theme.muted)
         Spacer()
+        Button { planFirst.toggle() } label: { Label("Plan first", systemImage: "list.bullet.clipboard") }
+          .buttonStyle(SubtleButtonStyle())
+          .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(planFirst ? Theme.accent : .clear, lineWidth: 1.5))
+          .foregroundStyle(planFirst ? Theme.accent : Theme.text)
+          .help("The agent looks and writes a plan, changing nothing, then you choose to carry it out")
+          .accessibilityValue(planFirst ? "On" : "Off")
         Button { runAsGoal() } label: { Label("Goal", systemImage: "scope") }
           .buttonStyle(SubtleButtonStyle())
           .help("Work toward this in rounds until it is done (up to \(Goal.defaultMaxRounds) rounds)")
@@ -182,7 +225,47 @@ struct SessionPage: View {
     let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty, app.agentOn else { return }
     draft = ""
-    app.send(text, in: sessionId)
+    app.send(text, in: sessionId, plan: planFirst)
+    planFirst = false
+  }
+
+  /// The word being typed, when it starts with @: the start of a file mention.
+  private var mentionQuery: String? {
+    guard let last = draft.split(separator: " ", omittingEmptySubsequences: false).last, last.hasPrefix("@") else { return nil }
+    return String(last.dropFirst()).lowercased()
+  }
+
+  /// Up to six project files matching the mention being typed, names that start with it first.
+  private func mentionSuggestions(_ session: Session) -> [String] {
+    guard let query = mentionQuery, let paths = app.repoSummaries[session.projectId]?.paths else { return [] }
+    let matches = paths.filter { query.isEmpty || $0.lowercased().contains(query) }
+    let ranked = matches.sorted { a, b in
+      let aStarts = (a as NSString).lastPathComponent.lowercased().hasPrefix(query)
+      let bStarts = (b as NSString).lastPathComponent.lowercased().hasPrefix(query)
+      return aStarts != bStarts ? aStarts : a.count < b.count
+    }
+    return Array(ranked.prefix(6))
+  }
+
+  private func insertMention(_ path: String) {
+    var words = draft.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
+    if !words.isEmpty { words.removeLast() }
+    words.append("@" + path)
+    draft = words.joined(separator: " ") + " "
+    composerFocused = true
+  }
+
+  /// The last turn was a plan and nothing has run since.
+  private func awaitingPlanApproval(_ session: Session) -> Bool {
+    guard !app.generating, session.messages.last?.role == .assistant,
+          let lastUser = session.messages.last(where: { $0.role == .user }) else { return false }
+    return lastUser.plan == true
+  }
+
+  static let carryOutMessage = "Carry out the plan above, step by step. Verify the change with the project's tests or build."
+
+  private func carryOutPlan() {
+    app.send(Self.carryOutMessage, in: sessionId)
   }
 
   private func runAsGoal() {
@@ -199,7 +282,10 @@ private struct UserTurn: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
-      if let round = message.goalRound {
+      if message.content == SessionPage.carryOutMessage {
+        Label("CARRY OUT THE PLAN", systemImage: "play.fill").font(.system(size: 10, weight: .semibold)).tracking(0.6)
+          .foregroundStyle(Theme.accent)
+      } else if let round = message.goalRound {
         // The app wrote this message, so it is folded: the round is what matters, the prompt is there if wanted.
         HStack(spacing: 6) {
           Image(systemName: "scope").font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.accent)
@@ -210,7 +296,13 @@ private struct UserTurn: View {
         }
         if showPrompt { Text(message.content).textSelection(.enabled).lineSpacing(3).font(.system(size: 12)) }
       } else {
-        Text("YOU").font(.system(size: 10, weight: .semibold)).tracking(0.6).foregroundStyle(Theme.muted)
+        HStack(spacing: 8) {
+          Text("YOU").font(.system(size: 10, weight: .semibold)).tracking(0.6).foregroundStyle(Theme.muted)
+          if message.plan == true {
+            Label("PLAN FIRST", systemImage: "list.bullet.clipboard").font(.system(size: 9.5, weight: .semibold))
+              .tracking(0.6).foregroundStyle(Theme.accent)
+          }
+        }
         Text(message.content).textSelection(.enabled).lineSpacing(3)
       }
     }

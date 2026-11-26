@@ -94,7 +94,7 @@ import Testing
   }
 
   @Test func onlyLookingToolsRunWithoutAsking() {
-    #expect(ToolCallCheck.readOnly == ["read", "glob", "grep", "list"])
+    #expect(ToolCallCheck.readOnly == ["read", "glob", "grep", "list", "lsp"])
     #expect(!ToolCallCheck.readOnly.contains("bash"))
     #expect(!ToolCallCheck.readOnly.contains("edit"))
   }

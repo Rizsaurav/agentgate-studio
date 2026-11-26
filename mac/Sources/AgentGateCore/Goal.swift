@@ -39,11 +39,38 @@ public struct Goal: Codable, Sendable, Equatable {
   /// Files changed across all rounds, by successful edits.
   public private(set) var filesChanged = 0
   public let startedAt: Date
+  /// The project's own check, such as `swift test`. When set, the goal is complete only once this command has run
+  /// and passed: the agent saying so is not enough.
+  public var check: String?
+  /// The agent reported the goal met without a passing check; the next round asks it to run the check.
+  public private(set) var verifying = false
 
-  public init(objective: String, maxRounds: Int = Goal.defaultMaxRounds, startedAt: Date = Date()) {
+  public init(objective: String, maxRounds: Int = Goal.defaultMaxRounds, check: String? = nil, startedAt: Date = Date()) {
     self.objective = objective.trimmingCharacters(in: .whitespacesAndNewlines)
     self.maxRounds = min(max(maxRounds, 1), Self.maxRoundsLimit)
+    let trimmed = check?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    self.check = trimmed.isEmpty ? nil : trimmed
     self.startedAt = startedAt
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case objective, maxRounds, roundsStarted, phase, blocker, note, stalledRounds, filesChanged, startedAt, check, verifying
+  }
+
+  /// Fields added later keep their defaults, so goals saved by an older version still load.
+  public init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    objective = try c.decode(String.self, forKey: .objective)
+    maxRounds = try c.decode(Int.self, forKey: .maxRounds)
+    roundsStarted = try c.decodeIfPresent(Int.self, forKey: .roundsStarted) ?? 0
+    phase = try c.decodeIfPresent(Phase.self, forKey: .phase) ?? .active
+    blocker = try c.decodeIfPresent(String.self, forKey: .blocker)
+    note = try c.decodeIfPresent(String.self, forKey: .note)
+    stalledRounds = try c.decodeIfPresent(Int.self, forKey: .stalledRounds) ?? 0
+    filesChanged = try c.decodeIfPresent(Int.self, forKey: .filesChanged) ?? 0
+    startedAt = try c.decodeIfPresent(Date.self, forKey: .startedAt) ?? Date()
+    check = try c.decodeIfPresent(String.self, forKey: .check)
+    verifying = try c.decodeIfPresent(Bool.self, forKey: .verifying) ?? false
   }
 
   public var roundsLeft: Int { max(maxRounds - roundsStarted, 0) }
@@ -54,14 +81,53 @@ public struct Goal: Codable, Sendable, Equatable {
   public mutating func startRound() -> String? {
     guard canStartRound else { return nil }
     roundsStarted += 1
+    if verifying, let check {
+      return """
+        Goal round \(roundsStarted) of \(maxRounds): check. You reported the objective met. Run `\(check)` now and show \
+        its result. If it passes, end with GOAL COMPLETE: <what was achieved>. If it fails, fix what fails, run it again, \
+        and end with GOAL CONTINUE: <what is left>.
+        """
+    }
     return prompt(round: roundsStarted)
   }
 
-  /// Records how a round ended. `edits` is the number of files the round changed with successful edits.
-  public mutating func finishRound(answer: String, edits: Int) {
+  /// Whether the check ran in a round and passed: the last command that ran it decides.
+  public func checkResult(commands: [(command: String, exitCode: Int?)]) -> Bool? {
+    guard let check else { return nil }
+    let wanted = Self.normalized(check)
+    guard let last = commands.last(where: { Self.normalized($0.command).contains(wanted) }), let code = last.exitCode
+    else { return nil }
+    return code == 0
+  }
+
+  static func normalized(_ command: String) -> String {
+    command.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+  }
+
+  /// Records how a round ended. `edits` is the number of files the round changed with successful edits;
+  /// `checkPassed` is whether the goal's check ran in this round and exited 0 (nil when it did not run).
+  public mutating func finishRound(answer: String, edits: Int, checkPassed: Bool? = nil) {
     guard phase == .active else { return }
     filesChanged += edits
-    switch Self.report(in: answer) {
+    let report = Self.report(in: answer)
+    if verifying {
+      verifying = false
+      if checkPassed == true {
+        phase = .complete
+        blocker = nil
+        return
+      }
+      note = check.map { "`\($0)` did not pass yet, so the goal goes on." }
+      stalledRounds = 0
+      if roundsLeft == 0 { block("All \(maxRounds) rounds are used and `\(check ?? "the check")` does not pass yet.") }
+      return
+    }
+    switch report {
+    case .complete(let summary) where check != nil && checkPassed != true:
+      // Claimed, not shown: the next round runs the check before the goal can complete.
+      note = summary
+      verifying = true
+      if roundsLeft == 0 { block("All \(maxRounds) rounds are used before `\(check ?? "")` could confirm the goal.") }
     case .complete(let summary):
       phase = .complete
       note = summary

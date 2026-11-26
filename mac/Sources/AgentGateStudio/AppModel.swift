@@ -25,6 +25,7 @@ enum Route: Hashable {
   case security
   case models
   case profile
+  case capabilities
 }
 
 @MainActor @Observable
@@ -110,6 +111,7 @@ final class AppModel {
   private var installTask: Task<Bool, Never>?
 
   func start() {
+    startScheduler()
     do {
       let catalog = try Catalog.bundled()
       self.catalog = catalog
@@ -202,12 +204,18 @@ final class AppModel {
   }
 
   func startSession(in project: UUID, with model: InstalledModel) {
+    route = .session(createSession(in: project, with: model))
+  }
+
+  /// A new, empty chat in the project, without opening it.
+  @discardableResult
+  private func createSession(in project: UUID, with model: InstalledModel) -> UUID {
     let session = Session(
       id: UUID(), projectId: project, modelId: model.id, modelName: model.name, createdAt: Date(), messages: [])
     workspace.sessions.append(session)
     do { try persist() } catch { errorMessage = String(describing: error) }
-    route = .session(session.id)
     if active?.id != model.id, let entry = catalog?.model(model.id) { select(entry) }
+    return session.id
   }
 
   /// Starts a chat in the project with a CI failure as the task. Uses the loaded model, or the first installed one.
@@ -242,7 +250,9 @@ final class AppModel {
   /// Gives a session a goal and starts its first round.
   func startGoal(_ objective: String, inSession id: UUID, maxRounds: Int = Goal.defaultMaxRounds) {
     guard !generating, let index = workspace.sessions.firstIndex(where: { $0.id == id }) else { return }
-    let goal = Goal(objective: objective, maxRounds: maxRounds)
+    // The project's own check decides when the goal is done, not the agent's word.
+    let check = repoSummaries[workspace.sessions[index].projectId]?.testCommand
+    let goal = Goal(objective: objective, maxRounds: maxRounds, check: check)
     guard !goal.objective.isEmpty else { return }
     workspace.sessions[index].goal = goal
     nextRound(in: id)
@@ -684,16 +694,33 @@ final class AppModel {
   private var lastEditPath: String?
   /// Why the turn in progress failed, if it did, so a goal round can say so.
   private var turnFailure: String?
+  /// The project's state before the turn in progress, for the changed-files summary.
+  private var turnBaseline: TurnBaseline?
+
+  // MARK: Capabilities
+
+  private let capabilityStore = CapabilityStore()
+  /// What the agent may do beyond reading, editing and running commands. Off by default.
+  private(set) var capabilities = CapabilityStore().load()
+
+  /// Saves new capabilities. The harness restarts with them before the next message; a turn in progress keeps
+  /// the ones it started with.
+  func setCapabilities(_ new: AgentCapabilities) {
+    guard new != capabilities else { return }
+    capabilities = new
+    do { try capabilityStore.save(new) } catch { errorMessage = String(describing: error) }
+    if !generating { stopAgentServer() }
+  }
 
   /// Sends a task in a session. The agent harness runs it in the project's folder with the session's model.
-  func send(_ text: String, in sessionId: UUID, goalRound: Int? = nil) {
+  func send(_ text: String, in sessionId: UUID, goalRound: Int? = nil, plan: Bool = false) {
     guard !generating, let index = workspace.sessions.firstIndex(where: { $0.id == sessionId }) else { return }
     let session = workspace.sessions[index]
     guard let folder = project(session.projectId)?.folder else {
       errorMessage = "This project has no folder. Open a folder to let the agent work."
       return
     }
-    workspace.sessions[index].messages.append(ChatMessage(role: .user, content: text, goalRound: goalRound))
+    workspace.sessions[index].messages.append(ChatMessage(role: .user, content: text, goalRound: goalRound, plan: plan ? true : nil))
     workspace.sessions[index].messages.append(ChatMessage(role: .assistant, content: ""))
     generating = true
     streamingSession = sessionId
@@ -712,7 +739,10 @@ final class AppModel {
           }
         }
         guard let runtime else { return }
-        let server = try await agentServer(folder: URL(fileURLWithPath: folder), runtime: runtime)
+        let folderURL = URL(fileURLWithPath: folder)
+        // What the project looked like before the turn, to show what the turn changed when it ends.
+        turnBaseline = await Task.detached(priority: .utility) { TurnBaseline.capture(folderURL) }.value
+        let server = try await agentServer(folder: folderURL, runtime: runtime)
         var agentId = workspace.sessions.first { $0.id == sessionId }?.agentSession
         if agentId == nil {
           agentId = try await server.client.createSession(title: String(text.prefix(60)))
@@ -725,7 +755,7 @@ final class AppModel {
            let pinned = PinnedContext.from(userMessages: session.messages.filter { $0.role == .user }.map(\.content) + [text]) {
           outgoing = pinned.preamble() + "\n\n" + text
         }
-        try await server.client.prompt(session: agentId!, text: outgoing, model: session.modelId)
+        try await server.client.prompt(session: agentId!, text: outgoing, model: session.modelId, plan: plan)
         try await watchForQuestions(server)
       } catch {
         append("\(error)", to: sessionId)
@@ -768,8 +798,18 @@ final class AppModel {
     record(permission.tool, permission.detail, allow ? .allowed : .deniedByUser, rule: "")
     // The step's clock starts now: the time spent waiting for the user is not the command's.
     if allow { transcript.approved(callID: permission.callID) }
+    // A no is shown as the user's choice, and the model is told, so it can take another way instead of the turn
+    // ending on a bare rejection. Stop is there to end the turn.
+    var feedback: String?
+    if !allow {
+      transcript.refuse(
+        id: "denied-\(permission.id)", tool: permission.tool, detail: displayed(permission.detail),
+        reason: AgentStep.deniedByUser, callID: permission.callID)
+      showTranscript()
+      feedback = "The user declined this \(permission.tool) call. Do not repeat it. Take another way that does the task, or stop and explain what you need."
+    }
     Task {
-      do { try await agent.client.reply(permission: permission.id, allow: allow) }
+      do { try await agent.client.reply(permission: permission.id, allow: allow, message: feedback) }
       catch { errorMessage = String(describing: error) }
     }
   }
@@ -815,7 +855,12 @@ final class AppModel {
         block(permission, rule: "unknown-project", agent: agent, message: "The project folder could not be determined, so nothing can run.")
         return
       }
-      if let rejection = ToolCallCheck.check(permission, folder: folder) {
+      // The harness saw the same call several times in a row: refuse it, so a stuck loop stops spending the turn.
+      if permission.tool == "doom_loop" {
+        block(permission, rule: "repeated-call", agent: agent, message: Self.repeatedCallFeedback)
+        return
+      }
+      if let rejection = ToolCallCheck.check(permission, folder: folder, capabilities: capabilities) {
         block(permission, rule: rejection.rule, agent: agent, message: rejection.message)
         return
       }
@@ -834,6 +879,9 @@ final class AppModel {
       queuedPermissions.append(permission)
     }
   }
+
+  static let repeatedCallFeedback = "You made this exact call several times in a row and it did not move the task forward. "
+    + "Do not repeat it. Try a different approach, or stop and report what you found."
 
   private func block(_ permission: AgentEvent.Permission, rule: String, agent: AgentServer, message: String? = nil) {
     // Only this question is answered; another one shown to the user stays.
@@ -871,13 +919,14 @@ final class AppModel {
   func loadSecurityEntries() { securityEntries = securityLog.entries() }
 
   private func agentServer(folder: URL, runtime: LlamaRuntime) async throws -> AgentServer {
-    if let agent, agent.isRunning, agent.folder == folder, agent.engineKey == runtime.apiKey { return agent }
+    if let agent, agent.isRunning, agent.folder == folder, agent.engineKey == runtime.apiKey,
+       agent.capabilities == capabilities { return agent }
     stopAgentServer()
     agentConnected = false
     let server = try await AgentServer.start(
       folder: folder, engineURL: runtime.baseURL, engineKey: runtime.apiKey, model: runtime.alias,
       // The harness must know the model's real context to size its own compaction.
-      context: active?.config.context ?? ModelPlanner.preferredContext)
+      context: active?.config.context ?? ModelPlanner.preferredContext, capabilities: capabilities)
     agent = server
     eventTask = Task { [weak self] in
       do {
@@ -969,17 +1018,85 @@ final class AppModel {
       if let turnFailure {
         workspace.sessions[index].goal?.failRound(turnFailure)
       } else {
-        workspace.sessions[index].goal?.finishRound(answer: transcript.answer, edits: editedFiles)
+        let commands = transcript.steps.filter { $0.tool == "bash" }.map { (command: $0.text, exitCode: $0.exitCode) }
+        let passed = workspace.sessions[index].goal?.checkResult(commands: commands)
+        workspace.sessions[index].goal?.finishRound(answer: transcript.answer, edits: editedFiles, checkPassed: passed)
       }
       continueGoal = workspace.sessions[index].goal?.canStartRound == true
     }
     turnFailure = nil
+    if let baseline = turnBaseline, let id = finished, let folder = streamingFolder,
+       let messageId = workspace.sessions.first(where: { $0.id == id })?.messages.last?.id {
+      recordChanges(since: baseline, in: folder, session: id, message: messageId)
+    }
+    turnBaseline = nil
     generating = false
     pendingPermission = nil
     queuedPermissions = []
     streamingSession = nil
     do { try persist() } catch { errorMessage = String(describing: error) }
     if continueGoal, let finished { nextRound(in: finished) }
+  }
+
+  /// Adds what the turn changed to its answer, measured off the main thread once the turn has ended.
+  private func recordChanges(since baseline: TurnBaseline, in folder: URL, session: UUID, message: UUID) {
+    Task {
+      let changes = await Task.detached(priority: .utility) { baseline.changes(in: folder) }.value
+      guard !changes.isEmpty, let s = workspace.sessions.firstIndex(where: { $0.id == session }),
+            let m = workspace.sessions[s].messages.firstIndex(where: { $0.id == message }) else { return }
+      workspace.sessions[s].messages[m].changes = changes
+      do { try persist() } catch { errorMessage = String(describing: error) }
+    }
+  }
+
+  // MARK: Schedules
+
+  private let scheduleStore = ScheduleStore()
+  /// Tasks the agent runs on a schedule while the app is open.
+  private(set) var schedules = ScheduleStore().load()
+  private var schedulerTask: Task<Void, Never>?
+
+  func addSchedule(_ task: ScheduledTask) {
+    schedules.append(task)
+    saveSchedules()
+  }
+
+  func removeSchedule(_ id: UUID) {
+    schedules.removeAll { $0.id == id }
+    saveSchedules()
+  }
+
+  func setSchedule(_ id: UUID, enabled: Bool) {
+    guard let index = schedules.firstIndex(where: { $0.id == id }) else { return }
+    schedules[index].enabled = enabled
+    saveSchedules()
+  }
+
+  private func saveSchedules() {
+    do { try scheduleStore.save(schedules) } catch { errorMessage = String(describing: error) }
+  }
+
+  /// Checks once a minute. One due task starts at a time, and only while the agent is idle; a task that finds
+  /// the agent busy runs at the next check.
+  private func startScheduler() {
+    schedulerTask?.cancel()
+    schedulerTask = Task { [weak self] in
+      while !Task.isCancelled {
+        self?.runDueSchedule()
+        try? await Task.sleep(for: .seconds(60))
+      }
+    }
+  }
+
+  private func runDueSchedule(now: Date = Date()) {
+    guard !generating, installing == nil, let model = active ?? installed.first,
+          let index = schedules.firstIndex(where: { $0.isDue(at: now) && project($0.projectId)?.folder != nil })
+    else { return }
+    schedules[index].lastRun = now
+    saveSchedules()
+    let task = schedules[index]
+    let id = createSession(in: task.projectId, with: model)
+    if task.asGoal { startGoal(task.text, inSession: id) } else { send(task.text, in: id) }
   }
 
   private func append(_ text: String, to sessionId: UUID) {

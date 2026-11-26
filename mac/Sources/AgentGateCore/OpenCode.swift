@@ -50,12 +50,15 @@ public enum AgentEvent: Sendable, Equatable {
     public var ended: Date?
     /// The output was cut by the harness.
     public var truncated: Bool
+    /// The agent's to-do list, for a todowrite call.
+    public var todos: [TodoItem]?
 
     public init(
       id: String, name: String, status: String, detail: String, output: String, callID: String? = nil, title: String? = nil,
       purpose: String? = nil, exitCode: Int? = nil, diff: String? = nil, error: String? = nil,
-      started: Date? = nil, ended: Date? = nil, truncated: Bool = false
+      started: Date? = nil, ended: Date? = nil, truncated: Bool = false, todos: [TodoItem]? = nil
     ) {
+      self.todos = todos
       self.id = id
       self.name = name
       self.status = status
@@ -114,6 +117,9 @@ enum AgentEventDecoder {
             var pattern: String?
             var path: String?
             var url: String?
+            var query: String?
+            var name: String?
+            var todos: Lenient<[TodoItem]>?
           }
           struct Metadata: Decodable {
             var output: String?
@@ -203,12 +209,13 @@ enum AgentEventDecoder {
         let date = { (ms: Double?) in ms.map { Date(timeIntervalSince1970: $0 / 1000) } }
         return .tool(.init(
           id: id, name: name, status: state?.status ?? "pending",
-          detail: input?.command ?? input?.filePath ?? input?.pattern ?? input?.url ?? input?.path ?? "",
+          detail: input?.command ?? input?.filePath ?? input?.pattern ?? input?.url ?? input?.path ?? input?.query
+            ?? input?.name ?? (name == "task" ? input?.description : nil) ?? "",
           // A running command reports its output so far in the metadata; the final output replaces it.
           output: state?.output ?? state?.metadata?.output ?? "", callID: part.callID,
           title: state?.title, purpose: input?.description, exitCode: state?.metadata?.exit,
           diff: state?.metadata?.diff, error: state?.error, started: date(state?.time?.start),
-          ended: date(state?.time?.end), truncated: state?.metadata?.truncated ?? false))
+          ended: date(state?.time?.end), truncated: state?.metadata?.truncated ?? false, todos: input?.todos?.value))
       }
       if part.type == "compaction" { return .compacted(partID: id) }
       if part.type == "step-finish" {
@@ -267,6 +274,8 @@ public final class AgentServer: @unchecked Sendable {
   public let folder: URL
   /// The engine key it was started for, so the app can tell when it must restart.
   public let engineKey: String
+  /// What the harness was started with, so the app can tell when a change needs a restart.
+  public let capabilities: AgentCapabilities
   private let process: Process
 
   public static func binaryDirectory() -> URL? {
@@ -275,8 +284,12 @@ public final class AgentServer: @unchecked Sendable {
   }
 
   /// The harness configuration: one local provider, and permissions that fail closed.
-  static func config(engineURL: URL, engineKey: String, model: String, context: Int) throws -> String {
+  static func config(
+    engineURL: URL, engineKey: String, model: String, context: Int,
+    capabilities: AgentCapabilities = AgentCapabilities(), folder: URL? = nil
+  ) throws -> String {
     let budget = ContextBudget(context: context)
+    let enabled = capabilities.enabledTools
     var config: [String: Any] = [
       "$schema": "https://opencode.ai/config.json",
       "autoupdate": false, "share": "disabled",
@@ -289,27 +302,84 @@ public final class AgentServer: @unchecked Sendable {
       ]],
       // Reads, globs, greps and lists ask too, so ToolCallCheck sees every call; the app answers
       // valid ones itself without bothering the user.
-      "permission": [
-        "bash": "ask", "edit": "ask", "read": "ask", "glob": "ask", "grep": "ask", "list": "ask",
-        "webfetch": "deny", "external_directory": "deny",
-      ],
+      "permission": permissions(capabilities),
       // A lean agent: the harness's general prompt and unused tools are about 11K tokens the model
       // would read before every first answer (27 s to the first word on a 4B model, 4.5 s without).
-      "agent": [agentName: ["description": "Coding agent for the user's project", "mode": "primary", "prompt": agentPrompt]],
+      "agent": [
+        agentName: ["description": "Coding agent for the user's project", "mode": "primary", "prompt": prompt(capabilities)],
+        // Plan mode: looks and designs, changes nothing. The user approves the plan before the build agent runs it.
+        planAgentName: [
+          "description": "Plans a change without making it", "mode": "primary", "prompt": planPrompt,
+          "tools": ["edit": false, "write": false, "bash": false, "patch": false],
+          "permission": ["edit": "deny", "bash": "deny"],
+        ],
+      ],
       "default_agent": agentName,
-      "tools": Dictionary(uniqueKeysWithValues: unusedTools.map { ($0, false) }),
-      // No language servers, formatters or per-step git snapshots: background work the app does not use.
-      "lsp": false, "formatter": false, "snapshot": false,
+      "tools": Dictionary(uniqueKeysWithValues: optionalTools.filter { !enabled.contains($0) }.map { ($0, false) }),
+      // Language servers only when code navigation is on; no formatters or per-step git snapshots.
+      "lsp": capabilities.codeNavigation, "formatter": false, "snapshot": false,
     ]
+    // The project's instructions file, named by the app: project config is off, so the harness would not find it.
+    if let folder, FileManager.default.fileExists(atPath: folder.appendingPathComponent("AGENTS.md").path) {
+      config["instructions"] = [folder.appendingPathComponent("AGENTS.md").path]
+    }
+    if capabilities.skills, let folder {
+      // Only the project's own skills: the user's home folder and other assistants' skills stay out.
+      config["skills"] = ["paths": [folder.appendingPathComponent(".agents/skills").path]]
+    }
+    let servers = capabilities.activeServers
+    if !servers.isEmpty {
+      config["mcp"] = Dictionary(uniqueKeysWithValues: servers.map {
+        ($0.name, ["type": "local", "command": $0.command, "enabled": true] as [String: Any])
+      })
+    }
     // The harness's own compaction and tool-output cut-off, sized to this context (checked against OpenCode 1.19.5).
     config.merge(budget.harnessSettings) { _, new in new }
     return String(decoding: try JSONSerialization.data(withJSONObject: config), as: UTF8.self)
   }
 
   static let agentName = "agentgate"
+  static let planAgentName = "agentgate-plan"
 
-  /// Tools the agent never needs here: sub-agents, to-do lists, questions, skills, and web fetches (denied anyway).
-  static let unusedTools = ["task", "todowrite", "question", "skill", "webfetch"]
+  /// Harness tools that stay off unless a capability turns them on. "question" is always off: the app asks the
+  /// user itself, on the step a question is about.
+  static let optionalTools = ["task", "todowrite", "question", "skill", "webfetch", "websearch", "lsp"]
+
+  /// Every call the gate must see asks first; the app answers safe ones itself. Off capabilities are denied, so
+  /// a model that names a tool anyway is refused by the harness too.
+  static func permissions(_ capabilities: AgentCapabilities) -> [String: String] {
+    var permission = [
+      "bash": "ask", "edit": "ask", "read": "ask", "glob": "ask", "grep": "ask", "list": "ask",
+      "external_directory": "deny", "doom_loop": "ask",
+      "webfetch": capabilities.webFetch ? "ask" : "deny",
+      "websearch": capabilities.webSearch ? "ask" : "deny",
+      "lsp": capabilities.codeNavigation ? "ask" : "deny",
+    ]
+    for server in capabilities.activeServers { permission["\(server.name)_*"] = "ask" }
+    return permission
+  }
+
+  /// The system prompt with a line for each capability that is on, so the model knows when to use it.
+  static func prompt(_ capabilities: AgentCapabilities) -> String {
+    var lines = [agentPrompt]
+    if capabilities.todos { lines.append("- For a task with three or more steps, keep a to-do list with todowrite and update it as you go.") }
+    if capabilities.subagents { lines.append("- Hand a separate, well-defined part of a large task to a helper with the task tool.") }
+    if capabilities.skills { lines.append("- When a skill matches the task, load it with the skill tool and follow it.") }
+    if capabilities.codeNavigation { lines.append("- Use the lsp tool to find definitions and references instead of guessing.") }
+    if capabilities.webFetch || capabilities.webSearch {
+      lines.append("- Use the web only for documentation the project needs. Never send project code or secrets to the web.")
+    }
+    if !capabilities.activeServers.isEmpty { lines.append("- Tools named <server>_<tool> come from the user's MCP servers; use them when they fit.") }
+    return lines.joined(separator: "\n")
+  }
+
+  /// The plan agent's prompt: read-only, ends with a numbered plan the user can approve.
+  static let planPrompt = """
+    You are planning a change in the user's project. Do not change anything: read, glob and grep only.
+    Look at the files the task touches, then write a short numbered plan: which files change, what changes in each, \
+    and how the change will be checked (the project's tests or build). Name risks and open questions.
+    End with the line: PLAN READY
+    """
 
   /// The agent's whole system prompt, in place of the harness's general one: short, because a local
   /// model reads it before every first answer.
@@ -321,11 +391,13 @@ public final class AgentServer: @unchecked Sendable {
     - After a change, run the project's own build or tests when they exist, and fix what fails.
     - Stay inside the project folder. Never touch keys, credentials or files outside it.
     - If a tool call is refused, read the reason, correct the call and continue.
+    - When the user names a file as @path, read that file first.
     - Be brief. When done, say in one or two sentences what you changed and how you checked it.
     """
 
   public static func start(
     folder: URL, engineURL: URL, engineKey: String, model: String, context: Int,
+    capabilities: AgentCapabilities = AgentCapabilities(),
     binaries: URL? = binaryDirectory(), timeout: TimeInterval = 90
   ) async throws -> AgentServer {
     guard let exe = binaries?.appendingPathComponent("opencode"),
@@ -354,8 +426,9 @@ public final class AgentServer: @unchecked Sendable {
       "XDG_CONFIG_HOME": home.appendingPathComponent("config").path,
       "XDG_CACHE_HOME": home.appendingPathComponent("cache").path,
       "OPENCODE_SERVER_PASSWORD": password,
-      "OPENCODE_CONFIG_CONTENT": try config(engineURL: engineURL, engineKey: engineKey, model: model, context: context),
-    ]) { $1 }
+      "OPENCODE_CONFIG_CONTENT": try config(
+        engineURL: engineURL, engineKey: engineKey, model: model, context: context, capabilities: capabilities, folder: folder),
+    ].merging(capabilities.environment) { $1 }) { $1 }
     let log = LogTail()
     let pipe = Pipe()
     process.standardOutput = pipe
@@ -368,7 +441,7 @@ public final class AgentServer: @unchecked Sendable {
     try? EngineRegistry().record(process.processIdentifier)
     let server = AgentServer(
       baseURL: URL(string: "http://127.0.0.1:\(port)")!, password: password, folder: folder,
-      engineKey: engineKey, process: process, log: log)
+      engineKey: engineKey, capabilities: capabilities, process: process, log: log)
     do {
       try await server.waitUntilReady(timeout: timeout)
     } catch {
@@ -380,8 +453,12 @@ public final class AgentServer: @unchecked Sendable {
 
   private let log: LogTail
 
-  private init(baseURL: URL, password: String, folder: URL, engineKey: String, process: Process, log: LogTail) {
+  private init(
+    baseURL: URL, password: String, folder: URL, engineKey: String, capabilities: AgentCapabilities, process: Process,
+    log: LogTail
+  ) {
     self.log = log
+    self.capabilities = capabilities
     self.baseURL = baseURL
     self.password = password
     self.folder = folder
@@ -456,9 +533,11 @@ public struct AgentClient: Sendable {
     return created.id
   }
 
-  public func prompt(session: String, text: String, model: String) async throws {
+  /// Sends a message. `plan` runs it with the plan agent, which may look but not change anything.
+  public func prompt(session: String, text: String, model: String, plan: Bool = false) async throws {
     try await send("POST", "session/\(session)/prompt_async", body: [
       "model": ["providerID": "local", "modelID": model], "parts": [["type": "text", "text": text]],
+      "agent": plan ? AgentServer.planAgentName : AgentServer.agentName,
     ])
   }
 

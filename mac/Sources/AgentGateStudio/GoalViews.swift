@@ -90,9 +90,11 @@ struct GoalBanner: View {
   private var detail: String? {
     switch goal.phase {
     case .blocked: goal.blocker
-    case .complete: goal.note.map { "Done: \($0)" }
+    case .complete:
+      (goal.note.map { "Done: \($0)" } ?? "Done.") + (goal.check.map { " Verified: `\($0)` passed." } ?? "")
     default:
-      goal.note.map { "Next: \($0)" }
+      goal.verifying ? "The agent reports it done; next round runs `\(goal.check ?? "")` to confirm." : nil
+        ?? goal.note.map { "Next: \($0)" }
         ?? (goal.filesChanged > 0 ? "\(plural(goal.filesChanged, "file")) changed so far." : nil)
     }
   }
@@ -166,6 +168,9 @@ struct RepoOverview: View {
           VStack(alignment: .leading, spacing: 8) {
             Fact(symbol: "checkmark.seal", label: "Checks with",
                  value: summary.testCommand ?? "no test command found", mono: summary.testCommand != nil)
+            Fact(symbol: "text.book.closed", label: "Instructions",
+                 value: summary.instructions.map { "\($0), read at the start of every chat" } ?? "none yet (add an AGENTS.md)",
+                 mono: false)
             if let commit = summary.lastCommit {
               Fact(symbol: "clock.arrow.circlepath", label: "Last commit",
                    value: commit + (summary.lastCommitDate.map { "  ·  " + $0.formatted(.relative(presentation: .named)) } ?? ""))
