@@ -165,13 +165,18 @@ test('main pages fit a 390px phone without horizontal scrolling', async ({
       'A very long project name that must wrap instead of forcing the page to scroll sideways',
     );
   await page.getByRole('button', { name: /Create project/ }).click();
+  // Creating a project redirects to it. Read the URL only after that navigation, or a redirect
+  // still under way lands during a later page.evaluate and destroys its context.
+  await page.waitForURL(/\/projects\/[^/]+$/);
   const projectPath = page.url().replace(server.url, '');
   for (const path of [
     '/',
     projectPath,
     '/models',
     '/security',
-    '/evaluations',
+    // /evaluations redirects here from a streamed page, which Next.js finishes in the browser after
+    // load; reading the page during that second navigation destroys the context. Check the target.
+    '/security?view=evaluations',
   ]) {
     await page.goto(server.url + path);
     const overflow = await page.evaluate(
