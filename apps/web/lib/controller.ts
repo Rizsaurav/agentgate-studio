@@ -11,6 +11,7 @@ import {
   SqliteEvals,
   ContextService,
   DocumentService,
+  HybridRetriever,
   SqliteContext,
   SqliteDocuments,
   EnvironmentBackend,
@@ -28,6 +29,7 @@ import {
   ProjectService,
   ProjectImportService,
   RunService,
+  ScannerRetrievalModels,
   SecretCredentialStore,
   CLOUD_PROVIDERS,
   CUSTOM_PROVIDER,
@@ -115,11 +117,16 @@ function controller(): Controller {
       (projectId, documentId, seqs) =>
         documentRepository.withhold(projectId, documentId, seqs),
     );
+    // Embeddings, reranking and the grounding check run in the same local scanner service.
+    const retrievalModels = new ScannerRetrievalModels(
+      process.env.AGENTGATE_SCANNER_URL || DEFAULT_SCANNER_URL,
+    );
     const documents = new DocumentService(
       documentRepository,
       projectRepository,
       docsRoot,
       (document, chunks) => guard.screenDocument(document, chunks),
+      new HybridRetriever(documentRepository, retrievalModels),
     );
     const projectImportService = new ProjectImportService(
       projectService,
@@ -147,7 +154,10 @@ function controller(): Controller {
         knowledge: {
           context: (projectId) => context.render(projectId),
           retrieve: (projectId, query) => documents.retrieve(projectId, query),
+          hasDocuments: (projectId) =>
+            documents.list(projectId).some((d) => d.status === 'active'),
         },
+        grounding: { models: retrievalModels },
       },
     );
     runs.start();

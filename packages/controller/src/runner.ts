@@ -1,6 +1,16 @@
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core';
 import type { Passage } from './documents';
-import { groundedQuestion } from './grounding';
+import {
+  checkGrounding,
+  DEFAULT_GROUNDING,
+  groundedQuestion,
+  type GroundingCheck,
+  type GroundingOptions,
+  revisionRequest,
+  uncoveredQuestion,
+  withoutClaims,
+} from './grounding';
+import type { RetrievalModels } from './retrieval';
 import type { AgentModels } from './ollama';
 import type { Blocked, RunGuard } from './security';
 import {
@@ -18,13 +28,20 @@ const MAX_ERROR_LENGTH = 300;
 /** Project knowledge supplied to every run; the same for whichever model runs. */
 export interface RunKnowledge {
   context(projectId: string): string;
-  retrieve(projectId: string, query: string): Passage[];
+  retrieve(projectId: string, query: string): Promise<Passage[]>;
+  /** Whether the project has reference documents; when it does and nothing matched, the model is told. */
+  hasDocuments?(projectId: string): boolean;
 }
 export type RunOptions = {
   /** Required: no model text is delivered without passing the guard. */
   guard: RunGuard;
   timeoutMs?: number;
   knowledge?: RunKnowledge;
+  /** Checks every claim of an answer built on excerpts; unsupported claims are revised once, then removed. */
+  grounding?: {
+    models: Pick<RetrievalModels, 'entail'>;
+    options?: GroundingOptions;
+  };
 };
 const DELIVERY_CHUNK_CHARS = 40;
 
@@ -41,6 +58,7 @@ export class RunService {
   private readonly timeoutMs: number;
   private readonly knowledge: RunKnowledge | undefined;
   private readonly guard: RunGuard;
+  private readonly grounding: RunOptions['grounding'];
 
   constructor(
     private readonly repository: SessionRepository,
@@ -50,6 +68,7 @@ export class RunService {
     this.guard = options.guard;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_RUN_TIMEOUT_MS;
     this.knowledge = options.knowledge;
+    this.grounding = options.grounding;
   }
 
   /** Recover from a previous process, then continue any queued work. */
@@ -126,7 +145,7 @@ export class RunService {
       if (!input.allowed) return blocked(input);
       const screened = await this.guard.screenPassages(
         guardContext,
-        this.knowledge?.retrieve(session.projectId, run.prompt) ?? [],
+        (await this.knowledge?.retrieve(session.projectId, run.prompt)) ?? [],
       );
       if (screened.blocked) return blocked(screened.blocked);
       const passages = screened.passages;
@@ -140,6 +159,9 @@ export class RunService {
         JSON.stringify([...new Set(passages.map((p) => p.documentId))]),
       );
       const context = this.knowledge?.context(session.projectId) ?? '';
+      const uncovered =
+        passages.length === 0 &&
+        (this.knowledge?.hasDocuments?.(session.projectId) ?? false);
       const opened = await this.models.open(session.model);
       const agent = new Agent({
         initialState: {
@@ -150,11 +172,22 @@ export class RunService {
           tools: [],
           messages: history as AgentMessage[],
         },
-        streamFn: opened.streamFn,
+        // Answers from the documents are sampled greedily, so the same question and excerpts give the same
+        // answer, and the check that follows judges what the model most expects, not a random draw.
+        streamFn:
+          passages.length > 0 || uncovered
+            ? (model, context, options) =>
+                opened.streamFn(model, context, { ...options, temperature: 0 })
+            : opened.streamFn,
         getApiKey: opened.getApiKey,
-        // Excerpts reach the model for this call only; they are not saved into the history.
+        // Excerpts reach the model for this call only; they are not saved into the history. A project with
+        // documents that none answered is told so, rather than left to guess what they might say.
         transformContext: async (messages) =>
-          passages.length === 0 ? messages : withExcerpts(messages, passages),
+          passages.length > 0
+            ? withExcerpts(messages, passages)
+            : uncovered
+              ? withQuestion(messages, uncoveredQuestion)
+              : messages,
       });
       this.repository.appendEvent(run.id, 'started', session.model.modelId);
       if (passages.length > 0)
@@ -179,7 +212,7 @@ export class RunService {
           answer += event.assistantMessageEvent.delta;
         }
       });
-      // A hard stop: even a provider that ignores abort cannot hold the queue.
+      // A hard stop for the whole run, revision included: even a provider that ignores abort cannot hold the queue.
       let stopped: StopReason | null = null;
       let timer: NodeJS.Timeout | undefined;
       const stop = new Promise<void>((resolve) => {
@@ -191,8 +224,45 @@ export class RunService {
         this.active = { runId: run.id, stop: request };
         timer = setTimeout(() => request('timeout'), this.timeoutMs);
       });
+      const ask = async (text: string) => {
+        answer = '';
+        await Promise.race([agent.prompt(text), stop]);
+      };
+      const lastAnswer = () => {
+        const message = agent.state.messages.at(-1);
+        return message?.role === 'assistant' &&
+          message.stopReason !== 'error' &&
+          message.stopReason !== 'aborted'
+          ? message
+          : null;
+      };
+      // An answer built on excerpts is checked claim by claim. Unsupported or contradicted claims get one
+      // revision with the exact sentences named; whatever is still unsupported is removed before delivery.
+      let grounding: GroundingCheck | null = null;
+      let firstTry: { answer: string; check: GroundingCheck } | null = null;
       try {
-        await Promise.race([agent.prompt(run.prompt), stop]);
+        await ask(run.prompt);
+        if (!stopped && this.grounding && passages.length > 0 && lastAnswer()) {
+          const check = (text: string) =>
+            checkGrounding(
+              text,
+              passages,
+              this.grounding?.models as Pick<RetrievalModels, 'entail'>,
+              this.grounding?.options ?? DEFAULT_GROUNDING,
+            );
+          grounding = await check(answer);
+          const rejected = rejectedClaims(grounding);
+          if (rejected.length > 0) {
+            firstTry = { answer, check: grounding };
+            await ask(revisionRequest(rejected));
+            if (!stopped && lastAnswer() && answer.trim()) {
+              const second = await check(answer);
+              if (rejectedClaims(second).length <= rejected.length)
+                grounding = second;
+              else answer = firstTry.answer;
+            } else if (!stopped) answer = firstTry.answer;
+          }
+        }
       } finally {
         clearTimeout(timer);
         unsubscribe();
@@ -203,16 +273,41 @@ export class RunService {
       const turn = agent.state.messages
         .filter((message) => message.role !== 'system')
         .slice(history.length);
-      const last = turn.at(-1);
+      const last = firstTry
+        ? turn.findLast((message) => message.role === 'assistant')
+        : turn.at(-1);
       if (last?.role !== 'assistant')
         return fail('The model returned no answer.');
-      if (last.stopReason === 'aborted') return cancelled();
-      if (last.stopReason === 'error')
+      if (!firstTry && last.stopReason === 'aborted') return cancelled();
+      if (!firstTry && last.stopReason === 'error')
         return fail(
           opened.describeError(
             last.errorMessage ?? 'The model request failed.',
           ),
         );
+      let stored = turn;
+      if (grounding) {
+        answer = withoutClaims(answer, rejectedClaims(grounding));
+        this.repository.appendEvent(
+          run.id,
+          'grounding',
+          JSON.stringify({
+            claims: grounding.claims.length,
+            supported: grounding.supported,
+            unsupported: grounding.unsupported,
+            contradicted: grounding.contradicted,
+            revised: firstTry !== null,
+            removed: rejectedClaims(grounding),
+          }),
+        );
+        // The history keeps the question and the answer as delivered, not the revision exchange.
+        const question = turn.find((message) => message.role === 'user');
+        if (question)
+          stored = [
+            question,
+            { ...last, content: [{ type: 'text', text: answer }] },
+          ];
+      }
       const output = this.guard.inspectOutput(guardContext, answer);
       if (!output.allowed) return blocked(output);
       for (let i = 0; i < answer.length; i += DELIVERY_CHUNK_CHARS)
@@ -224,7 +319,7 @@ export class RunService {
       this.repository.appendEvent(run.id, 'completed', '');
       this.repository.completeRun(
         run,
-        turn.map((message) => storedMessageSchema.parse(message)),
+        stored.map((message) => storedMessageSchema.parse(message)),
       );
     } catch (error) {
       // Log only the error class: messages may contain private prompt content.
@@ -241,9 +336,17 @@ export class RunService {
   }
 }
 
-function withExcerpts(
+/** Claims the check rejected: unsupported or contradicted. */
+function rejectedClaims(check: GroundingCheck): string[] {
+  return check.claims
+    .filter((claim) => claim.status !== 'supported')
+    .map((claim) => claim.sentence);
+}
+
+/** The latest user message, rewritten by `wrap`; earlier messages are left as they are. */
+function withQuestion(
   messages: AgentMessage[],
-  passages: Passage[],
+  wrap: (question: string) => string,
 ): AgentMessage[] {
   const index = messages.findLastIndex((message) => message.role === 'user');
   const original = messages[index];
@@ -256,12 +359,16 @@ function withExcerpts(
           .join('');
   return messages.map((message, i) =>
     i === index
-      ? {
-          ...original,
-          content: [
-            { type: 'text', text: groundedQuestion(question, passages) },
-          ],
-        }
+      ? { ...original, content: [{ type: 'text', text: wrap(question) }] }
       : message,
+  );
+}
+
+function withExcerpts(
+  messages: AgentMessage[],
+  passages: Passage[],
+): AgentMessage[] {
+  return withQuestion(messages, (question) =>
+    groundedQuestion(question, passages),
   );
 }

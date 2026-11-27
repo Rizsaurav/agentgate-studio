@@ -179,9 +179,9 @@ describe('enforced pipeline', () => {
         .sort(),
     ).toEqual(['active', 'quarantined']);
     expect(
-      t.documents
-        .retrieve(t.project.id, 'refunds email passwords')
-        .map((p) => p.title),
+      (await t.documents.retrieve(t.project.id, 'refunds email passwords')).map(
+        (p) => p.title,
+      ),
     ).toEqual(['Returns']);
     const [event] = t.events.recent(5);
     expect(event).toMatchObject({
@@ -207,7 +207,7 @@ describe('enforced pipeline', () => {
       status: 'active',
       withheld: 1,
     });
-    const passages = t.documents.retrieve(
+    const passages = await t.documents.retrieve(
       t.project.id,
       'dial machine passwords email',
     );
@@ -539,7 +539,7 @@ describe.runIf(scannerUrl)('live LLM Guard (integration)', () => {
       stage: 'ingestion',
       outcome: 'excluded',
     });
-    const hits = t.documents.retrieve(
+    const hits = await t.documents.retrieve(
       t.project.id,
       'refund password attacker email',
     );

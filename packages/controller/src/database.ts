@@ -187,6 +187,18 @@ CREATE TABLE project_import_metadata (
   expected_behaviors TEXT NOT NULL
 ) STRICT;`;
 
+/**
+ * Retrieval with context: each chunk keeps the section heading it sits under and an embedding for semantic
+ * search (filled in at ingestion, or later by the retriever). The keyword index is rebuilt to include the
+ * document title and section, so a short passage is found by what its section is about.
+ */
+const RETRIEVAL_CONTEXT = `
+ALTER TABLE chunks ADD COLUMN heading TEXT NOT NULL DEFAULT '';
+ALTER TABLE chunks ADD COLUMN embedding BLOB;
+DELETE FROM chunks_fts;
+INSERT INTO chunks_fts (rowid, text)
+  SELECT c.id, d.title || char(10) || c.text FROM chunks c JOIN documents d ON d.id = c.document_id;`;
+
 /** Ordered migrations; PRAGMA user_version is the number applied. Never edit an applied entry. */
 const MIGRATIONS = [
   PROJECTS,
@@ -200,6 +212,7 @@ const MIGRATIONS = [
   EVAL_MEASURES,
   PROJECT_REPOSITORY,
   PROJECT_IMPORT_METADATA,
+  RETRIEVAL_CONTEXT,
 ];
 
 /** Single owner of the application database file, schema, and migrations. */

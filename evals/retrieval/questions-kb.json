@@ -1,0 +1,1454 @@
+{
+  "corpus": ["kb"],
+  "questions": [
+    {
+      "id": "q001",
+      "kind": "lexical",
+      "question": "What is the return window for accessories?",
+      "answers": [
+        {
+          "document": "kb/returns-policy.md",
+          "contains": "accessories can be returned within 60 days of delivery"
+        }
+      ]
+    },
+    {
+      "id": "q002",
+      "kind": "lexical",
+      "question": "What restocking fee applies to returned e-bikes that are not faulty?",
+      "answers": [
+        {
+          "document": "kb/returns-policy.md",
+          "contains": "A restocking fee of 10% of the purchase price"
+        }
+      ]
+    },
+    {
+      "id": "q003",
+      "kind": "lexical",
+      "question": "How long is the warranty on e-bike motors?",
+      "answers": [
+        {
+          "document": "kb/warranty.md",
+          "contains": "E-bike motors | 3 years"
+        }
+      ]
+    },
+    {
+      "id": "q004",
+      "kind": "lexical",
+      "question": "What diagnostic fee applies if a warranty claim is rejected after inspection?",
+      "answers": [
+        {
+          "document": "kb/warranty.md",
+          "contains": "a diagnostic fee of EUR 45 applies"
+        }
+      ]
+    },
+    {
+      "id": "q005",
+      "kind": "lexical",
+      "question": "How much does express delivery cost?",
+      "answers": [
+        {
+          "document": "kb/shipping.md",
+          "contains": "| Express | 1 to 2 business days | EUR 14.95 |"
+        }
+      ]
+    },
+    {
+      "id": "q006",
+      "kind": "lexical",
+      "question": "What redelivery fee applies after a second missed bike freight delivery?",
+      "answers": [
+        {
+          "document": "kb/shipping.md",
+          "contains": "a redelivery fee of EUR 30 applies"
+        }
+      ]
+    },
+    {
+      "id": "q007",
+      "kind": "lexical",
+      "question": "Which countries' residents can use Brevlin Finance financing?",
+      "answers": [
+        {
+          "document": "kb/payments.md",
+          "contains": "residents of Germany, the Netherlands and Austria"
+        }
+      ]
+    },
+    {
+      "id": "q008",
+      "kind": "lexical",
+      "question": "How long are orders paid by bank transfer held?",
+      "answers": [
+        {
+          "document": "kb/payments.md",
+          "contains": "Orders paid by bank transfer are held for 7 days"
+        }
+      ]
+    },
+    {
+      "id": "q009",
+      "kind": "lexical",
+      "question": "What is the monthly price of Care Plus?",
+      "answers": [
+        {
+          "document": "kb/subscriptions.md",
+          "contains": "| Care Plus | EUR 19 per month |"
+        }
+      ]
+    },
+    {
+      "id": "q010",
+      "kind": "lexical",
+      "question": "How long is showroom CCTV footage kept?",
+      "answers": [
+        {
+          "document": "kb/privacy-notice.md",
+          "contains": "Showroom CCTV | 30 days"
+        }
+      ]
+    },
+    {
+      "id": "q011",
+      "kind": "lexical",
+      "question": "What is the maximum torque of the Halcy 70 Cargo?",
+      "answers": [
+        {
+          "document": "kb/halcy-70-cargo-manual.md",
+          "contains": "Maximum torque | 85 Nm"
+        }
+      ]
+    },
+    {
+      "id": "q012",
+      "kind": "lexical",
+      "question": "How much does the Halcy 52 weigh?",
+      "answers": [
+        {
+          "document": "kb/halcy-52-manual.md",
+          "contains": "23.4 kg including battery"
+        }
+      ]
+    },
+    {
+      "id": "q013",
+      "kind": "lexical",
+      "question": "What is the maximum rear deck load of the Halcy 70 Cargo?",
+      "answers": [
+        {
+          "document": "kb/halcy-70-cargo-manual.md",
+          "contains": "Maximum rear deck load | 80 kg"
+        }
+      ]
+    },
+    {
+      "id": "q014",
+      "kind": "lexical",
+      "question": "What tyre pressure should the Tessel city bike tyres be inflated to?",
+      "answers": [
+        {
+          "document": "kb/tessel-city-bike-manual.md",
+          "contains": "Inflate the tyres to 3.5 to 4.5 bar"
+        }
+      ]
+    },
+    {
+      "id": "q015",
+      "kind": "lexical",
+      "question": "What does display error code E21 mean?",
+      "answers": [
+        {
+          "document": "kb/display-error-codes.md",
+          "contains": "E21 | Battery temperature too high"
+        }
+      ]
+    },
+    {
+      "id": "q016",
+      "kind": "lexical",
+      "question": "How much does the Rapid 6A charger cost?",
+      "answers": [
+        {
+          "document": "kb/battery-and-charger-care.md",
+          "contains": "The Rapid 6A charger is sold separately for EUR 129"
+        }
+      ]
+    },
+    {
+      "id": "q017",
+      "kind": "lexical",
+      "question": "What does a replacement 700 Wh battery cost?",
+      "answers": [
+        {
+          "document": "kb/battery-and-charger-care.md",
+          "contains": "EUR 799 for the 700 Wh battery"
+        }
+      ]
+    },
+    {
+      "id": "q018",
+      "kind": "lexical",
+      "question": "What is the price of the annual e-bike service?",
+      "answers": [
+        {
+          "document": "kb/ebike-service-schedule.md",
+          "contains": "| Annual service | EUR 129 |"
+        }
+      ]
+    },
+    {
+      "id": "q019",
+      "kind": "lexical",
+      "question": "How often must the status page be updated during a SEV1 incident?",
+      "answers": [
+        {
+          "document": "kb/runbook-incident-response.md",
+          "contains": "every 30 minutes during a SEV1"
+        }
+      ]
+    },
+    {
+      "id": "q020",
+      "kind": "lexical",
+      "question": "What is the weekly on-call allowance for the primary role?",
+      "answers": [
+        {
+          "document": "kb/runbook-on-call.md",
+          "contains": "EUR 250 for the primary role"
+        }
+      ]
+    },
+    {
+      "id": "q021",
+      "kind": "lexical",
+      "question": "When does the company-wide change freeze run?",
+      "answers": [
+        {
+          "document": "kb/runbook-deploys.md",
+          "contains": "from 15 December to 5 January"
+        }
+      ]
+    },
+    {
+      "id": "q022",
+      "kind": "lexical",
+      "question": "What share of traffic does the Weir canary receive, and for how long does it run?",
+      "answers": [
+        {
+          "document": "kb/runbook-deploys.md",
+          "contains": "a canary that receives 5% of traffic"
+        },
+        {
+          "document": "kb/runbook-deploys.md",
+          "contains": "The canary runs for 20 minutes"
+        }
+      ]
+    },
+    {
+      "id": "q023",
+      "kind": "lexical",
+      "question": "What is the recovery time objective for ledger-db?",
+      "answers": [
+        {
+          "document": "kb/runbook-database-failover.md",
+          "contains": "recovery time objective (RTO) is 15 minutes"
+        }
+      ]
+    },
+    {
+      "id": "q024",
+      "kind": "lexical",
+      "question": "How long are nightly ledger-db snapshots kept?",
+      "answers": [
+        {
+          "document": "kb/runbook-backup-restore.md",
+          "contains": "are kept for 35 days"
+        }
+      ]
+    },
+    {
+      "id": "q025",
+      "kind": "lexical",
+      "question": "How much annual leave do full-time employees in Germany get?",
+      "answers": [
+        {
+          "document": "kb/hr-leave-policy.md",
+          "contains": "Germany | 28 working days"
+        }
+      ]
+    },
+    {
+      "id": "q026",
+      "kind": "lexical",
+      "question": "How many unused leave days can be carried over into the next year?",
+      "answers": [
+        {
+          "document": "kb/hr-leave-policy.md",
+          "contains": "carry over up to 5 unused days"
+        }
+      ]
+    },
+    {
+      "id": "q027",
+      "kind": "lexical",
+      "question": "What is the meal limit per day when working abroad?",
+      "answers": [
+        {
+          "document": "kb/hr-expenses-policy.md",
+          "contains": "up to EUR 60 per day abroad"
+        },
+        {
+          "document": "kb/hr-travel-policy.md",
+          "contains": "EUR 60 per day abroad"
+        }
+      ]
+    },
+    {
+      "id": "q028",
+      "kind": "lexical",
+      "question": "How large is the yearly learning budget per employee?",
+      "answers": [
+        {
+          "document": "kb/hr-expenses-policy.md",
+          "contains": "learning budget of EUR 1,200 per calendar year"
+        }
+      ]
+    },
+    {
+      "id": "q029",
+      "kind": "lexical",
+      "question": "What is the hotel cap in London?",
+      "answers": [
+        {
+          "document": "kb/hr-travel-policy.md",
+          "contains": "EUR 230 in London, Paris, Amsterdam and Stockholm"
+        }
+      ]
+    },
+    {
+      "id": "q030",
+      "kind": "lexical",
+      "question": "What mileage rate is paid when using your own car for business?",
+      "answers": [
+        {
+          "document": "kb/hr-travel-policy.md",
+          "contains": "mileage is reimbursed at EUR 0.30 per km"
+        }
+      ]
+    },
+    {
+      "id": "q031",
+      "kind": "lexical",
+      "question": "For how many working days per year can employees work from abroad?",
+      "answers": [
+        {
+          "document": "kb/hr-remote-work-policy.md",
+          "contains": "up to 30 working days per calendar year"
+        }
+      ]
+    },
+    {
+      "id": "q032",
+      "kind": "lexical",
+      "question": "When do Fleet API access tokens expire?",
+      "answers": [
+        {
+          "document": "kb/api-authentication.md",
+          "contains": "Access tokens expire after 3600 seconds"
+        }
+      ]
+    },
+    {
+      "id": "q033",
+      "kind": "lexical",
+      "question": "What are the per-minute and daily request limits on the Starter API plan?",
+      "answers": [
+        {
+          "document": "kb/api-rate-limits.md",
+          "contains": "| Starter | 60 | 10,000 |"
+        }
+      ]
+    },
+    {
+      "id": "q034",
+      "kind": "lexical",
+      "question": "How many times are failed webhook deliveries retried?",
+      "answers": [
+        {
+          "document": "kb/api-webhooks.md",
+          "contains": "retried up to 8 times over about 24 hours"
+        },
+        {
+          "document": "kb/release-notes-fleet-api-2026-03.md",
+          "contains": "now retried up to 8 times over about 24 hours"
+        }
+      ]
+    },
+    {
+      "id": "q035",
+      "kind": "lexical",
+      "question": "What does Fleet API error code OB-3006 mean?",
+      "answers": [
+        {
+          "document": "kb/api-error-codes.md",
+          "contains": "Idempotency key reused with a different request body"
+        }
+      ]
+    },
+    {
+      "id": "q036",
+      "kind": "lexical",
+      "question": "What is the default page size for list endpoints?",
+      "answers": [
+        {
+          "document": "kb/api-pagination.md",
+          "contains": "The default page size is 25 items"
+        },
+        {
+          "document": "kb/release-notes-fleet-api-2026-03.md",
+          "contains": "The default page size stays at 25 items"
+        }
+      ]
+    },
+    {
+      "id": "q037",
+      "kind": "paraphrase",
+      "question": "How long until a Halcy 40 is topped up completely from flat?",
+      "answers": [
+        {
+          "document": "kb/halcy-40-manual.md",
+          "contains": "A full charge from empty takes about 3.5 hours with the standard charger"
+        }
+      ]
+    },
+    {
+      "id": "q038",
+      "kind": "paraphrase",
+      "question": "If someone pinches my bike, will you give me a new one, and what do I pay?",
+      "answers": [
+        {
+          "document": "kb/subscriptions.md",
+          "contains": "a deductible of 25% of the replacement price"
+        }
+      ]
+    },
+    {
+      "id": "q039",
+      "kind": "paraphrase",
+      "question": "Can I stop paying for servicing during the cold months and pick it up again later?",
+      "answers": [
+        {
+          "document": "kb/subscriptions.md",
+          "contains": "pause a monthly subscription for up to 3 months"
+        }
+      ]
+    },
+    {
+      "id": "q040",
+      "kind": "paraphrase",
+      "question": "After I send something back, how soon is my money given back?",
+      "answers": [
+        {
+          "document": "kb/returns-policy.md",
+          "contains": "Refunds are issued within 5 business days after the inspection is passed"
+        }
+      ]
+    },
+    {
+      "id": "q041",
+      "kind": "paraphrase",
+      "question": "Do you hand over information about me to marketers for cash?",
+      "answers": [
+        {
+          "document": "kb/privacy-notice.md",
+          "contains": "We do not sell personal data to anyone"
+        }
+      ]
+    },
+    {
+      "id": "q042",
+      "kind": "paraphrase",
+      "question": "How long do you hang on to the GPS traces of my trips?",
+      "answers": [
+        {
+          "document": "kb/privacy-notice.md",
+          "contains": "18 months, then aggregated and anonymised"
+        }
+      ]
+    },
+    {
+      "id": "q043",
+      "kind": "paraphrase",
+      "question": "Who has to sign off a 3,000 euro work purchase I paid for myself?",
+      "answers": [
+        {
+          "document": "kb/hr-expenses-policy.md",
+          "contains": "EUR 1,000 to EUR 5,000 | your department director"
+        }
+      ]
+    },
+    {
+      "id": "q044",
+      "kind": "paraphrase",
+      "question": "How much paid time off does a new parent who is not the main carer get?",
+      "answers": [
+        {
+          "document": "kb/hr-leave-policy.md",
+          "contains": "The secondary caregiver receives 6 weeks at full pay"
+        }
+      ]
+    },
+    {
+      "id": "q045",
+      "kind": "paraphrase",
+      "question": "My grandmother passed away. How much time can I take off?",
+      "answers": [
+        {
+          "document": "kb/hr-leave-policy.md",
+          "contains": "2 days for other close relatives"
+        }
+      ]
+    },
+    {
+      "id": "q046",
+      "kind": "paraphrase",
+      "question": "Can I sit somewhere more comfortable than the cheapest seats on a long-haul trip to Asia?",
+      "answers": [
+        {
+          "document": "kb/hr-travel-policy.md",
+          "contains": "Flights of 6 hours or more | premium economy"
+        }
+      ]
+    },
+    {
+      "id": "q047",
+      "kind": "paraphrase",
+      "question": "When do I need to be reachable during the day when I'm working from home?",
+      "answers": [
+        {
+          "document": "kb/hr-remote-work-policy.md",
+          "contains": "Core collaboration hours are 10:00 to 15:00"
+        }
+      ]
+    },
+    {
+      "id": "q048",
+      "kind": "paraphrase",
+      "question": "Does the company chip in for my home broadband?",
+      "answers": [
+        {
+          "document": "kb/hr-remote-work-policy.md",
+          "contains": "internet allowance of EUR 30 per month"
+        }
+      ]
+    },
+    {
+      "id": "q049",
+      "kind": "paraphrase",
+      "question": "What happens if the person holding the pager doesn't respond?",
+      "answers": [
+        {
+          "document": "kb/runbook-on-call.md",
+          "contains": "escalates automatically to the secondary"
+        }
+      ]
+    },
+    {
+      "id": "q050",
+      "kind": "paraphrase",
+      "question": "How quickly does the duty engineer need to react to an alert at night?",
+      "answers": [
+        {
+          "document": "kb/runbook-on-call.md",
+          "contains": "Acknowledge a page within 10 minutes, at any time of day"
+        }
+      ]
+    },
+    {
+      "id": "q051",
+      "kind": "paraphrase",
+      "question": "Can we ship code to customers on a Saturday?",
+      "answers": [
+        {
+          "document": "kb/runbook-deploys.md",
+          "contains": "No production deploys are allowed on weekends"
+        }
+      ]
+    },
+    {
+      "id": "q052",
+      "kind": "paraphrase",
+      "question": "How do I undo a bad release and get the previous build back?",
+      "answers": [
+        {
+          "document": "kb/runbook-deploys.md",
+          "contains": "weir rollback <service>"
+        }
+      ]
+    },
+    {
+      "id": "q053",
+      "kind": "paraphrase",
+      "question": "If the main orders database dies, how much recent data might we lose?",
+      "answers": [
+        {
+          "document": "kb/runbook-database-failover.md",
+          "contains": "is 1 minute and the recovery time objective"
+        }
+      ]
+    },
+    {
+      "id": "q054",
+      "kind": "paraphrase",
+      "question": "How far back can we rewind the orders store to an exact second?",
+      "answers": [
+        {
+          "document": "kb/runbook-backup-restore.md",
+          "contains": "point-in-time recovery to any second within the last 7 days"
+        }
+      ]
+    },
+    {
+      "id": "q055",
+      "kind": "paraphrase",
+      "question": "Our integration keeps being told to slow down. What response does it get?",
+      "answers": [
+        {
+          "document": "kb/api-rate-limits.md",
+          "contains": "returns HTTP 429 with error code OB-2001"
+        }
+      ]
+    },
+    {
+      "id": "q056",
+      "kind": "paraphrase",
+      "question": "How can I be sure a callback to my server really came from you?",
+      "answers": [
+        {
+          "document": "kb/api-webhooks.md",
+          "contains": "HMAC-SHA256 signature of the timestamp and raw body"
+        }
+      ]
+    },
+    {
+      "id": "q057",
+      "kind": "paraphrase",
+      "question": "How long does my system have to reply to a notification before it counts as failed?",
+      "answers": [
+        {
+          "document": "kb/api-webhooks.md",
+          "contains": "must return a 2xx status within 10 seconds"
+        }
+      ]
+    },
+    {
+      "id": "q058",
+      "kind": "paraphrase",
+      "question": "Can I see how worn out my e-bike's pack has become?",
+      "answers": [
+        {
+          "document": "kb/release-notes-ride-app-4-2.md",
+          "contains": "estimated health as a percentage of original capacity"
+        },
+        {
+          "document": "kb/battery-and-charger-care.md",
+          "contains": "shows the cycle count and estimated health"
+        }
+      ]
+    },
+    {
+      "id": "q059",
+      "kind": "paraphrase",
+      "question": "Will topping up the pack halfway wear it out faster?",
+      "answers": [
+        {
+          "document": "kb/battery-and-charger-care.md",
+          "contains": "Partial charges are fine and do not shorten battery life"
+        }
+      ]
+    },
+    {
+      "id": "q060",
+      "kind": "paraphrase",
+      "question": "I'm leaving my e-bike in the shed until spring. How full should the pack be?",
+      "answers": [
+        {
+          "document": "kb/battery-and-charger-care.md",
+          "contains": "store the battery at 40% to 60% charge"
+        }
+      ]
+    },
+    {
+      "id": "q061",
+      "kind": "paraphrase",
+      "question": "When does a new electric bike need its first check-up at the workshop?",
+      "answers": [
+        {
+          "document": "kb/ebike-service-schedule.md",
+          "contains": "after 500 km or 3 months, whichever comes first"
+        },
+        {
+          "document": "kb/halcy-40-manual.md",
+          "contains": "first service done after 500 km or 3 months"
+        },
+        {
+          "document": "kb/halcy-52-manual.md",
+          "contains": "The first service is due after 500 km or 3 months"
+        },
+        {
+          "document": "kb/halcy-70-cargo-manual.md",
+          "contains": "The first service is due after 500 km or 3 months"
+        }
+      ]
+    },
+    {
+      "id": "q062",
+      "kind": "paraphrase",
+      "question": "How heavy can a kid be to ride on the back of the long-tail?",
+      "answers": [
+        {
+          "document": "kb/halcy-70-cargo-manual.md",
+          "contains": "children aged 1 to 7 years and up to 22 kg each"
+        }
+      ]
+    },
+    {
+      "id": "q063",
+      "kind": "paraphrase",
+      "question": "Does the non-electric commuter need anything to power its lamps?",
+      "answers": [
+        {
+          "document": "kb/tessel-city-bike-manual.md",
+          "contains": "The hub dynamo powers both lights"
+        }
+      ]
+    },
+    {
+      "id": "q064",
+      "kind": "paraphrase",
+      "question": "What's the most I'd be credited for my old non-electric bike towards a new one?",
+      "answers": [
+        {
+          "document": "kb/trade-in-programme.md",
+          "contains": "Standard bicycle | EUR 400"
+        }
+      ]
+    },
+    {
+      "id": "q065",
+      "kind": "paraphrase",
+      "question": "Can I spread the cost of a pricey bike without paying extra?",
+      "answers": [
+        {
+          "document": "kb/payments.md",
+          "contains": "0% interest financing over 12 months on orders over EUR 1,000"
+        }
+      ]
+    },
+    {
+      "id": "q066",
+      "kind": "paraphrase",
+      "question": "Will I owe extra taxes at the door when ordering to Britain?",
+      "answers": [
+        {
+          "document": "kb/shipping.md",
+          "contains": "the price at checkout already includes import VAT and duties"
+        }
+      ]
+    },
+    {
+      "id": "q067",
+      "kind": "paraphrase",
+      "question": "My parcel arrived crushed. How soon do I have to tell you?",
+      "answers": [
+        {
+          "document": "kb/shipping.md",
+          "contains": "Report damage to us within 48 hours of delivery"
+        }
+      ]
+    },
+    {
+      "id": "q068",
+      "kind": "paraphrase",
+      "question": "If I sell my bike to a neighbour, does the frame cover pass to them?",
+      "answers": [
+        {
+          "document": "kb/warranty.md",
+          "contains": "the frame warranty transfers to a second owner"
+        }
+      ]
+    },
+    {
+      "id": "q069",
+      "kind": "paraphrase",
+      "question": "What do I type in chat to raise the alarm about an outage?",
+      "answers": [
+        {
+          "document": "kb/runbook-incident-response.md",
+          "contains": "/incident declare"
+        }
+      ]
+    },
+    {
+      "id": "q070",
+      "kind": "paraphrase",
+      "question": "Who must be looped in when customer records may have leaked?",
+      "answers": [
+        {
+          "document": "kb/runbook-incident-response.md",
+          "contains": "involve the Data Protection Officer within 1 hour"
+        }
+      ]
+    },
+    {
+      "id": "q071",
+      "kind": "paraphrase",
+      "question": "How long can I keep using the marker that fetches the next batch of results?",
+      "answers": [
+        {
+          "document": "kb/api-pagination.md",
+          "contains": "A cursor stays valid for 24 hours after it was issued"
+        }
+      ]
+    },
+    {
+      "id": "q072",
+      "kind": "distractor",
+      "question": "What is the return window for an e-bike?",
+      "answers": [
+        {
+          "document": "kb/returns-policy.md",
+          "contains": "e-bikes must be returned within 14 days of delivery"
+        }
+      ]
+    },
+    {
+      "id": "q073",
+      "kind": "distractor",
+      "question": "How many days do I have to return a clearance item?",
+      "answers": [
+        {
+          "document": "kb/returns-policy.md",
+          "contains": "clearance items can be returned within 7 days"
+        }
+      ]
+    },
+    {
+      "id": "q074",
+      "kind": "distractor",
+      "question": "How long is the frame warranty on the Tessel?",
+      "answers": [
+        {
+          "document": "kb/warranty.md",
+          "contains": "Steel frames (Tessel city bike) | 15 years"
+        }
+      ]
+    },
+    {
+      "id": "q075",
+      "kind": "distractor",
+      "question": "What is the battery capacity of the Halcy 52?",
+      "answers": [
+        {
+          "document": "kb/halcy-52-manual.md",
+          "contains": "520 Wh, integrated in the down tube"
+        }
+      ]
+    },
+    {
+      "id": "q076",
+      "kind": "distractor",
+      "question": "How long does the Halcy 52 take to charge fully with the standard charger?",
+      "answers": [
+        {
+          "document": "kb/halcy-52-manual.md",
+          "contains": "A full charge from empty takes about 5 hours with the standard charger"
+        }
+      ]
+    },
+    {
+      "id": "q077",
+      "kind": "distractor",
+      "question": "What is the maximum torque of the Halcy 40?",
+      "answers": [
+        {
+          "document": "kb/halcy-40-manual.md",
+          "contains": "Maximum torque | 45 Nm"
+        }
+      ]
+    },
+    {
+      "id": "q078",
+      "kind": "distractor",
+      "question": "Which Halcy models can use the Rapid 6A charger?",
+      "answers": [
+        {
+          "document": "kb/battery-and-charger-care.md",
+          "contains": "Halcy 52 and Halcy 70 Cargo only"
+        }
+      ]
+    },
+    {
+      "id": "q079",
+      "kind": "distractor",
+      "question": "What is the per-minute rate limit on the Growth API plan?",
+      "answers": [
+        {
+          "document": "kb/api-rate-limits.md",
+          "contains": "| Growth | 600 | 250,000 |"
+        },
+        {
+          "document": "kb/release-notes-fleet-api-2026-03.md",
+          "contains": "raised from 300 to 600 requests per minute"
+        }
+      ]
+    },
+    {
+      "id": "q080",
+      "kind": "distractor",
+      "question": "What does Fleet API error OB-2002 mean?",
+      "answers": [
+        {
+          "document": "kb/api-error-codes.md",
+          "contains": "Daily quota exceeded"
+        }
+      ]
+    },
+    {
+      "id": "q081",
+      "kind": "distractor",
+      "question": "What does display error code E42 mean?",
+      "answers": [
+        {
+          "document": "kb/display-error-codes.md",
+          "contains": "E42 | Cadence sensor fault"
+        }
+      ]
+    },
+    {
+      "id": "q082",
+      "kind": "distractor",
+      "question": "What does Fleet API error OB-1002 mean?",
+      "answers": [
+        {
+          "document": "kb/api-error-codes.md",
+          "contains": "Access token expired; request a new token"
+        }
+      ]
+    },
+    {
+      "id": "q083",
+      "kind": "distractor",
+      "question": "How much annual leave do full-time employees in the Netherlands get?",
+      "answers": [
+        {
+          "document": "kb/hr-leave-policy.md",
+          "contains": "Netherlands | 25 working days"
+        }
+      ]
+    },
+    {
+      "id": "q084",
+      "kind": "distractor",
+      "question": "How much annual leave do employees in Sweden get?",
+      "answers": [
+        {
+          "document": "kb/hr-leave-policy.md",
+          "contains": "Sweden | 30 working days"
+        }
+      ]
+    },
+    {
+      "id": "q085",
+      "kind": "distractor",
+      "question": "What is the hotel cap per night in most cities?",
+      "answers": [
+        {
+          "document": "kb/hr-travel-policy.md",
+          "contains": "The nightly cap is EUR 160 in most cities"
+        }
+      ]
+    },
+    {
+      "id": "q086",
+      "kind": "distractor",
+      "question": "Within how many minutes must the on-call engineer acknowledge a SEV1 page?",
+      "answers": [
+        {
+          "document": "kb/runbook-incident-response.md",
+          "contains": "the on-call engineer must acknowledge within 5 minutes"
+        },
+        {
+          "document": "kb/runbook-on-call.md",
+          "contains": "SEV1 incidents have a stricter 5-minute target"
+        }
+      ]
+    },
+    {
+      "id": "q087",
+      "kind": "distractor",
+      "question": "How long are ride-db snapshots kept?",
+      "answers": [
+        {
+          "document": "kb/runbook-backup-restore.md",
+          "contains": "snapshots are kept for 14 days only"
+        }
+      ]
+    },
+    {
+      "id": "q088",
+      "kind": "distractor",
+      "question": "What is the maximum page size with legacy offset pagination?",
+      "answers": [
+        {
+          "document": "kb/api-pagination.md",
+          "contains": "the maximum page size is 100"
+        }
+      ]
+    },
+    {
+      "id": "q089",
+      "kind": "distractor",
+      "question": "When will version 1 of the Fleet API be switched off?",
+      "answers": [
+        {
+          "document": "kb/api-pagination.md",
+          "contains": "Version 1 will be switched off on 30 June 2027"
+        },
+        {
+          "document": "kb/release-notes-fleet-api-2026-03.md",
+          "contains": "has been moved to 30 June 2027"
+        }
+      ]
+    },
+    {
+      "id": "q090",
+      "kind": "distractor",
+      "question": "How long are new personal access keys valid?",
+      "answers": [
+        {
+          "document": "kb/api-authentication.md",
+          "contains": "Personal access keys expire after 90 days"
+        },
+        {
+          "document": "kb/release-notes-fleet-api-2026-03.md",
+          "contains": "expire after 90 days"
+        }
+      ]
+    },
+    {
+      "id": "q091",
+      "kind": "distractor",
+      "question": "What is the daily meal limit when working away from the office in your own country?",
+      "answers": [
+        {
+          "document": "kb/hr-expenses-policy.md",
+          "contains": "up to EUR 45 per day in your own country"
+        },
+        {
+          "document": "kb/hr-travel-policy.md",
+          "contains": "EUR 45 per day in your own country"
+        }
+      ]
+    },
+    {
+      "id": "q092",
+      "kind": "distractor",
+      "question": "How much does Care Basic cost when paid annually?",
+      "answers": [
+        {
+          "document": "kb/subscriptions.md",
+          "contains": "EUR 90 per year"
+        }
+      ]
+    },
+    {
+      "id": "q093",
+      "kind": "distractor",
+      "question": "Where is the battery mounted on the Halcy 70 Cargo?",
+      "answers": [
+        {
+          "document": "kb/halcy-70-cargo-manual.md",
+          "contains": "700 Wh, mounted under the rear deck"
+        }
+      ]
+    },
+    {
+      "id": "q094",
+      "kind": "distractor",
+      "question": "What is the reimbursement rate for riding an e-bike to a business meeting?",
+      "answers": [
+        {
+          "document": "kb/hr-travel-policy.md",
+          "contains": "is reimbursed at EUR 0.20 per km"
+        }
+      ]
+    },
+    {
+      "id": "q095",
+      "kind": "distractor",
+      "question": "How long are support chats and emails kept?",
+      "answers": [
+        {
+          "document": "kb/privacy-notice.md",
+          "contains": "24 months after the case is closed"
+        }
+      ]
+    },
+    {
+      "id": "q096",
+      "kind": "distractor",
+      "question": "When is the first service due on the Tessel city bike?",
+      "answers": [
+        {
+          "document": "kb/tessel-city-bike-manual.md",
+          "contains": "The first service is due after 300 km or 2 months"
+        }
+      ]
+    },
+    {
+      "id": "q097",
+      "kind": "distractor",
+      "question": "Until when can an annual Orrinby Care subscription be cancelled for a full refund?",
+      "answers": [
+        {
+          "document": "kb/subscriptions.md",
+          "contains": "cancelled within the first 14 days for a full refund"
+        }
+      ]
+    },
+    {
+      "id": "q098",
+      "kind": "unanswerable-near",
+      "question": "What is the return window for gift cards?",
+      "answers": []
+    },
+    {
+      "id": "q099",
+      "kind": "unanswerable-near",
+      "question": "How much does a new Halcy 40 cost?",
+      "answers": []
+    },
+    {
+      "id": "q100",
+      "kind": "unanswerable-near",
+      "question": "What time does the Elmsby showroom close on weekdays?",
+      "answers": []
+    },
+    {
+      "id": "q101",
+      "kind": "unanswerable-near",
+      "question": "What is the IP water-resistance rating of the Halcy 52 battery?",
+      "answers": []
+    },
+    {
+      "id": "q102",
+      "kind": "unanswerable-near",
+      "question": "How much does an Orrinby child seat cost?",
+      "answers": []
+    },
+    {
+      "id": "q103",
+      "kind": "unanswerable-near",
+      "question": "What percentage is the student discount?",
+      "answers": []
+    },
+    {
+      "id": "q104",
+      "kind": "unanswerable-near",
+      "question": "What minimum credit score does Brevlin Finance require?",
+      "answers": []
+    },
+    {
+      "id": "q105",
+      "kind": "unanswerable-near",
+      "question": "What is the daily request quota in the Fleet API sandbox?",
+      "answers": []
+    },
+    {
+      "id": "q106",
+      "kind": "unanswerable-near",
+      "question": "How many webhook events per second can be delivered to a single endpoint?",
+      "answers": []
+    },
+    {
+      "id": "q107",
+      "kind": "unanswerable-near",
+      "question": "What p99 latency threshold triggers an automatic rollback?",
+      "answers": []
+    },
+    {
+      "id": "q108",
+      "kind": "unanswerable-near",
+      "question": "What on-call allowance do engineering managers receive when a page escalates to them?",
+      "answers": []
+    },
+    {
+      "id": "q109",
+      "kind": "unanswerable-near",
+      "question": "How much annual leave do employees based in Belgium get?",
+      "answers": []
+    },
+    {
+      "id": "q110",
+      "kind": "unanswerable-near",
+      "question": "How many days of paid leave are given for jury duty?",
+      "answers": []
+    },
+    {
+      "id": "q111",
+      "kind": "unanswerable-near",
+      "question": "What is the typical replication lag of the Amsterdam replica of ledger-db?",
+      "answers": []
+    },
+    {
+      "id": "q112",
+      "kind": "unanswerable-near",
+      "question": "How long are Weir deploy logs retained?",
+      "answers": []
+    },
+    {
+      "id": "q113",
+      "kind": "unanswerable-near",
+      "question": "What is the recovery time objective for ride-db?",
+      "answers": []
+    },
+    {
+      "id": "q114",
+      "kind": "unanswerable-near",
+      "question": "What is the maximum number of scopes a single API client can hold?",
+      "answers": []
+    },
+    {
+      "id": "q115",
+      "kind": "unanswerable-near",
+      "question": "How often must webhook signing secrets be rotated?",
+      "answers": []
+    },
+    {
+      "id": "q116",
+      "kind": "unanswerable-near",
+      "question": "What does display error code E50 mean?",
+      "answers": []
+    },
+    {
+      "id": "q117",
+      "kind": "unanswerable-near",
+      "question": "What does Fleet API error OB-1006 mean?",
+      "answers": []
+    },
+    {
+      "id": "q118",
+      "kind": "unanswerable-near",
+      "question": "How much does the optional second battery for the Halcy 70 Cargo weigh?",
+      "answers": []
+    },
+    {
+      "id": "q119",
+      "kind": "unanswerable-near",
+      "question": "How bright, in lux, is the Halcy 40 front light?",
+      "answers": []
+    },
+    {
+      "id": "q120",
+      "kind": "unanswerable-near",
+      "question": "What tyre size does the Halcy 52 use?",
+      "answers": []
+    },
+    {
+      "id": "q121",
+      "kind": "unanswerable-near",
+      "question": "How long is the warranty on refurbished replacement parts?",
+      "answers": []
+    },
+    {
+      "id": "q122",
+      "kind": "unanswerable-near",
+      "question": "What is the maximum trailer weight for the Halcy 70 Cargo?",
+      "answers": []
+    },
+    {
+      "id": "q123",
+      "kind": "unanswerable-far",
+      "question": "What is Orrinby's stock ticker symbol?",
+      "answers": []
+    },
+    {
+      "id": "q124",
+      "kind": "unanswerable-far",
+      "question": "How do I bake sourdough bread?",
+      "answers": []
+    },
+    {
+      "id": "q125",
+      "kind": "unanswerable-far",
+      "question": "What is the capital of Australia?",
+      "answers": []
+    },
+    {
+      "id": "q126",
+      "kind": "unanswerable-far",
+      "question": "How do I configure horizontal pod autoscaling in Kubernetes?",
+      "answers": []
+    },
+    {
+      "id": "q127",
+      "kind": "unanswerable-far",
+      "question": "What will the weather be in Amsterdam tomorrow?",
+      "answers": []
+    },
+    {
+      "id": "q128",
+      "kind": "unanswerable-far",
+      "question": "How do I reset my password for the company email system?",
+      "answers": []
+    },
+    {
+      "id": "q129",
+      "kind": "unanswerable-far",
+      "question": "Explain the rules of cricket.",
+      "answers": []
+    },
+    {
+      "id": "q130",
+      "kind": "unanswerable-far",
+      "question": "How do I file my personal income tax return?",
+      "answers": []
+    },
+    {
+      "id": "q131",
+      "kind": "unanswerable-far",
+      "question": "What is the recommended adult dose of ibuprofen?",
+      "answers": []
+    },
+    {
+      "id": "q132",
+      "kind": "unanswerable-far",
+      "question": "How do I teach a puppy to sit?",
+      "answers": []
+    },
+    {
+      "id": "q133",
+      "kind": "unanswerable-far",
+      "question": "Which team won the 2022 football World Cup?",
+      "answers": []
+    },
+    {
+      "id": "q134",
+      "kind": "unanswerable-far",
+      "question": "How do I write a SQL window function that computes a running total?",
+      "answers": []
+    },
+    {
+      "id": "q135",
+      "kind": "unanswerable-far",
+      "question": "At what temperature does water boil at 3,000 metres altitude?",
+      "answers": []
+    },
+    {
+      "id": "q136",
+      "kind": "unanswerable-far",
+      "question": "How do I translate a document into Japanese?",
+      "answers": []
+    },
+    {
+      "id": "q137",
+      "kind": "unanswerable-far",
+      "question": "What is the best way to grow tomatoes on a balcony?",
+      "answers": []
+    },
+    {
+      "id": "q138",
+      "kind": "false-premise",
+      "question": "What is the battery capacity of the Halcy 60?",
+      "answers": []
+    },
+    {
+      "id": "q139",
+      "kind": "false-premise",
+      "question": "What is the maximum torque of the Tessel's motor?",
+      "answers": []
+    },
+    {
+      "id": "q140",
+      "kind": "false-premise",
+      "question": "How long does the Halcy 40 take to charge with the Rapid 6A charger?",
+      "answers": []
+    },
+    {
+      "id": "q141",
+      "kind": "false-premise",
+      "question": "Why is the e-bike return window 30 days?",
+      "answers": []
+    },
+    {
+      "id": "q142",
+      "kind": "false-premise",
+      "question": "How do I claim theft replacement under Care Basic?",
+      "answers": []
+    },
+    {
+      "id": "q143",
+      "kind": "false-premise",
+      "question": "How do I pause my Care Fleet subscription over the winter?",
+      "answers": []
+    },
+    {
+      "id": "q144",
+      "kind": "false-premise",
+      "question": "Which cryptocurrencies can I pay with at checkout?",
+      "answers": []
+    },
+    {
+      "id": "q145",
+      "kind": "false-premise",
+      "question": "How long does express delivery take for a complete e-bike?",
+      "answers": []
+    },
+    {
+      "id": "q146",
+      "kind": "false-premise",
+      "question": "Which routes qualify for business class under the travel policy?",
+      "answers": []
+    },
+    {
+      "id": "q147",
+      "kind": "false-premise",
+      "question": "How do I use refresh tokens with the client credentials flow?",
+      "answers": []
+    },
+    {
+      "id": "q148",
+      "kind": "false-premise",
+      "question": "What is the rate limit on the Platinum API plan?",
+      "answers": []
+    },
+    {
+      "id": "q149",
+      "kind": "false-premise",
+      "question": "How do I switch on Auto assist mode on the Halcy 40?",
+      "answers": []
+    },
+    {
+      "id": "q150",
+      "kind": "false-premise",
+      "question": "What is the weekend deploy window in Weir?",
+      "answers": []
+    },
+    {
+      "id": "q151",
+      "kind": "false-premise",
+      "question": "What is the address of the Orrinby showroom in Stockholm?",
+      "answers": []
+    },
+    {
+      "id": "q152",
+      "kind": "false-premise",
+      "question": "How do I ship a spare Halcy battery by air freight to an island?",
+      "answers": []
+    }
+  ]
+}
