@@ -172,7 +172,7 @@ describe('reference documents and retrieval', () => {
       'Returns',
       'shipping',
     ]);
-    const hits = documents.retrieve(
+    const hits = await documents.retrieve(
       project.id,
       'How many days do refunds take?',
     );
@@ -180,9 +180,9 @@ describe('reference documents and retrieval', () => {
     expect(hits[0]?.text).toContain('Refunds take 7 business days');
     db.close();
     const reopened = open();
-    expect(reopened.documents.retrieve(project.id, 'refunds')[0]?.title).toBe(
-      'Returns',
-    );
+    expect(
+      (await reopened.documents.retrieve(project.id, 'refunds'))[0]?.title,
+    ).toBe('Returns');
     const again = await reopened.documents.reference({
       projectId: project.id,
       path: 'returns.md',
@@ -201,12 +201,12 @@ describe('reference documents and retrieval', () => {
     const [added] = (
       await documents.reference({ projectId: first.id, path: 'a.md' })
     ).added;
-    expect(documents.retrieve(second.id, 'zebra')).toEqual([]);
-    expect(documents.retrieve(first.id, 'zebra')).toHaveLength(1);
+    expect(await documents.retrieve(second.id, 'zebra')).toEqual([]);
+    expect(await documents.retrieve(first.id, 'zebra')).toHaveLength(1);
     documents.remove(second.id, added?.id);
-    expect(documents.retrieve(first.id, 'zebra')).toHaveLength(1);
+    expect(await documents.retrieve(first.id, 'zebra')).toHaveLength(1);
     documents.remove(first.id, added?.id);
-    expect(documents.retrieve(first.id, 'zebra')).toEqual([]);
+    expect(await documents.retrieve(first.id, 'zebra')).toEqual([]);
   });
 
   it('confines paths to the reference folder, including through symlinks', async () => {
@@ -250,9 +250,9 @@ describe('reference documents and retrieval', () => {
       'empty.md',
       'secret.md',
     ]);
-    expect(documents.retrieve(project.id, 'sk-abcdefghijklmnop1234')).toEqual(
-      [],
-    );
+    expect(
+      await documents.retrieve(project.id, 'sk-abcdefghijklmnop1234'),
+    ).toEqual([]);
   });
 
   it('stores uploads safely inside the folder and they are then retrievable', async () => {
@@ -286,9 +286,9 @@ describe('reference documents and retrieval', () => {
       expect(existsSync(join(root, path))).toBe(true);
       await documents.reference({ projectId: project.id, path });
     }
-    expect(documents.retrieve(project.id, 'bikes boxes')[0]?.text).toContain(
-      'Bikes ship',
-    );
+    expect(
+      (await documents.retrieve(project.id, 'bikes boxes'))[0]?.text,
+    ).toContain('Bikes ship');
     expect(
       documents.store(
         Array.from({ length: 12 }, (_, i) => ({
@@ -312,7 +312,7 @@ describe('reference documents and retrieval', () => {
     expect(existsSync(join(root, path!))).toBe(true);
     await documents.reference({ projectId: project.id, path });
     expect(
-      documents.retrieve(project.id, 'bicycle return period')[0]?.text,
+      (await documents.retrieve(project.id, 'bicycle return period'))[0]?.text,
     ).toContain('within 30 days');
 
     for (const unsafe of ['../outside.md', '/outside.md', 'docs\\outside.md']) {
@@ -340,7 +340,7 @@ describe('reference documents and retrieval', () => {
     ).toThrow('No reference');
   });
 
-  it('neutralizes FTS operators and chunks long text within bounds', () => {
+  it('neutralizes FTS operators and chunks long text within bounds', async () => {
     expect(toFtsQuery('refund AND "x" OR NEAR(a b) * ^')).toBe(
       '"refund" OR "and" OR "near"',
     );
@@ -352,7 +352,7 @@ describe('reference documents and retrieval', () => {
     for (const chunk of chunks) expect(chunk.length).toBeLessThanOrEqual(800);
     const { projects, documents } = setup();
     const project = projects.create({ name: 'P' });
-    expect(documents.retrieve(project.id, 'refund" OR (x')).toEqual([]);
+    expect(await documents.retrieve(project.id, 'refund" OR (x')).toEqual([]);
   });
   it('normalizes layout whitespace and removes invisible characters before chunking', () => {
     const hidden = `Return within 30 days.\u200b\u{e0049}\u{e0067}`;

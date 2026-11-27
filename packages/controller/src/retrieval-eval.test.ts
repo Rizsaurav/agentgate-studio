@@ -46,7 +46,7 @@ describe('retrieval evaluation (#14)', () => {
       }
   });
 
-  it('ranks answers by the first passage that contains the phrase from the right document', () => {
+  it('ranks answers by the first passage that contains the phrase from the right document', async () => {
     const question = {
       id: 'q001',
       question: 'x',
@@ -59,12 +59,12 @@ describe('retrieval evaluation (#14)', () => {
       ]),
     ).toBe(2);
     expect(answerRank(question, [passage('a.md', 'nothing here')])).toBeNull();
-    const { metrics } = scoreRetrieval(
+    const { metrics } = await scoreRetrieval(
       {
         corpus: ['x'],
         questions: [question, { id: 'q002', question: 'none', answers: [] }],
       },
-      (q) =>
+      async (q) =>
         q === 'none'
           ? []
           : [passage('b.md', ''), passage('a.md', 'thirty days')],
@@ -82,7 +82,7 @@ describe('retrieval evaluation (#14)', () => {
   it('keyword retrieval stays at or above the committed baseline', async () => {
     const corpus = await indexCorpus(set, join(repo, 'fixtures'));
     try {
-      const { metrics } = scoreRetrieval(set, corpus.retrieve);
+      const { metrics } = await scoreRetrieval(set, corpus.retrieve);
       const baseline = JSON.parse(
         readFileSync(join(evalDir, 'baseline.json'), 'utf8'),
       ) as RetrievalMetrics;

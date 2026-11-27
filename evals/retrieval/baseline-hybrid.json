@@ -1,0 +1,8 @@
+{
+  "answerable": 82,
+  "unanswerable": 18,
+  "hitAt1": 0.976,
+  "hitAt4": 0.988,
+  "mrr": 0.979,
+  "abstention": 0.444
+}

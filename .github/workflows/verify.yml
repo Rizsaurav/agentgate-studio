@@ -62,13 +62,14 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
-          key: huggingface-llm-guard-${{ hashFiles('scanner/requirements.txt') }}
+          key: huggingface-llm-guard-${{ hashFiles('scanner/requirements.txt', 'scanner/retrieval.py') }}
       - run: npm ci
       - run: PYTHON=python sh scanner/setup.sh
       - name: Start the scanner
         run: |
           nohup scanner/.venv/bin/python scanner/server.py > scanner.log 2>&1 &
-          for _ in $(seq 1 90); do
+          # The first run downloads the scanner and retrieval models; later runs read them from the cache.
+          for _ in $(seq 1 450); do
             curl -sf http://127.0.0.1:8765/health && exit 0
             sleep 2
           done
@@ -76,6 +77,8 @@ jobs:
           exit 1
       - name: Tests including live scanner integration
         run: npx vitest run
+      - name: Hybrid retrieval stays at or above its baseline
+        run: npm run eval:retrieval -- --set kb --hybrid
       - name: Required evaluation suite (must pass)
         run: |
           mkdir -p eval-results

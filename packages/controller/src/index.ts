@@ -80,6 +80,7 @@ export {
 } from './scanner';
 export type { InjectionScanner } from './scanner';
 export { ProtectionPipeline, SqliteSecurityEvents } from './security';
+export { openAICompatibleRegistry } from './openai-compatible';
 export type { Blocked, RunGuard, SecurityEvent } from './security';
 export { RunService } from './runner';
 export { isLocalHost, isLocalMutation } from './local-request';
@@ -141,6 +142,28 @@ export {
   indexCorpus,
   plain,
   retrievalSetSchema,
+  scoreByKind,
   scoreRetrieval,
 } from './retrieval-eval';
+export {
+  checkGrounding,
+  DEFAULT_GROUNDING,
+  groundedQuestion,
+  NOT_COVERED,
+} from './grounding';
+export type { GroundingCheck, GroundingOptions } from './grounding';
+export {
+  DEFAULT_RETRIEVAL,
+  HybridRetriever,
+  ScannerRetrievalModels,
+  contextual,
+  fuse,
+  gate,
+  keywordQuery,
+} from './retrieval';
+export type {
+  RankedPassage,
+  RetrievalModels,
+  RetrievalOptions,
+} from './retrieval';
 export type { RetrievalMetrics, RetrievalSet } from './retrieval-eval';

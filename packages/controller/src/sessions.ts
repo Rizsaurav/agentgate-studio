@@ -85,6 +85,8 @@ export const runEventSchema = z
       'started',
       'screened',
       'sources',
+      /** What the grounding check found: claim counts and the sentences it removed. */
+      'grounding',
       'text_delta',
       'completed',
       'failed',
@@ -155,7 +157,7 @@ export interface SessionRepository {
   claimNextQueued(): Run | null;
   appendEvent(runId: string, type: RunEvent['type'], text: string): void;
   eventsAfter(runId: string, seq: number): RunEvent[];
-  /** Only 'started', 'screened', 'sources', and 'completed' events, for traces and source lists. */
+  /** Only 'started', 'screened', 'sources', 'grounding' and 'completed' events, for traces and source lists. */
   traceEvents(runId: string): RunEvent[];
   /** Atomically appends the turn's messages and marks the run completed. */
   completeRun(run: Run, messages: StoredMessage[]): void;
@@ -214,7 +216,7 @@ export class SessionService {
     return sourcesFromEvents(this.traceEvents(runId));
   }
 
-  /** Only 'started', 'screened', 'sources', and 'completed' events, without streamed text deltas. */
+  /** Only 'started', 'screened', 'sources', 'grounding' and 'completed' events, without streamed text deltas. */
   traceEvents(runId: unknown): RunEvent[] {
     return z
       .array(runEventSchema)

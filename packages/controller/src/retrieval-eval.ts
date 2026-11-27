@@ -4,6 +4,12 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { openDatabase } from './database';
 import { DocumentService, SqliteDocuments, type Passage } from './documents';
+import {
+  DEFAULT_RETRIEVAL,
+  HybridRetriever,
+  type RetrievalModels,
+  type RetrievalOptions,
+} from './retrieval';
 import { ProjectService } from './projects';
 import { SqliteProjects } from './sqlite-projects';
 
@@ -21,6 +27,8 @@ export const retrievalSetSchema = z
         z
           .object({
             id: z.string().regex(/^q\d{3}$/),
+            /** What the question tests: lexical, paraphrase, distractor, unanswerable-near, ... */
+            kind: z.string().min(1).optional(),
             question: z.string().min(1),
             /** Empty for a question nothing in the corpus answers. */
             answers: z.array(
@@ -58,6 +66,21 @@ export function plain(text: string): string {
   return text.toLowerCase().replace(/\s+/g, ' ');
 }
 
+/**
+ * Whether a passage holds a labelled phrase. A phrase quoting a table row ("Express | EUR 14.95") matches when
+ * every cell is on one line of the passage, so labels stay valid when tables are rewritten as sentences.
+ */
+export function holds(passageText: string, phrase: string): boolean {
+  if (!phrase.includes('|')) return plain(passageText).includes(plain(phrase));
+  const cells = phrase
+    .split('|')
+    .map((cell) => plain(cell).trim())
+    .filter(Boolean);
+  return passageText
+    .split('\n')
+    .some((line) => cells.every((cell) => plain(line).includes(cell)));
+}
+
 /** 1-based rank of the first passage that answers `question`, or null. */
 export function answerRank(
   question: Question,
@@ -67,16 +90,19 @@ export function answerRank(
     question.answers.some(
       (answer) =>
         passage.path === answer.document &&
-        plain(passage.text).includes(plain(answer.contains)),
+        holds(passage.text, answer.contains),
     ),
   );
   return index === -1 ? null : index + 1;
 }
 
-export function scoreRetrieval(
+export async function scoreRetrieval(
   set: RetrievalSet,
-  retrieve: (question: string) => Passage[],
-): { metrics: RetrievalMetrics; misses: { id: string; question: string }[] } {
+  retrieve: (question: string) => Promise<Passage[]>,
+): Promise<{
+  metrics: RetrievalMetrics;
+  misses: { id: string; question: string }[];
+}> {
   const answerable = set.questions.filter((q) => q.answers.length > 0);
   const unanswerable = set.questions.filter((q) => q.answers.length === 0);
   let hit1 = 0;
@@ -84,7 +110,10 @@ export function scoreRetrieval(
   let reciprocal = 0;
   const misses: { id: string; question: string }[] = [];
   for (const question of answerable) {
-    const rank = answerRank(question, retrieve(question.question).slice(0, 4));
+    const rank = answerRank(
+      question,
+      (await retrieve(question.question)).slice(0, 4),
+    );
     if (rank === 1) hit1 += 1;
     if (rank !== null) {
       hit4 += 1;
@@ -93,9 +122,9 @@ export function scoreRetrieval(
       misses.push({ id: question.id, question: question.question });
     }
   }
-  const abstained = unanswerable.filter(
-    (q) => retrieve(q.question).length === 0,
-  ).length;
+  let abstained = 0;
+  for (const q of unanswerable)
+    if ((await retrieve(q.question)).length === 0) abstained += 1;
   const share = (n: number, of: number) =>
     of === 0 ? 0 : Math.round((n / of) * 1000) / 1000;
   return {
@@ -118,7 +147,13 @@ export function scoreRetrieval(
 export async function indexCorpus(
   set: RetrievalSet,
   corpusRoot: string,
-): Promise<{ retrieve: (question: string) => Passage[]; close: () => void }> {
+  /** With models, the production pipeline: hybrid search, reranking and the abstention gate. */
+  models?: RetrievalModels,
+  options: RetrievalOptions = DEFAULT_RETRIEVAL,
+): Promise<{
+  retrieve: (question: string) => Promise<Passage[]>;
+  close: () => void;
+}> {
   const work = mkdtempSync(join(tmpdir(), 'agentgate-retrieval-'));
   const docs = join(work, 'documents');
   cpSync(corpusRoot, docs, { recursive: true });
@@ -130,6 +165,7 @@ export async function indexCorpus(
     projectRepository,
     docs,
     async () => ({ withheld: [] }),
+    models ? new HybridRetriever(repository, models, options) : undefined,
   );
   const project = new ProjectService(projectRepository).create({
     name: 'Retrieval evaluation',
@@ -151,4 +187,32 @@ export async function indexCorpus(
       rmSync(work, { recursive: true, force: true });
     },
   };
+}
+
+/** Metrics for each kind of question, for the questions that carry one. */
+export async function scoreByKind(
+  set: RetrievalSet,
+  retrieve: (question: string) => Promise<Passage[]>,
+): Promise<
+  Record<string, { count: number; found: number; abstained: number }>
+> {
+  const kinds: Record<
+    string,
+    { count: number; found: number; abstained: number }
+  > = {};
+  for (const question of set.questions) {
+    const kind =
+      question.kind ??
+      (question.answers.length ? 'answerable' : 'unanswerable');
+    const passages = await retrieve(question.question);
+    const entry = (kinds[kind] ??= { count: 0, found: 0, abstained: 0 });
+    entry.count += 1;
+    if (passages.length === 0) entry.abstained += 1;
+    if (
+      question.answers.length &&
+      answerRank(question, passages.slice(0, 4)) !== null
+    )
+      entry.found += 1;
+  }
+  return kinds;
 }

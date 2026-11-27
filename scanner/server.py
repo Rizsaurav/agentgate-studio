@@ -10,6 +10,7 @@ import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import retrieval
 from llm_guard.input_scanners import PromptInjection
 from llm_guard.input_scanners.prompt_injection import MatchType
 
@@ -44,18 +45,60 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/health":
-            self._send(200, {"status": "ok", "scanner": "llm-guard/PromptInjection"})
+            self._send(200, {"status": "ok", "scanner": "llm-guard/PromptInjection", "retrieval": retrieval.models()})
         else:
             self._send(404, {"error": "not found"})
 
+    def _texts(self, value):
+        return (
+            isinstance(value, list)
+            and 0 < len(value) <= MAX_TEXTS
+            and all(isinstance(t, str) and len(t) <= MAX_TEXT_CHARS for t in value)
+        )
+
+    def _retrieval(self, payload):
+        """Embeddings, reranking and entailment: numbers only, the same size limits as scanning."""
+        if self.path == "/embed":
+            texts = payload.get("texts")
+            if not self._texts(texts):
+                return self._send(400, {"error": "invalid texts"})
+            return self._send(200, {"vectors": retrieval.embed(texts, query=payload.get("query") is True)})
+        if self.path == "/rerank":
+            query, texts = payload.get("query"), payload.get("texts")
+            if not isinstance(query, str) or not 0 < len(query) <= MAX_TEXT_CHARS or not self._texts(texts):
+                return self._send(400, {"error": "invalid query or texts"})
+            return self._send(200, {"scores": retrieval.rerank(query, texts)})
+        pairs = payload.get("pairs")
+        if (
+            not isinstance(pairs, list)
+            or not 0 < len(pairs) <= MAX_TEXTS
+            or not all(
+                isinstance(pair, dict)
+                and isinstance(pair.get("premise"), str)
+                and isinstance(pair.get("hypothesis"), str)
+                and len(pair["premise"]) <= MAX_TEXT_CHARS
+                and len(pair["hypothesis"]) <= MAX_TEXT_CHARS
+                for pair in pairs
+            )
+        ):
+            return self._send(400, {"error": "invalid pairs"})
+        return self._send(200, {"results": retrieval.entail([(p["premise"], p["hypothesis"]) for p in pairs])})
+
     def do_POST(self):
-        if self.path != "/scan":
+        if self.path not in ("/scan", "/embed", "/rerank", "/entail"):
             return self._send(404, {"error": "not found"})
         length = int(self.headers.get("content-length", "0"))
         if length <= 0 or length > MAX_BODY_BYTES:
             return self._send(413, {"error": "invalid body size"})
         try:
             payload = json.loads(self.rfile.read(length))
+            if not isinstance(payload, dict):
+                raise ValueError
+        except ValueError:
+            return self._send(400, {"error": "invalid json"})
+        if self.path != "/scan":
+            return self._retrieval(payload)
+        try:
             texts = payload.get("texts")
             mode = payload.get("mode", "chunks")
         except (ValueError, AttributeError):
@@ -79,5 +122,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    # Retrieval models are loaded before serving, inside the health check's start period, so the first question
+    # does not time out while they download. AGENTGATE_RETRIEVAL_PRELOAD=0 loads them on first use instead.
+    if os.environ.get("AGENTGATE_RETRIEVAL_PRELOAD", "1") != "0":
+        print("Loading retrieval models...", flush=True)
+        retrieval.preload()
     print(f"AGENTGATE scanner ready on http://{HOST}:{PORT}", flush=True)
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()

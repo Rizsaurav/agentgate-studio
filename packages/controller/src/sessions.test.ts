@@ -253,7 +253,7 @@ describe('sessions and runs', () => {
       guard: guard,
       knowledge: {
         context: () => '',
-        retrieve: () => [
+        retrieve: async () => [
           {
             documentId: randomUUID(),
             title: 'Returns',

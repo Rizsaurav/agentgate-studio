@@ -22,6 +22,7 @@ import { z } from 'zod';
 import { detectSecrets, safeExcerpt } from './policy';
 import { projectDocumentPathSchema } from './project-import';
 import { projectIdSchema, type ProjectRepository } from './projects';
+import type { Candidate, HybridRetriever, RetrievalIndex } from './retrieval';
 
 const MAX_FILE_BYTES = 200_000;
 const MAX_FILES = 50;
@@ -55,6 +56,10 @@ export const passageSchema = z
     text: z.string(),
     /** The user reviewed this flagged passage and released it, so it is not scanned again. */
     released: z.boolean(),
+    /** The section the passage sits under ("Charging > Fast charging"), when the document has headings. */
+    heading: z.string().optional(),
+    /** How well the reranker judged the passage to answer the question, 0 to 1. */
+    score: z.number().optional(),
   })
   .strict();
 export type Passage = z.infer<typeof passageSchema>;
@@ -72,6 +77,8 @@ export type NewDocument = {
   path: string;
   createdAt: string;
   chunks: string[];
+  /** The section each chunk sits under, parallel to `chunks`; empty when the document has no headings. */
+  headings?: string[];
   /** Indexes into `chunks` that the scanner flagged. */
   withheld: number[];
 };
@@ -135,6 +142,87 @@ export function normalizeText(text: string, extension: string): string {
     .trim();
 }
 
+/**
+ * Rewrites Markdown tables as one plain line per row, each cell named by its column: "| Express | 1 to 2 days |"
+ * under "| Service | Delivery |" becomes "Service: Express; Delivery: 1 to 2 days." Search, reranking, the
+ * entailment check and small models all read sentences far better than pipes and dashes.
+ */
+export function linearizeTables(text: string): string {
+  const lines = text.split('\n');
+  const out: string[] = [];
+  const cells = (line: string) =>
+    line
+      .trim()
+      .replace(/^\|/, '')
+      .replace(/\|$/, '')
+      .split('|')
+      .map((cell) => cell.trim());
+  const isRow = (line: string | undefined) =>
+    line !== undefined && /^\s*\|.*\|\s*$/.test(line);
+  const isRule = (line: string | undefined) =>
+    line !== undefined &&
+    /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(line);
+  for (let i = 0; i < lines.length; i += 1) {
+    if (isRow(lines[i]) && isRule(lines[i + 1])) {
+      const header = cells(lines[i] as string);
+      i += 2;
+      for (; i < lines.length && isRow(lines[i]); i += 1) {
+        const row = cells(lines[i] as string);
+        const parts = row
+          .map((cell, c) =>
+            cell ? `${header[c] ? `${header[c]}: ` : ''}${cell}` : '',
+          )
+          .filter(Boolean);
+        if (parts.length) out.push(`${parts.join('; ')}.`);
+      }
+      i -= 1;
+      continue;
+    }
+    out.push(lines[i] as string);
+  }
+  return out.join('\n');
+}
+
+/**
+ * Splits a document into chunks that never cross a section: a Markdown heading starts a new chunk, and each
+ * chunk remembers the headings it sits under ("Charging > Fast charging"). Within a section, paragraphs are
+ * packed up to the size limit as `chunkText` does. Text without headings gives the same chunks as
+ * `chunkText`, with empty headings.
+ */
+export function chunkSections(text: string): {
+  chunks: string[];
+  headings: string[];
+} {
+  const chunks: string[] = [];
+  const headings: string[] = [];
+  const path: string[] = [];
+  let body: string[] = [];
+  let inCode = false;
+  const flush = () => {
+    const heading = path.slice(1).join(' > ');
+    for (const chunk of chunkText(body.join('\n'))) {
+      chunks.push(chunk);
+      headings.push(heading);
+    }
+    body = [];
+  };
+  for (const line of text.split('\n')) {
+    if (/^\s*```/.test(line)) inCode = !inCode;
+    const heading = inCode ? null : /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
+    if (heading) {
+      flush();
+      const level = (heading[1] as string).length;
+      path.length = level - 1;
+      path[level - 1] = (heading[2] as string).trim();
+      for (let i = 0; i < path.length; i += 1) path[i] ??= '';
+      continue;
+    }
+    body.push(line);
+  }
+  flush();
+  return { chunks, headings: headings.map((h) => h.replace(/^( > )+/, '')) };
+}
+
 /** Splits on blank lines, then packs paragraphs into chunks of bounded size. */
 export function chunkText(text: string): string[] {
   const chunks: string[] = [];
@@ -169,7 +257,7 @@ export function toFtsQuery(text: string): string | null {
     : null;
 }
 
-export class SqliteDocuments implements DocumentRepository {
+export class SqliteDocuments implements DocumentRepository, RetrievalIndex {
   constructor(private readonly db: Database.Database) {}
 
   add(document: NewDocument): void {
@@ -189,19 +277,25 @@ export class SqliteDocuments implements DocumentRepository {
           document.createdAt,
         );
       const insertChunk = this.db.prepare(
-        'INSERT INTO chunks (document_id, seq, text, state) VALUES (?, ?, ?, ?)',
+        'INSERT INTO chunks (document_id, seq, text, state, heading) VALUES (?, ?, ?, ?, ?)',
       );
       const insertFts = this.db.prepare(
         'INSERT INTO chunks_fts (rowid, text) VALUES (?, ?)',
       );
       document.chunks.forEach((text, seq) => {
+        const heading = document.headings?.[seq] ?? '';
         const { lastInsertRowid } = insertChunk.run(
           document.id,
           seq,
           text,
           document.withheld.includes(seq) ? 'withheld' : 'ok',
+          heading,
         );
-        insertFts.run(lastInsertRowid, text);
+        // The title and section are indexed with the text, so a passage is found by what its section is about.
+        insertFts.run(
+          lastInsertRowid,
+          [document.title, heading, text].filter(Boolean).join('\n'),
+        );
       });
     })();
   }
@@ -285,6 +379,99 @@ export class SqliteDocuments implements DocumentRepository {
     })();
   }
 
+  private static readonly CANDIDATE_COLUMNS = `c.id AS chunkId, d.id AS documentId, d.title, d.path, c.seq, c.text,
+    c.heading, c.state = 'released' AS released`;
+
+  private static candidate(row: unknown): Candidate {
+    const r = row as Record<string, unknown>;
+    return {
+      chunkId: r.chunkId as number,
+      documentId: r.documentId as string,
+      title: r.title as string,
+      path: r.path as string,
+      seq: r.seq as number,
+      text: r.text as string,
+      heading: r.heading as string,
+      released: r.released === 1,
+    };
+  }
+
+  keyword(projectId: string, ftsQuery: string, limit: number): Candidate[] {
+    return this.db
+      .prepare(
+        `SELECT ${SqliteDocuments.CANDIDATE_COLUMNS}
+           FROM chunks_fts f
+           JOIN chunks c ON c.id = f.rowid
+           JOIN documents d ON d.id = c.document_id
+           WHERE chunks_fts MATCH ? AND d.project_id = ? AND c.state != 'withheld'
+           ORDER BY bm25(chunks_fts) LIMIT ?`,
+      )
+      .all(ftsQuery, projectId, limit)
+      .map(SqliteDocuments.candidate);
+  }
+
+  vectors(projectId: string): { chunkId: number; vector: Float32Array }[] {
+    return this.db
+      .prepare(
+        `SELECT c.id AS chunkId, c.embedding FROM chunks c JOIN documents d ON d.id = c.document_id
+           WHERE d.project_id = ? AND c.state != 'withheld' AND c.embedding IS NOT NULL`,
+      )
+      .all(projectId)
+      .map((row) => {
+        const { chunkId, embedding } = row as {
+          chunkId: number;
+          embedding: Buffer;
+        };
+        return {
+          chunkId,
+          vector: new Float32Array(
+            embedding.buffer.slice(
+              embedding.byteOffset,
+              embedding.byteOffset + embedding.byteLength,
+            ),
+          ),
+        };
+      });
+  }
+
+  candidates(chunkIds: number[]): Candidate[] {
+    if (chunkIds.length === 0) return [];
+    const rows = this.db
+      .prepare(
+        `SELECT ${SqliteDocuments.CANDIDATE_COLUMNS} FROM chunks c JOIN documents d ON d.id = c.document_id
+           WHERE c.id IN (${chunkIds.map(() => '?').join(',')}) AND c.state != 'withheld'`,
+      )
+      .all(...chunkIds)
+      .map(SqliteDocuments.candidate);
+    const byId = new Map(rows.map((row) => [row.chunkId, row]));
+    return chunkIds.flatMap((id) =>
+      byId.has(id) ? [byId.get(id) as Candidate] : [],
+    );
+  }
+
+  unembedded(projectId: string, limit: number): Candidate[] {
+    return this.db
+      .prepare(
+        `SELECT ${SqliteDocuments.CANDIDATE_COLUMNS} FROM chunks c JOIN documents d ON d.id = c.document_id
+           WHERE d.project_id = ? AND c.state != 'withheld' AND c.embedding IS NULL ORDER BY c.id LIMIT ?`,
+      )
+      .all(projectId, limit)
+      .map(SqliteDocuments.candidate);
+  }
+
+  storeEmbeddings(rows: { chunkId: number; vector: Float32Array }[]): void {
+    const update = this.db.prepare(
+      'UPDATE chunks SET embedding = ? WHERE id = ?',
+    );
+    this.db.transaction(() => {
+      for (const { chunkId, vector } of rows)
+        update.run(
+          Buffer.from(vector.buffer, vector.byteOffset, vector.byteLength),
+          chunkId,
+        );
+    })();
+  }
+
   search(projectId: string, ftsQuery: string, limit: number): Passage[] {
     return z.array(passageSchema).parse(
       this.db
@@ -325,6 +512,8 @@ export class DocumentService {
     private readonly projects: ProjectRepository,
     root: string | null,
     private readonly screen: DocumentScreen,
+    /** Hybrid retrieval with reranking and an abstention gate. Without it, keyword search only (tests). */
+    private readonly retriever?: HybridRetriever,
   ) {
     this.root = root === null ? null : realpathSync(resolve(root));
   }
@@ -456,7 +645,9 @@ export class DocumentService {
         skip(text.reason);
         continue;
       }
-      const chunks = chunkText(normalizeText(text, extname(file)));
+      const { chunks, headings } = chunkSections(
+        linearizeTables(normalizeText(text, extname(file))),
+      );
       if (detectSecrets(text).length > 0) {
         skip('Contains what looks like a credential, so it was not ingested.');
         continue;
@@ -481,7 +672,7 @@ export class DocumentService {
         },
         chunks,
       );
-      this.repository.add({ ...metadata, chunks, withheld });
+      this.repository.add({ ...metadata, chunks, headings, withheld });
       const document = documentSchema.parse({
         ...metadata,
         status: withheld.length === chunks.length ? 'quarantined' : 'active',
@@ -551,19 +742,19 @@ export class DocumentService {
     );
   }
 
-  retrieve(
+  /**
+   * Passages that answer `query`, best first, or none. With the hybrid retriever, a passage is returned only
+   * when the reranker judges that it answers the question, so an unanswerable question gets no passages.
+   */
+  async retrieve(
     projectId: unknown,
     query: string,
     limit = DEFAULT_PASSAGES,
-  ): Passage[] {
+  ): Promise<Passage[]> {
+    const id = projectIdSchema.parse(projectId);
+    if (this.retriever) return this.retriever.retrieve(id, query);
     const ftsQuery = toFtsQuery(query);
-    return ftsQuery === null
-      ? []
-      : this.repository.search(
-          projectIdSchema.parse(projectId),
-          ftsQuery,
-          limit,
-        );
+    return ftsQuery === null ? [] : this.repository.search(id, ftsQuery, limit);
   }
 
   /** Resolve symlinks first so a link inside the root cannot point outside it. */
