@@ -43,7 +43,8 @@ jobs:
   security-evals:
     name: security-evals
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The first run downloads the scanner and retrieval models; the hybrid eval reranks on CPU.
+    timeout-minutes: 45
     env:
       AGENTGATE_SCANNER_URL: http://127.0.0.1:8765
       # CPU-only PyTorch wheels (the default Linux wheels bundle gigabytes of CUDA libraries).

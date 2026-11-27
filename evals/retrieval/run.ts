@@ -83,11 +83,17 @@ if (process.argv.includes('--sweep')) {
 }
 
 const corpus = await indexCorpus(set, join(repo, 'fixtures'), models);
+// Each question is retrieved once; the overall and per-kind scores read the same results.
+const results = new Map<string, ReturnType<typeof corpus.retrieve>>();
+const retrieve = (question: string) => {
+  const cached = results.get(question) ?? corpus.retrieve(question);
+  results.set(question, cached);
+  return cached;
+};
 const started = performance.now();
-const { metrics, misses } = await scoreRetrieval(set, corpus.retrieve);
-const perQuestionMs =
-  (performance.now() - started) / (set.questions.length * 2);
-const kinds = await scoreByKind(set, corpus.retrieve);
+const { metrics, misses } = await scoreRetrieval(set, retrieve);
+const perQuestionMs = (performance.now() - started) / set.questions.length;
+const kinds = await scoreByKind(set, retrieve);
 corpus.close();
 
 // Only a missing file means "no baseline yet"; a baseline that cannot be read is an error.
